@@ -1,0 +1,292 @@
+{
+  "schema": 1,
+  "started_utc": "2026-10-31T15:30:59.855122+00:00",
+  "script": "/home/dev/rust_ap/tools/check_mavlink.py",
+  "script_sha256": "ed1d16ce4c8ca8fedf3b6a72b35c914308c5f0f7887bdf370f77c2a360756d47",
+  "python": "/home/dev/rust_ap/.venv/bin/python",
+  "arguments": {
+    "port": null,
+    "wait": 10.0,
+    "list_ports": false,
+    "monitor": 10.0,
+    "raw": null,
+    "expected_version": "0.2.0",
+    "source_id": null
+  },
+  "scans": [
+    {
+      "at_utc": "2026-10-31T15:30:59.864318+00:00",
+      "ports": [
+        {
+          "device": "/dev/ttyACM0",
+          "vid": 4617,
+          "pid": 1,
+          "serial": "V6X-RUST-DUMP",
+          "product": "V6X Rust Dump",
+          "mode": "dump"
+        },
+        {
+          "device": "/dev/ttyS0",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS1",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS10",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS11",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS12",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS13",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS14",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS15",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS16",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS17",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS18",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS19",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS2",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS20",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS21",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS22",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS23",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS24",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS25",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS26",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS27",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS28",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS29",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS3",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS30",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS31",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS4",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS5",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS6",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS7",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS8",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        },
+        {
+          "device": "/dev/ttyS9",
+          "vid": null,
+          "pid": null,
+          "serial": null,
+          "product": null,
+          "mode": null
+        }
+      ]
+    }
+  ],
+  "outcome": "ok",
+  "selected_device": "/dev/ttyACM0",
+  "selected_mode": "dump",
+  "dump_raw": "/home/dev/rust_ap/target/fault-dumps/20261031T153059.855122Z.txt",
+  "finished_utc": "2026-10-31T15:31:09.892554+00:00"
+}

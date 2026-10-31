@@ -1,0 +1,28 @@
+$ cargo size --release --locked -- -A
+cwd=/home/dev/rust_ap
+
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.06s
+v6x-rust-led  :
+section                size        addr
+.vector_table           664   0x8020000
+.text                109224   0x8020298
+.rodata                5736   0x803ad40
+.data                   260  0x24000000
+.gnu.sgstubs              0   0x803c4c0
+.bss                  13552  0x24000108
+.uninit                   0  0x240035f8
+.debug_loc           736183         0x0
+.debug_abbrev          5896         0x0
+.debug_info         1231058         0x0
+.debug_aranges         5208         0x0
+.debug_ranges         78088         0x0
+.debug_str          1066855         0x0
+.comment                139         0x0
+.ARM.attributes          58         0x0
+.debug_frame          19196         0x0
+.debug_line          139199         0x0
+Total               3411316
+
+
+
+exit=0; elapsed_seconds=0.247

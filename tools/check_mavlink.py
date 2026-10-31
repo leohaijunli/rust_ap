@@ -1,25 +1,106 @@
 #!/usr/bin/env python3
-"""Verify the FMUv6X Rust firmware using an independent MAVLink decoder."""
+"""Check FMUv6X Rust MAVLink or monitor normal/fault-dump USB firmware."""
 
 import argparse
+import hashlib
+import json
+import math
+import os
+import sys
 import time
+import tomllib
+from datetime import datetime, timezone
+from pathlib import Path
 
 import serial.tools.list_ports
 from pymavlink import mavutil
 from pymavlink.dialects.v10 import common as mav1
 from pymavlink.dialects.v20 import common as mav2
 
+import decode_fault_dump
+
+DEFAULT_WAIT = 10.0
+
+
+class PortNotReady(RuntimeError):
+    """No usable application port yet; USB may be re-enumerating."""
+
+
+def port_mode(port):
+    if (port.vid, port.pid) == (0x3185, 0x0035):
+        return "bootloader"
+    if (port.vid, port.pid) == (0x1209, 0x0001):
+        return {"V6X-RUST-001": "mavlink", "V6X-RUST-DUMP": "dump"}.get(port.serial_number)
+    return None
+
+
+def describe_port(port):
+    usb = f"{port.vid:04x}:{port.pid:04x}" if port.vid is not None and port.pid is not None else "no USB ID"
+    return f"{port.device} ({port.product or port.description}, {usb}, serial={port.serial_number})"
+
+
+def describe_ports(ports):
+    usb = [port for port in ports if port.vid is not None]
+    descriptions = [describe_port(port) for port in usb]
+    if len(usb) != len(ports):
+        descriptions.append(f"{len(ports) - len(usb)} other serial entries without USB identity")
+    return "; ".join(descriptions) or "none"
+
+
+def select_port(device=None, *, allow_dump=False, on_scan=None):
+    """Resolve USB identity before opening a port; explicit adapters may use MAVLink."""
+    ports = sorted(serial.tools.list_ports.comports(), key=lambda port: port.device)
+    if on_scan is not None:
+        on_scan(ports)
+    observed = describe_ports(ports)
+    if device is not None:
+        matches = [port for port in ports if os.path.realpath(port.device) == os.path.realpath(device)]
+        if not matches:
+            raise PortNotReady(f"Serial port {device} not found. Detected: {observed}")
+        selected = matches[0]
+    else:
+        modes = {"mavlink", "dump"} if allow_dump else {"mavlink"}
+        matches = [port for port in ports if port_mode(port) in modes]
+        if len(matches) > 1:
+            raise RuntimeError(f"Multiple Rust CDC devices; select one with --port. Detected: {observed}")
+        if not matches:
+            hint = "Check the board's USB attachment."
+            if any(port_mode(port) == "dump" for port in ports):
+                hint = "V6X Rust Dump provides diagnostic text only; use check_mavlink.py --monitor 10."
+            elif any(port_mode(port) == "bootloader" for port in ports):
+                hint = "PX4 bootloader is present; application telemetry is unavailable."
+            raise PortNotReady(f"No matching Rust CDC device. {hint} Detected: {observed}")
+        selected = matches[0]
+
+    mode = port_mode(selected)
+    if mode == "bootloader":
+        raise PortNotReady(f"PX4 bootloader has no application telemetry: {describe_port(selected)}")
+    if mode == "dump" and not allow_dump:
+        raise RuntimeError("V6X Rust Dump provides diagnostic text only; use check_mavlink.py --monitor 10.")
+    return selected
+
+
+def wait_for_port(device=None, *, allow_dump=False, seconds=DEFAULT_WAIT, on_scan=None):
+    deadline = None
+    while True:
+        try:
+            return select_port(device, allow_dump=allow_dump, on_scan=on_scan)
+        except PortNotReady:
+            if seconds == 0:
+                raise
+            now = time.monotonic()
+            if deadline is None:
+                deadline = now + seconds
+                print(f"Waiting up to {seconds:g}s for Rust CDC to enumerate...", flush=True)
+            remaining = deadline - now
+            if remaining <= 0:
+                raise
+            time.sleep(min(0.25, remaining))
+
 
 def find_port():
-    ports = [
-        port.device
-        for port in serial.tools.list_ports.comports()
-        if (port.vid, port.pid, port.serial_number)
-        == (0x1209, 0x0001, "V6X-RUST-001")
-    ]
-    if len(ports) != 1:
-        raise RuntimeError(f"Expected one Rust CDC device, found {ports}")
-    return ports[0]
+    """Normal Rust CDC only: p1_capture sends commands unavailable in Dump."""
+    return select_port().device
 
 
 def receive(link, kind, predicate=lambda message: True, timeout=6):
@@ -39,7 +120,22 @@ def request(link, message_id):
     )
 
 
-def check(link):
+def expected_source_id(expected_version, source_id, report):
+    if source_id is not None:
+        if len(source_id) != 16 or any(c not in "0123456789abcdefABCDEF" for c in source_id):
+            raise ValueError("source-id must contain exactly 16 hexadecimal digits")
+        return source_id.lower()
+    if expected_version == "0.1.0":
+        # The preserved recovery baseline predates the source-ID wire format.
+        return f"{int.from_bytes(b'RUSTFMU1', 'little'):016x}"
+    if report.exists():
+        data = json.loads(report.read_text())
+        if data["version"] == expected_version:
+            return expected_source_id(expected_version, data["source_id"], report)
+    return None
+
+
+def check(link, expected_version, source_id=None):
     link.port.reset_input_buffer()
     heartbeat = receive(link, "HEARTBEAT")
     assert heartbeat.autopilot == mavutil.mavlink.MAV_AUTOPILOT_GENERIC
@@ -54,19 +150,24 @@ def check(link):
 
     request(link, 253)
     text = receive(link, "STATUSTEXT")
-    assert text.text.startswith("Rust FMUv6X v0.1.0 running"), text
+    assert text.text.startswith(f"Rust FMUv6X v{expected_version} running"), text
     ack = receive(link, "COMMAND_ACK", lambda msg: msg.command == 512)
     assert ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED
     print(f"STATUSTEXT: {text.text}")
 
     request(link, 148)
     version = receive(link, "AUTOPILOT_VERSION")
-    assert version.flight_sw_version == 1 << 16
-    assert bytes(version.flight_custom_version) == b"RUSTFMU1"
+    major, minor, patch = map(int, expected_version.split("."))
+    assert version.flight_sw_version == major << 24 | minor << 16 | patch << 8
+    actual_source = int.from_bytes(bytes(version.flight_custom_version), "little")
+    if source_id is not None:
+        assert actual_source == int(source_id, 16), f"Firmware source mismatch: {actual_source:016x}"
+    else:
+        assert actual_source != 0
     assert version.uid != 0
     ack = receive(link, "COMMAND_ACK", lambda msg: msg.command == 512)
     assert ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED
-    print(f"AUTOPILOT_VERSION: Rust 0.1.0, MCU UID={version.uid:016x}")
+    print(f"AUTOPILOT_VERSION: Rust {expected_version}, source={actual_source:016x}, MCU UID={version.uid:016x}")
 
     link.mav.param_request_list_send(1, 1)
     parameters = {}
@@ -130,34 +231,140 @@ def check(link):
     print("MAVLink wire checks: PASS")
 
 
-def main():
+def monitor(link, seconds):
+    link.port.reset_input_buffer()
+    request(link, 253)
+    deadline = time.monotonic() + seconds
+    received = 0
+    while time.monotonic() < deadline:
+        message = link.recv_match(
+            type=["HEARTBEAT", "STATUSTEXT", "SYSTEM_TIME", "COMMAND_ACK"],
+            blocking=True, timeout=0.2,
+        )
+        if message is not None:
+            received += 1
+            print(f"sys={message.get_srcSystem()} comp={message.get_srcComponent()} {message}")
+    if not received:
+        raise TimeoutError(f"No MAVLink telemetry received in {seconds:g}s")
+
+
+def monitor_dump(port, seconds, raw):
+    print(f"V6X Rust Dump: capturing diagnostic text for {seconds:g}s (no MAVLink/QGC heartbeat)", flush=True)
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    # Preserve exact bytes, including partial captures if USB disconnects.
+    with raw.open("xb") as output:
+        print(f"Raw dump: {raw}", flush=True)
+        text = decode_fault_dump.read_port(port, seconds, raw=output)
+        byte_count = output.tell()
+    print(f"Captured {byte_count} bytes", flush=True)
+    if byte_count == 0:
+        raise TimeoutError(f"Dump CDC opened but received 0 bytes in {seconds:g}s")
+    result = decode_fault_dump.decode_text(text)
+    decode_fault_dump.print_report(result)
+    if not result["complete"]:
+        raise RuntimeError("Incomplete V6X_DUMP report; capture again with --monitor 10 or a longer duration")
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", help="Serial port; defaults to the Rust CDC device")
-    parser.add_argument("--monitor", type=float, metavar="SECONDS", help="Print decoded telemetry for this duration instead of running checks")
-    args = parser.parse_args()
-    port = args.port or find_port()
-    print(f"Checking {port}")
-    link = mavutil.mavlink_connection(
-        port, baud=115200, source_system=255, source_component=190,
-        autoreconnect=False,
-    )
+    parser.add_argument("--port", help="Serial port or by-id path; defaults to one normal or Dump Rust CDC device")
+    parser.add_argument("--wait", type=float, default=DEFAULT_WAIT, metavar="SECONDS", help="Wait for USB enumeration before capture/checks (default: 10; 0: one scan)")
+    parser.add_argument("--list-ports", action="store_true", help="Print USB serial identities and save diagnostics without opening a port")
+    parser.add_argument("--monitor", type=float, metavar="SECONDS", help="Monitor MAVLink or capture/decode Dump text for this duration")
+    parser.add_argument("--raw", type=Path, help="New Dump capture file; default: target/fault-dumps/<timestamp>.txt (honors CARGO_TARGET_DIR)")
+    root = Path(__file__).resolve().parents[1]
+    parser.add_argument("--expected-version", default=tomllib.loads((root / "Cargo.toml").read_text())["package"]["version"])
+    parser.add_argument("--source-id", help="Expected hexadecimal !platform source ID")
+    args = parser.parse_args(argv)
+    if args.monitor is not None and (not math.isfinite(args.monitor) or args.monitor <= 0):
+        parser.error("--monitor must be a positive, finite number of seconds")
+    if not math.isfinite(args.wait) or args.wait < 0:
+        parser.error("--wait must be a nonnegative, finite number of seconds")
+    if args.list_ports and (args.port is not None or args.monitor is not None or args.raw is not None):
+        parser.error("--list-ports cannot be combined with --port, --monitor or --raw")
+    if args.raw and args.monitor is None:
+        parser.error("--raw requires --monitor and a Dump device")
+    target = Path(os.environ.get("CARGO_TARGET_DIR", str(root / "target")))
+    started = datetime.now(timezone.utc)
+    run_name = started.strftime("%Y%m%dT%H%M%S.%fZ")
+    script = Path(__file__).resolve()
+    diagnostics = {
+        "schema": 1, "started_utc": started.isoformat(),
+        "script": str(script), "script_sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
+        "python": sys.executable, "arguments": vars(args), "scans": [], "outcome": "incomplete",
+    }
+
+    def record_scan(ports):
+        entries = [{"device": port.device, "vid": port.vid, "pid": port.pid,
+                    "serial": port.serial_number, "product": port.product, "mode": port_mode(port)}
+                   for port in ports]
+        scans = diagnostics["scans"]
+        if not scans or scans[-1]["ports"] != entries:
+            scans.append({"at_utc": datetime.now(timezone.utc).isoformat(), "ports": entries})
+
+    print(f"Tool: {script} sha256={diagnostics['script_sha256'][:12]}", flush=True)
     try:
+        if args.list_ports:
+            ports = sorted(serial.tools.list_ports.comports(), key=lambda port: port.device)
+            record_scan(ports)
+            print(f"Python: {sys.executable}")
+            print(f"Detected: {describe_ports(ports)}")
+            for port in ports:
+                if port_mode(port) is not None:
+                    print(f"mode={port_mode(port)} {port.device}")
+            diagnostics["outcome"] = "listed"
+            return 0
+        port = wait_for_port(args.port, allow_dump=True, seconds=args.wait, on_scan=record_scan)
+        diagnostics["selected_device"] = port.device
+        diagnostics["selected_mode"] = port_mode(port) or "mavlink"
+        print(f"Device: {describe_port(port)}", flush=True)
+        if port_mode(port) == "dump":
+            if args.monitor is None:
+                raise RuntimeError("V6X Rust Dump has no MAVLink; use --monitor 10 to capture/decode diagnostics")
+            raw = args.raw or target / "fault-dumps" / f"{run_name}.txt"
+            diagnostics["dump_raw"] = str(raw)
+            monitor_dump(port.device, args.monitor, raw)
+            diagnostics["outcome"] = "ok"
+            return 0
+        if args.raw:
+            diagnostics.update(outcome="invalid-arguments", error="--raw is only supported for a Dump device")
+            parser.error("--raw is only supported for a Dump device")
         if args.monitor is None:
-            check(link)
-        else:
-            link.port.reset_input_buffer()
-            request(link, 253)
-            deadline = time.monotonic() + args.monitor
-            while time.monotonic() < deadline:
-                message = link.recv_match(
-                    type=["HEARTBEAT", "STATUSTEXT", "SYSTEM_TIME", "COMMAND_ACK"],
-                    blocking=True, timeout=0.2,
-                )
-                if message is not None:
-                    print(f"sys={message.get_srcSystem()} comp={message.get_srcComponent()} {message}")
+            report = target / "thumbv7em-none-eabihf/release/v6x-rust-led.build.json"
+            args.source_id = expected_source_id(args.expected_version, args.source_id, report)
+        link = mavutil.mavlink_connection(
+            port.device, baud=115200, source_system=255, source_component=190,
+            autoreconnect=False,
+        )
+        try:
+            if args.monitor is None:
+                check(link, args.expected_version, args.source_id)
+            else:
+                monitor(link, args.monitor)
+        finally:
+            link.close()
+        diagnostics["outcome"] = "ok"
+    except (OSError, RuntimeError, ValueError, KeyError, AssertionError) as error:
+        diagnostics.update(outcome="error", error=str(error) or "MAVLink check failed")
+        print(f"Error: {error or 'MAVLink check failed'}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        diagnostics.update(outcome="interrupted", error="KeyboardInterrupt")
+        print("Interrupted", file=sys.stderr)
+        return 130
     finally:
-        link.close()
+        diagnostics["finished_utc"] = datetime.now(timezone.utc).isoformat()
+        log = target / "monitor-logs" / f"{run_name}.json"
+        try:
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with log.open("x", encoding="utf-8") as output:
+                json.dump(diagnostics, output, indent=2, default=str)
+                output.write("\n")
+            print(f"Diagnostics: {log}", flush=True)
+        except OSError as error:
+            print(f"Cannot save diagnostics to {log}: {error}", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

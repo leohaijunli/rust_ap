@@ -1,0 +1,12 @@
+$ bash tools/firmware.sh check
+cwd=/home/dev/rust_ap
+
+   Compiling v6x-rust-led v0.1.0 (/home/dev/rust_ap)
+    Finished `release` profile [optimized + debuginfo] target(s) in 1.76s
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.004s
+
+OK
+
+exit=0; elapsed_seconds=2.993

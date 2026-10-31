@@ -1,0 +1,22 @@
+{
+  "cybflight-core-test.txt": {
+    "passed": 446,
+    "failed": 0,
+    "ignored": 12
+  },
+  "cybflight-driver-test.txt": {
+    "passed": 26,
+    "failed": 0,
+    "ignored": 0
+  },
+  "cybflight-vehicle-test.txt": {
+    "passed": 51,
+    "failed": 0,
+    "ignored": 0
+  },
+  "cybflight-sim-regression.txt": {
+    "passed": 1,
+    "failed": 0,
+    "ignored": 0
+  }
+}

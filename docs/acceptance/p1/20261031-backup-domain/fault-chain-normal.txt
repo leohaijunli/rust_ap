@@ -1,0 +1,318 @@
+P1 backup-domain fix: normal HardFault static review
+source_id=a946a529360eac83
+ELF SHA-256=69125f92ddd505dd09c1e0fbbde7071a8ef8ef3a78e58ba4bff7b4aaef8a84c2
+disassembly.txt SHA-256=16ec52b939d8ecdf029c74060273dc3b970bcd2fdae3fa78144090a826ccb051
+Disassembly body re-generated from the archived ELF and compared byte-for-byte.
+Reviewer: agent; software-only review, no device execution.
+Local SP use includes push, pre-index stores and sub sp.
+Maximum reviewed software call chain: 72 + 8 + 16 + 36 = 132 B.
+Reserved fault stack: 1024 B; software-call headroom: 892 B.
+Excludes hardware exception stacking, NMI nesting and a second fault/lockup.
+
+0x08020314  local_stack=  0 B  HardFault
+0x08026780  local_stack= 72 B  fault::hard_fault
+0x0803cc20  local_stack=  8 B  __aeabi_memclr4
+0x0802695c  local_stack=  8 B  fault::recover
+0x0803cb10  local_stack= 16 B  FaultRecord::seal
+0x0803cb1e  local_stack= 36 B  fault_record::checksum
+0x08026826  local_stack=  8 B  fault::write_record
+0x080268c8  local_stack=  8 B  fault::reboot_to_bootloader
+0x0802568c  local_stack=  8 B  SCB::sys_reset
+
+08020314 <HardFault>:
+ 8020314: b672         	cpsid i
+ 8020316: 4671         	mov	r1, lr
+ 8020318: f01e 0f04    	tst.w	lr, #0x4
+ 802031c: bf0c         	ite	eq
+ 802031e: f3ef 8008    	mrseq	r0, msp
+ 8020322: f3ef 8009    	mrsne	r0, psp
+ 8020326: 4a03         	ldr	r2, [pc, #0xc]          @ 0x8020334 <HardFault+0x20>
+ 8020328: f382 8808    	msr	msp, r2
+ 802032c: f3bf 8f6f    	isb	sy
+ 8020330: f006 ba26    	b.w	0x8026780 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault10hard_fault> @ imm = #0x644c
+ 8020334: 00 00 07 24  	.word	0x24070000
+
+08026780 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault10hard_fault>:
+ 8026780: b580         	push	{r7, lr}
+ 8026782: 466f         	mov	r7, sp
+ 8026784: b090         	sub	sp, #0x40
+ 8026786: 4604         	mov	r4, r0
+ 8026788: f64e 5028    	movw	r0, #0xed28
+ 802678c: f2ce 0000    	movt	r0, #0xe000
+ 8026790: 460d         	mov	r5, r1
+ 8026792: 6806         	ldr	r6, [r0]
+ 8026794: 4668         	mov	r0, sp
+ 8026796: 3010         	adds	r0, #0x10
+ 8026798: 2130         	movs	r1, #0x30
+ 802679a: f016 fa41    	bl	0x803cc20 <__aeabi_memclr4> @ imm = #0x16482
+ 802679e: f24a 5029    	movw	r0, #0xa529
+ 80267a2: 950e         	str	r5, [sp, #0x38]
+ 80267a4: f6ca 1046    	movt	r0, #0xa946
+ 80267a8: 9408         	str	r4, [sp, #0x20]
+ 80267aa: 9003         	str	r0, [sp, #0xc]
+ 80267ac: f64a 4083    	movw	r0, #0xac83
+ 80267b0: f2c3 600e    	movt	r0, #0x360e
+ 80267b4: 9002         	str	r0, [sp, #0x8]
+ 80267b6: 2002         	movs	r0, #0x2
+ 80267b8: 9001         	str	r0, [sp, #0x4]
+ 80267ba: f244 6031    	movw	r0, #0x4631
+ 80267be: f2c5 0031    	movt	r0, #0x5031
+ 80267c2: 9000         	str	r0, [sp]
+ 80267c4: f105 001f    	add.w	r0, r5, #0x1f
+ 80267c8: ea4f 00b0    	ror.w	r0, r0, #0x2
+ 80267cc: 2807         	cmp	r0, #0x7
+ 80267ce: d827         	bhi	0x8026820 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault10hard_fault+0xa0> @ imm = #0x4e
+ 80267d0: 2101         	movs	r1, #0x1
+ 80267d2: fa01 f000    	lsl.w	r0, r1, r0
+ 80267d6: f010 0fdd    	tst.w	r0, #0xdd
+ 80267da: d021         	beq	0x8026820 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault10hard_fault+0xa0> @ imm = #0x42
+ 80267dc: 2000         	movs	r0, #0x0
+ 80267de: f2c2 4007    	movt	r0, #0x2407
+ 80267e2: 4284         	cmp	r4, r0
+ 80267e4: d31c         	blo	0x8026820 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault10hard_fault+0xa0> @ imm = #0x38
+ 80267e6: f643 0038    	movw	r0, #0x3838
+ 80267ea: f004 0103    	and	r1, r4, #0x3
+ 80267ee: 4030         	ands	r0, r6
+ 80267f0: 1840         	adds	r0, r0, r1
+ 80267f2: d115         	bne	0x8026820 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault10hard_fault+0xa0> @ imm = #0x2a
+ 80267f4: f64f 7098    	movw	r0, #0xff98
+ 80267f8: 06e9         	lsls	r1, r5, #0x1b
+ 80267fa: f2c2 4007    	movt	r0, #0x2407
+ 80267fe: f100 0048    	add.w	r0, r0, #0x48
+ 8026802: bf5c         	itt	pl
+ 8026804: f64f 7098    	movwpl	r0, #0xff98
+ 8026808: f2c2 4007    	movtpl	r0, #0x2407
+ 802680c: 4284         	cmp	r4, r0
+ 802680e: d807         	bhi	0x8026820 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault10hard_fault+0xa0> @ imm = #0xe
+ 8026810: 6960         	ldr	r0, [r4, #0x14]
+ 8026812: 2301         	movs	r3, #0x1
+ 8026814: 69a1         	ldr	r1, [r4, #0x18]
+ 8026816: 69e2         	ldr	r2, [r4, #0x1c]
+ 8026818: 9304         	str	r3, [sp, #0x10]
+ 802681a: e9cd 1006    	strd	r1, r0, [sp, #24]
+ 802681e: 9209         	str	r2, [sp, #0x24]
+ 8026820: 4668         	mov	r0, sp
+ 8026822: f000 f89b    	bl	0x802695c <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault7recover> @ imm = #0x136
+
+0803cc20 <__aeabi_memclr4>:
+ 803cc20: b580         	push	{r7, lr}
+ 803cc22: 466f         	mov	r7, sp
+ 803cc24: 2904         	cmp	r1, #0x4
+ 803cc26: d314         	blo	0x803cc52 <__aeabi_memclr4+0x32> @ imm = #0x28
+ 803cc28: f1a1 0c04    	sub.w	r12, r1, #0x4
+ 803cc2c: 2201         	movs	r2, #0x1
+ 803cc2e: eb02 029c    	add.w	r2, r2, r12, lsr #2
+ 803cc32: f012 0303    	ands	r3, r2, #0x3
+ 803cc36: d00e         	beq	0x803cc56 <__aeabi_memclr4+0x36> @ imm = #0x1c
+ 803cc38: f04f 0e00    	mov.w	lr, #0x0
+ 803cc3c: 4602         	mov	r2, r0
+ 803cc3e: f842 eb04    	str	lr, [r2], #4
+ 803cc42: 2b01         	cmp	r3, #0x1
+ 803cc44: d10b         	bne	0x803cc5e <__aeabi_memclr4+0x3e> @ imm = #0x16
+ 803cc46: 4661         	mov	r1, r12
+ 803cc48: 4610         	mov	r0, r2
+ 803cc4a: f1bc 0f0c    	cmp.w	r12, #0xc
+ 803cc4e: d219         	bhs	0x803cc84 <__aeabi_memclr4+0x64> @ imm = #0x32
+ 803cc50: e022         	b	0x803cc98 <__aeabi_memclr4+0x78> @ imm = #0x44
+ 803cc52: 4602         	mov	r2, r0
+ 803cc54: e020         	b	0x803cc98 <__aeabi_memclr4+0x78> @ imm = #0x40
+ 803cc56: f1bc 0f0c    	cmp.w	r12, #0xc
+ 803cc5a: d213         	bhs	0x803cc84 <__aeabi_memclr4+0x64> @ imm = #0x26
+ 803cc5c: e01c         	b	0x803cc98 <__aeabi_memclr4+0x78> @ imm = #0x38
+ 803cc5e: 2b02         	cmp	r3, #0x2
+ 803cc60: f8c0 e004    	str.w	lr, [r0, #0x4]
+ 803cc64: d106         	bne	0x803cc74 <__aeabi_memclr4+0x54> @ imm = #0xc
+ 803cc66: 3908         	subs	r1, #0x8
+ 803cc68: 3008         	adds	r0, #0x8
+ 803cc6a: 4602         	mov	r2, r0
+ 803cc6c: f1bc 0f0c    	cmp.w	r12, #0xc
+ 803cc70: d208         	bhs	0x803cc84 <__aeabi_memclr4+0x64> @ imm = #0x10
+ 803cc72: e011         	b	0x803cc98 <__aeabi_memclr4+0x78> @ imm = #0x22
+ 803cc74: 2200         	movs	r2, #0x0
+ 803cc76: 390c         	subs	r1, #0xc
+ 803cc78: 6082         	str	r2, [r0, #0x8]
+ 803cc7a: 300c         	adds	r0, #0xc
+ 803cc7c: 4602         	mov	r2, r0
+ 803cc7e: f1bc 0f0c    	cmp.w	r12, #0xc
+ 803cc82: d309         	blo	0x803cc98 <__aeabi_memclr4+0x78> @ imm = #0x12
+ 803cc84: 2300         	movs	r3, #0x0
+ 803cc86: 4602         	mov	r2, r0
+ 803cc88: 3910         	subs	r1, #0x10
+ 803cc8a: e9c2 3300    	strd	r3, r3, [r2]
+ 803cc8e: e9c2 3302    	strd	r3, r3, [r2, #8]
+ 803cc92: 3210         	adds	r2, #0x10
+ 803cc94: 2903         	cmp	r1, #0x3
+ 803cc96: d8f7         	bhi	0x803cc88 <__aeabi_memclr4+0x68> @ imm = #-0x12
+ 803cc98: 1850         	adds	r0, r2, r1
+ 803cc9a: 4282         	cmp	r2, r0
+ 803cc9c: d221         	bhs	0x803cce2 <__aeabi_memclr4+0xc2> @ imm = #0x42
+ 803cc9e: f1a1 0c01    	sub.w	r12, r1, #0x1
+ 803cca2: f011 0303    	ands	r3, r1, #0x3
+ 803cca6: d00c         	beq	0x803ccc2 <__aeabi_memclr4+0xa2> @ imm = #0x18
+ 803cca8: f04f 0e00    	mov.w	lr, #0x0
+ 803ccac: 4611         	mov	r1, r2
+ 803ccae: f801 eb01    	strb	lr, [r1], #1
+ 803ccb2: 2b01         	cmp	r3, #0x1
+ 803ccb4: d00a         	beq	0x803cccc <__aeabi_memclr4+0xac> @ imm = #0x14
+ 803ccb6: 2b02         	cmp	r3, #0x2
+ 803ccb8: f882 e001    	strb.w	lr, [r2, #0x1]
+ 803ccbc: d103         	bne	0x803ccc6 <__aeabi_memclr4+0xa6> @ imm = #0x6
+ 803ccbe: 1c91         	adds	r1, r2, #0x2
+ 803ccc0: e004         	b	0x803cccc <__aeabi_memclr4+0xac> @ imm = #0x8
+ 803ccc2: 4611         	mov	r1, r2
+ 803ccc4: e002         	b	0x803cccc <__aeabi_memclr4+0xac> @ imm = #0x4
+ 803ccc6: 2100         	movs	r1, #0x0
+ 803ccc8: 7091         	strb	r1, [r2, #0x2]
+ 803ccca: 1cd1         	adds	r1, r2, #0x3
+ 803cccc: f1bc 0f03    	cmp.w	r12, #0x3
+ 803ccd0: bf38         	it	lo
+ 803ccd2: bd80         	poplo	{r7, pc}
+ 803ccd4: 3904         	subs	r1, #0x4
+ 803ccd6: 2200         	movs	r2, #0x0
+ 803ccd8: f841 2f04    	str	r2, [r1, #4]!
+ 803ccdc: 1d0b         	adds	r3, r1, #0x4
+ 803ccde: 4283         	cmp	r3, r0
+ 803cce0: d1fa         	bne	0x803ccd8 <__aeabi_memclr4+0xb8> @ imm = #-0xc
+ 803cce2: bd80         	pop	{r7, pc}
+
+0802695c <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault7recover>:
+ 802695c: b580         	push	{r7, lr}
+ 802695e: 466f         	mov	r7, sp
+ 8026960: 4604         	mov	r4, r0
+ 8026962: f64e 5028    	movw	r0, #0xed28
+ 8026966: f2ce 0000    	movt	r0, #0xe000
+ 802696a: b672         	cpsid i
+ 802696c: 6801         	ldr	r1, [r0]
+ 802696e: f104 0c28    	add.w	r12, r4, #0x28
+ 8026972: 6842         	ldr	r2, [r0, #0x4]
+ 8026974: 68c3         	ldr	r3, [r0, #0xc]
+ 8026976: 6900         	ldr	r0, [r0, #0x10]
+ 8026978: 6360         	str	r0, [r4, #0x34]
+ 802697a: 4620         	mov	r0, r4
+ 802697c: e88c 000e    	stm.w	r12, {r1, r2, r3}
+ 8026980: f016 f8c6    	bl	0x803cb10 <_RNvMNtCs3A1QV6Nub2c_12v6x_rust_led12fault_recordNtB2_11FaultRecord4seal> @ imm = #0x1618c
+ 8026984: 4620         	mov	r0, r4
+ 8026986: f7ff ff4e    	bl	0x8026826 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault12write_record> @ imm = #-0x164
+ 802698a: f7ff ff9d    	bl	0x80268c8 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault20reboot_to_bootloader> @ imm = #-0xc6
+
+0803cb10 <_RNvMNtCs3A1QV6Nub2c_12v6x_rust_led12fault_recordNtB2_11FaultRecord4seal>:
+ 803cb10: b5d0         	push	{r4, r6, r7, lr}
+ 803cb12: af02         	add	r7, sp, #0x8
+ 803cb14: 4604         	mov	r4, r0
+ 803cb16: f000 f802    	bl	0x803cb1e <_RNvNtCs3A1QV6Nub2c_12v6x_rust_led12fault_record8checksum> @ imm = #0x4
+ 803cb1a: 63e0         	str	r0, [r4, #0x3c]
+ 803cb1c: bdd0         	pop	{r4, r6, r7, pc}
+
+0803cb1e <_RNvNtCs3A1QV6Nub2c_12v6x_rust_led12fault_record8checksum>:
+ 803cb1e: b5f0         	push	{r4, r5, r6, r7, lr}
+ 803cb20: af03         	add	r7, sp, #0xc
+ 803cb22: f84d bd04    	str	r11, [sp, #-4]!
+ 803cb26: b083         	sub	sp, #0xc
+ 803cb28: f248 3320    	movw	r3, #0x8320
+ 803cb2c: 4669         	mov	r1, sp
+ 803cb2e: f101 0e08    	add.w	lr, r1, #0x8
+ 803cb32: f04f 0c00    	mov.w	r12, #0x0
+ 803cb36: f04f 32ff    	mov.w	r2, #0xffffffff
+ 803cb3a: f6ce 53b8    	movt	r3, #0xedb8
+ 803cb3e: f850 100c    	ldr.w	r1, [r0, r12]
+ 803cb42: 9102         	str	r1, [sp, #0x8]
+ 803cb44: 2100         	movs	r1, #0x0
+ 803cb46: f81e 4001    	ldrb.w	r4, [lr, r1]
+ 803cb4a: ea82 0504    	eor.w	r5, r2, r4
+ 803cb4e: 2408         	movs	r4, #0x8
+ 803cb50: ea83 0255    	eor.w	r2, r3, r5, lsr #1
+ 803cb54: 07ee         	lsls	r6, r5, #0x1f
+ 803cb56: bf08         	it	eq
+ 803cb58: 086a         	lsreq	r2, r5, #0x1
+ 803cb5a: 3c01         	subs	r4, #0x1
+ 803cb5c: 4615         	mov	r5, r2
+ 803cb5e: d1f7         	bne	0x803cb50 <_RNvNtCs3A1QV6Nub2c_12v6x_rust_led12fault_record8checksum+0x32> @ imm = #-0x12
+ 803cb60: 3101         	adds	r1, #0x1
+ 803cb62: 2904         	cmp	r1, #0x4
+ 803cb64: d1ef         	bne	0x803cb46 <_RNvNtCs3A1QV6Nub2c_12v6x_rust_led12fault_record8checksum+0x28> @ imm = #-0x22
+ 803cb66: f10c 0c04    	add.w	r12, r12, #0x4
+ 803cb6a: f1bc 0f3c    	cmp.w	r12, #0x3c
+ 803cb6e: d1e6         	bne	0x803cb3e <_RNvNtCs3A1QV6Nub2c_12v6x_rust_led12fault_record8checksum+0x20> @ imm = #-0x34
+ 803cb70: 43d0         	mvns	r0, r2
+ 803cb72: b003         	add	sp, #0xc
+ 803cb74: f85d bb04    	ldr	r11, [sp], #4
+ 803cb78: bdf0         	pop	{r4, r5, r6, r7, pc}
+
+08026826 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault12write_record>:
+ 8026826: b580         	push	{r7, lr}
+ 8026828: 466f         	mov	r7, sp
+ 802682a: f244 41f4    	movw	r1, #0x44f4
+ 802682e: f6c5 0102    	movt	r1, #0x5802
+ 8026832: 680a         	ldr	r2, [r1]
+ 8026834: f442 3280    	orr	r2, r2, #0x10000
+ 8026838: 600a         	str	r2, [r1]
+ 802683a: 680a         	ldr	r2, [r1]
+ 802683c: f8d1 230c    	ldr.w	r2, [r1, #0x30c]
+ 8026840: f442 7280    	orr	r2, r2, #0x100
+ 8026844: f8c1 230c    	str.w	r2, [r1, #0x30c]
+ 8026848: f242 7211    	movw	r2, #0x2711
+ 802684c: 3a01         	subs	r2, #0x1
+ 802684e: bf08         	it	eq
+ 8026850: bd80         	popeq	{r7, pc}
+ 8026852: f8d1 330c    	ldr.w	r3, [r1, #0x30c]
+ 8026856: 05db         	lsls	r3, r3, #0x17
+ 8026858: d5f8         	bpl	0x802684c <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault12write_record+0x26> @ imm = #-0x10
+ 802685a: f244 0c90    	movw	r12, #0x4090
+ 802685e: 2200         	movs	r2, #0x0
+ 8026860: f6c5 0c00    	movt	r12, #0x5800
+ 8026864: f8cc 2000    	str.w	r2, [r12]
+ 8026868: eb00 0182    	add.w	r1, r0, r2, lsl #2
+ 802686c: eb0c 0382    	add.w	r3, r12, r2, lsl #2
+ 8026870: 3201         	adds	r2, #0x1
+ 8026872: 6849         	ldr	r1, [r1, #0x4]
+ 8026874: 2a0f         	cmp	r2, #0xf
+ 8026876: 6059         	str	r1, [r3, #0x4]
+ 8026878: d1f6         	bne	0x8026868 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault12write_record+0x42> @ imm = #-0x14
+ 802687a: f3bf 8f4f    	dsb	sy
+ 802687e: 6800         	ldr	r0, [r0]
+ 8026880: f8cc 0000    	str.w	r0, [r12]
+ 8026884: f3bf 8f4f    	dsb	sy
+ 8026888: bd80         	pop	{r7, pc}
+
+080268c8 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault20reboot_to_bootloader>:
+ 80268c8: b580         	push	{r7, lr}
+ 80268ca: 466f         	mov	r7, sp
+ 80268cc: f244 40f4    	movw	r0, #0x44f4
+ 80268d0: b672         	cpsid i
+ 80268d2: f6c5 0002    	movt	r0, #0x5802
+ 80268d6: 6801         	ldr	r1, [r0]
+ 80268d8: f441 3180    	orr	r1, r1, #0x10000
+ 80268dc: 6001         	str	r1, [r0]
+ 80268de: 6801         	ldr	r1, [r0]
+ 80268e0: f8d0 130c    	ldr.w	r1, [r0, #0x30c]
+ 80268e4: f441 7180    	orr	r1, r1, #0x100
+ 80268e8: f8c0 130c    	str.w	r1, [r0, #0x30c]
+ 80268ec: f242 7111    	movw	r1, #0x2711
+ 80268f0: 3901         	subs	r1, #0x1
+ 80268f2: d00c         	beq	0x802690e <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault20reboot_to_bootloader+0x46> @ imm = #0x18
+ 80268f4: f8d0 230c    	ldr.w	r2, [r0, #0x30c]
+ 80268f8: 05d2         	lsls	r2, r2, #0x17
+ 80268fa: d5f9         	bpl	0x80268f0 <_RNvNtCsfkyeKOwrDkP_12v6x_rust_led5fault20reboot_to_bootloader+0x28> @ imm = #-0xe
+ 80268fc: f244 0050    	movw	r0, #0x4050
+ 8026900: f24b 0107    	movw	r1, #0xb007
+ 8026904: f6c5 0000    	movt	r0, #0x5800
+ 8026908: f2cb 0107    	movt	r1, #0xb007
+ 802690c: 6001         	str	r1, [r0]
+ 802690e: f3bf 8f4f    	dsb	sy
+ 8026912: f7fe febb    	bl	0x802568c <_RNvMs6_NtNtCs7WyEsaqdl6S_8cortex_m10peripheral3scbNtB7_3SCB9sys_reset> @ imm = #-0x128a
+
+0802568c <_RNvMs6_NtNtCs7WyEsaqdl6S_8cortex_m10peripheral3scbNtB7_3SCB9sys_reset>:
+ 802568c: b580         	push	{r7, lr}
+ 802568e: 466f         	mov	r7, sp
+ 8025690: f64e 500c    	movw	r0, #0xed0c
+ 8025694: f2ce 0000    	movt	r0, #0xe000
+ 8025698: f3bf 8f4f    	dsb	sy
+ 802569c: 6801         	ldr	r1, [r0]
+ 802569e: 2204         	movs	r2, #0x4
+ 80256a0: f2c0 52fa    	movt	r2, #0x5fa
+ 80256a4: f401 61e0    	and	r1, r1, #0x700
+ 80256a8: 4311         	orrs	r1, r2
+ 80256aa: 6001         	str	r1, [r0]
+ 80256ac: f3bf 8f4f    	dsb	sy
+ 80256b0: bf00         	nop
+ 80256b2: e7fd         	b	0x80256b0 <_RNvMs6_NtNtCs7WyEsaqdl6S_8cortex_m10peripheral3scbNtB7_3SCB9sys_reset+0x24> @ imm = #-0x6

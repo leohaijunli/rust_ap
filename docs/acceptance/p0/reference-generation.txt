@@ -1,0 +1,4 @@
+$ .venv/bin/python tools/p0/reference_vectors.py --pydronecan /tmp/opencode/rust-ap-p0-20261031/pydronecan --dsdl /tmp/opencode/rust-ap-p0-20261031/DSDL --output docs/acceptance/p0/dronecan-vectors.json
+Generated 40 reference vectors and 3 rejections; Rust interoperability remains pending.
+
+exit=0

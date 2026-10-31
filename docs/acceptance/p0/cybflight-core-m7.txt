@@ -1,0 +1,22 @@
+$ cargo check -p cybflight-core --target thumbv7em-none-eabihf --release --locked
+cwd=/tmp/opencode/rust-ap-p0-20261031/cybflight
+RUSTUP_TOOLCHAIN=1.94.0 VEHICLE=sakura_vicon
+
+   Compiling libm v0.2.16
+   Compiling num-traits v0.2.19
+    Checking typenum v1.20.0
+    Checking cfg-if v1.0.4
+    Checking float-cmp v0.10.0
+   Compiling crc32fast v1.5.0
+    Checking num-complex v0.4.6
+    Checking approx v0.5.1
+    Checking num-integer v0.1.46
+    Checking air-filters v0.0.5
+    Checking num-rational v0.4.2
+    Checking simba v0.9.1
+    Checking nalgebra v0.34.2
+    Checking flight-solver v0.1.0
+    Checking cybflight-core v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/cybflight_core)
+    Finished `release` profile [optimized + debuginfo] target(s) in 9.69s
+
+exit=0; elapsed_seconds=9.746

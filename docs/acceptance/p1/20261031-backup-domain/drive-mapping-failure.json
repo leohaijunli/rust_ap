@@ -1,0 +1,56 @@
+{
+  "bdcr_before": 33035,
+  "bdcr_after": 33043,
+  "csr_after": 0,
+  "hal_entered": true,
+  "panicked": false,
+  "preserved": false,
+  "bkp_matches": false,
+  "calendar_matches": false,
+  "bdrst_writes": 1,
+  "config_change_writes": 5,
+  "rtc_writes": 0,
+  "disturbed": false,
+  "writes": [
+    {
+      "pc": 134372474,
+      "address": 1476544524,
+      "size": 4,
+      "value": 83886150
+    },
+    {
+      "pc": 134373824,
+      "address": 1476543600,
+      "size": 4,
+      "value": 98571
+    },
+    {
+      "pc": 134373842,
+      "address": 1476543600,
+      "size": 4,
+      "value": 0
+    },
+    {
+      "pc": 134373896,
+      "address": 1476543600,
+      "size": 4,
+      "value": 17
+    },
+    {
+      "pc": 134373932,
+      "address": 1476543600,
+      "size": 4,
+      "value": 33043
+    },
+    {
+      "pc": 134374176,
+      "address": 1476543600,
+      "size": 4,
+      "value": 33043
+    }
+  ],
+  "source_id": "8f9dd4c92a1d2768",
+  "expected": "preserve",
+  "case": "LSE-oscillator-drive1",
+  "outcome": "FAIL: retained drive changed; HAL reset RTC/BKP"
+}

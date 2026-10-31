@@ -1,0 +1,30 @@
+$ cargo test --target x86_64-unknown-linux-gnu --no-default-features --features imu_count_1,std -- --test-threads=1
+cwd=/tmp/opencode/rust-ap-p0-20261031/holsatus-flight/common
+RUSTUP_TOOLCHAIN=1.99.1; upstream supplies no Cargo.lock
+
+    Updating git repository `https://github.com/jmagnuson/ahrs-rs`
+    Updating crates.io index
+    Updating git repository `https://github.com/holsatus/bmi088-driver`
+    Updating git repository `https://github.com/holsatus/bmi270-driver`
+    Updating git repository `https://github.com/hawkw/mycelium`
+    Updating git repository `https://github.com/embassy-rs/embassy`
+    Updating git repository `https://github.com/funbiscuit/embedded-cli-rs`
+    Updating git repository `https://github.com/MabezDev/embedded-fatfs`
+    Updating git repository `https://github.com/peterkrull/eskf-rs`
+    Updating git repository `https://github.com/holsatus/grantable-io`
+    Updating git repository `https://github.com/peterkrull/mag-calibrator-rs`
+    Updating git repository `https://github.com/holsatus/mav-param`
+    Updating git repository `https://gitlab.com/peterkrull/mavio/`
+    Updating git submodule `https://gitlab.com/mavka/spec/protocols/mavlink/message-definitions-v1.0.git`
+    Updating git repository `https://github.com/peterkrull/tinympc-rs`
+error: failed to select a version for `mav-param`.
+    ... required by package `common v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/holsatus-flight/common)`
+versions that meet the requirements `*` are: 0.2.0
+
+package `common` depends on `mav-param` with feature `serde` but `mav-param` does not have that feature.
+help: available features: defmt
+
+
+failed to select a version for `mav-param` which could resolve this conflict
+
+exit=101; elapsed_seconds=29.408

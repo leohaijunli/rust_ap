@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "version": "0.2.0",
+  "source_id": "8f9dd4c92a1d2768",
+  "features": [],
+  "git_head": "5daeca30fcd116203164f44128239e7dd8a884ef",
+  "git_status": "M .gitignore\n M Cargo.lock\n M Cargo.toml\n M README.md\n M build.rs\n M memory.x\n M rust-toolchain.toml\n M src/eth_led.rs\n M src/main.rs\n M src/mavlink_usb.rs\n M src/usb_console.rs\n M tools/check_mavlink.py\n M tools/package.py\n?? .github/\n?? .run/\n?? TODO.md\n?? docs/\n?? plan.md\n?? src/backup_domain.rs\n?? src/diagnostics.rs\n?? src/fault.rs\n?? src/fault_dump.rs\n?? src/fault_record.rs\n?? src/lib.rs\n?? src/metrics.rs\n?? src/platform.rs\n?? tools/60-fmuv6x.rules\n?? tools/backup_domain.py\n?? tools/build_report.py\n?? tools/decode_fault_dump.py\n?? tools/firmware.sh\n?? tools/p0/\n?? tools/p1_capture.py\n?? tools/replay_platform_check.py\n?? tools/requirements.txt\n?? tools/test_build_report.py\n?? tools/test_check_mavlink.py\n?? tools/test_decode_fault_dump.py\n?? tools/test_firmware_ports.py\n?? tools/test_p1_capture.py",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+  "environment": {
+    "CARGO_TARGET_DIR": null,
+    "RUSTFLAGS": null,
+    "CARGO_ENCODED_RUSTFLAGS": null,
+    "SOURCE_DATE_EPOCH": null
+  },
+  "sources_sha256": {
+    ".cargo/config.toml": "20e70b491df107286ac9c07ed5c474f7ab114e4163434d9bae62071e362964c3",
+    "Cargo.lock": "411ed26cdb6a477f6ae36029665eafeac99f157f6918ad2da230de75d98940ed",
+    "Cargo.toml": "9a068148ee3d92d9b2827196787cb60bfa058ea37280dbfe786385667db4872a",
+    "build.rs": "9a0da77a06981ab9cc601d798b588b6ec54712483fea71c67b0515cb2b4ef1f5",
+    "memory.x": "876868296b9baf7415d1f73a2bf4a05920b932d46f9e88fbaec36181a72d0d82",
+    "rust-toolchain.toml": "ff9f68138092683d63991661a13ec36100b90a3d83471cc9165851075e1468aa",
+    "src/backup_domain.rs": "6fa6a93ecf83523c9793104d8f34b24527401e0efb5c1c20cc65d13f3069050c",
+    "src/diagnostics.rs": "f1238d7c1e27c72d0c93d10b17ae1fbc8fd07c74e86b3eeb050ffb0fcedc26a2",
+    "src/eth_led.rs": "29c70206104bb1e3c3f51f432db699bdc8a813b1a2ed6a36d7ad19223687917b",
+    "src/fault.rs": "8456ae4d5af1ee21e498f1ae414e91999ca7e380e223de99967d05c68f886a26",
+    "src/fault_dump.rs": "0d23e044c5c91a20a55b0375b023d2b7dadaa65530af258afb01af171f410d63",
+    "src/fault_record.rs": "705eb300fcc0daa23f56de79c51765ebbda45df6b1d95c77ffbc833c5a80e30d",
+    "src/lib.rs": "df1664f55125f523608c7924450abb0280413c341165f9c728fe1f3bd8ea7a41",
+    "src/main.rs": "8043cab775c6112397f70f46a4e6f462eb13fc0874e85f495b0af5ba94898228",
+    "src/mavlink_usb.rs": "09a08db21982e9a84e11304815b19d5b2624e61fb694e317adb391ace1380afd",
+    "src/metrics.rs": "c6b4e3e9b4b40c1b465ece3a14d29cbe900f98ada5acd663062ba6868fc85fe4",
+    "src/platform.rs": "a958889ddaef3bcf2963f5db0b9efbc2e1a183339bb81c4019c7b97c42c13979",
+    "src/usb_console.rs": "bffbfde9d5d153e35139052334b924f3829d408d7c02a4d068602cfec6598b51"
+  },
+  "tools_sha256": {
+    ".github/workflows/p1.yml": "34fd10afbd62e3dcb1b65bd7034cbf8a49a41e76a75dbb2c9e6912577ce0df44",
+    "tools/backup_domain.py": "7e8e6195b38f191202b658896b6d15c7b8ee6ebda6a1a9ef4fb5d532ca74631c",
+    "tools/build_report.py": "91ec87d12acfc8fc362b4125131e48a56942263cdfd41553a402ac0c24516876",
+    "tools/check_mavlink.py": "ed1d16ce4c8ca8fedf3b6a72b35c914308c5f0f7887bdf370f77c2a360756d47",
+    "tools/decode_fault_dump.py": "63c0abf505a592a76f297cf7eaaff0e8be19dfe6228039127bb7efc874b8863e",
+    "tools/firmware.sh": "4a4d9b465a400131dd094a98d6eb2ad40e8fa16a6a329d8f2d38f308ae84bf48",
+    "tools/p1_capture.py": "ecaf3710de7229aa4391a4f94125afe7f0e0b68672b3764c09f6f5a9e0802ebe",
+    "tools/package.py": "9627a8880bbdd0fa85dc15bd16f4e56c812dc5ea9ea51a5b458effe002f0d70c",
+    "tools/replay_platform_check.py": "336ddb8a77a6fd56c8b1873d4fb2550687b2dc12c1d9bfd33264381b0bda28a6",
+    "tools/requirements.txt": "80269880db475eda7bd1d815093793993f2361f707a61ac83211428c7f03c048",
+    "tools/test_build_report.py": "e10dd8be75582882fdff475ab3a506009b6d2f54ef9438a9063cee93c1787e3b",
+    "tools/test_check_mavlink.py": "7fff105b4cc101ce8b66986b6ea4b9efbfd0b6504f4fe118fecb8534f3e511e3",
+    "tools/test_decode_fault_dump.py": "fc93e7096458a303bae40218de870a8cc0bfecc564b15852cdbdc32e75ec1a77",
+    "tools/test_firmware_ports.py": "de751d09a63b5571a0dd6230244c2cec30acae2be77484ce96775cc310d56995",
+    "tools/test_p1_capture.py": "da071bb1042a0419d2030c0af0600377f1b7c2d117196980b246296da07d593d",
+    "tools/test_package.py": "ee610931944820536da408fefefbc73318b4dc03f5e0dc51f75b6abd323ddddd"
+  },
+  "artifacts": {
+    "v6x-rust-led": {
+      "bytes": 3911860,
+      "sha256": "a9c158ac8889b5ad87e4cf48ec02bc569b19d51c3f7230be8f182b20b8de4b73"
+    },
+    "v6x-rust-led.bin": {
+      "bytes": 135268,
+      "sha256": "6d230f5f028a8f78280fbc43007683e446f63996e002ddd33ee075fcbd0df923"
+    },
+    "v6x-rust-led.px4": {
+      "bytes": 108247,
+      "sha256": "86c39ba594290600dc2bf4bd4baec499db789bff3bda3f9717b95027983fcda9"
+    },
+    "v6x-rust-led.map": {
+      "bytes": 425565,
+      "sha256": "19977a34856bee38b3dead0704ef455f237f2d3ae6419a4310a18196522c557f"
+    }
+  },
+  "sections": {
+    ".vector_table": {
+      "type": 1,
+      "flags": 2,
+      "addr": 134348800,
+      "offset": 65536,
+      "size": 664
+    },
+    ".text": {
+      "type": 1,
+      "flags": 6,
+      "addr": 134349464,
+      "offset": 66200,
+      "size": 119864
+    },
+    ".rodata": {
+      "type": 1,
+      "flags": 50,
+      "addr": 134469328,
+      "offset": 186064,
+      "size": 14192
+    },
+    ".data": {
+      "type": 1,
+      "flags": 3,
+      "addr": 603979776,
+      "offset": 262144,
+      "size": 548
+    },
+    ".gnu.sgstubs": {
+      "type": 1,
+      "flags": 2,
+      "addr": 134484096,
+      "offset": 262720,
+      "size": 0
+    },
+    ".bss": {
+      "type": 8,
+      "flags": 3,
+      "addr": 603980328,
+      "offset": 328232,
+      "size": 17140
+    },
+    ".uninit": {
+      "type": 8,
+      "flags": 3,
+      "addr": 603997468,
+      "offset": 328232,
+      "size": 0
+    }
+  },
+  "symbols": {
+    "_stack_start": 604504064,
+    "_stack_end": 604438528,
+    "__fault_stack_bottom": 604437504,
+    "__fault_stack_top": 604438528,
+    "__sheap": 604438528,
+    "__euninit": 603997468,
+    "HardFault": 134349589,
+    "Reset": 134349465
+  },
+  "resources": {
+    "flash_raw_bytes": 135268,
+    "flash_padded_bytes": 135296,
+    "flash_partition_bytes": 1966080,
+    "static_ram_bytes": 17692,
+    "static_ram_free_bytes": 440036,
+    "shared_stack_reserved_bytes": 65536,
+    "fault_stack_reserved_bytes": 1024
+  },
+  "hardware_validation": "pending; software report is not HIL acceptance"
+}

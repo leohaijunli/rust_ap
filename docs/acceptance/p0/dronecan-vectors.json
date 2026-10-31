@@ -1,0 +1,1523 @@
+{
+  "pins": {
+    "pydronecan": "092d09cb9e6b115e262efe4cb42f7b65e6054f26",
+    "DSDL": "b4653c7abc3c47cb31b16efa24ea755232774756"
+  },
+  "pydronecan_version": "1.0.27",
+  "scope": "reference fixture generation only; Rust/session/HIL acceptance pending",
+  "classic_can": true,
+  "tail_array_optimization": true,
+  "types": {
+    "uavcan.equipment.esc.RawCommand": {
+      "id": 1030,
+      "signature": "217f5c87d7ec951d",
+      "max_bits_without_tao": {
+        "message": 285
+      }
+    },
+    "uavcan.equipment.esc.Status": {
+      "id": 1034,
+      "signature": "a9af28aea2fbb254",
+      "max_bits_without_tao": {
+        "message": 110
+      }
+    },
+    "uavcan.equipment.gnss.Auxiliary": {
+      "id": 1061,
+      "signature": "9be8bdc4c3dbbfd2",
+      "max_bits_without_tao": {
+        "message": 125
+      }
+    },
+    "uavcan.equipment.gnss.Fix2": {
+      "id": 1063,
+      "signature": "ca41e7000f37435f",
+      "max_bits_without_tao": {
+        "message": 1769
+      }
+    },
+    "uavcan.equipment.gnss.RTCMStream": {
+      "id": 1062,
+      "signature": "1f56030ecb171501",
+      "max_bits_without_tao": {
+        "message": 1040
+      }
+    },
+    "uavcan.equipment.safety.ArmingStatus": {
+      "id": 1100,
+      "signature": "8700f375556a8003",
+      "max_bits_without_tao": {
+        "message": 8
+      }
+    },
+    "uavcan.protocol.GetNodeInfo": {
+      "id": 1,
+      "signature": "ee468a8121c46a9e",
+      "max_bits_without_tao": {
+        "request": 0,
+        "response": 3015
+      }
+    },
+    "uavcan.protocol.NodeStatus": {
+      "id": 341,
+      "signature": "0f0868d0c1a7c6f1",
+      "max_bits_without_tao": {
+        "message": 56
+      }
+    },
+    "uavcan.protocol.RestartNode": {
+      "id": 5,
+      "signature": "569e05394a3017f0",
+      "max_bits_without_tao": {
+        "request": 40,
+        "response": 1
+      }
+    },
+    "uavcan.protocol.param.ExecuteOpcode": {
+      "id": 10,
+      "signature": "3b131ac5eb69d2cd",
+      "max_bits_without_tao": {
+        "request": 56,
+        "response": 49
+      }
+    },
+    "uavcan.protocol.param.GetSet": {
+      "id": 11,
+      "signature": "a7b622f939d1a4d5",
+      "max_bits_without_tao": {
+        "request": 1791,
+        "response": 2967
+      }
+    }
+  },
+  "vectors": [
+    {
+      "label": "raw_zero_0",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "",
+      "payload_bytes": 0,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "c0"
+        }
+      ]
+    },
+    {
+      "label": "raw_zero_1",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000",
+      "payload_bytes": 2,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000c0"
+        }
+      ]
+    },
+    {
+      "label": "raw_zero_4",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "00000000000000",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "00000000000000c0"
+        }
+      ]
+    },
+    {
+      "label": "raw_zero_5",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "000000000000000000",
+      "payload_bytes": 9,
+      "frame_count": 2,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "ff7e000000000080"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000060"
+        }
+      ]
+    },
+    {
+      "label": "raw_zero_8",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000000000000000000",
+      "payload_bytes": 14,
+      "frame_count": 3,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "8d99000000000080"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000000000020"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "000040"
+        }
+      ]
+    },
+    {
+      "label": "raw_zero_20",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000000000000000000000000000000000000000000000000000000000000",
+      "payload_bytes": 35,
+      "frame_count": 6,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "9c96000000000080"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000000000020"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000000000000"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000000000020"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000000000000"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "000060"
+        }
+      ]
+    },
+    {
+      "label": "raw_signed_edges",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 31,
+      "payload_hex": "0083fff0003fdf",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0083fff0003fdfdf"
+        }
+      ]
+    },
+    {
+      "label": "raw_tid_30",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 30,
+      "payload_hex": "01000800300100",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "01000800300100de"
+        }
+      ]
+    },
+    {
+      "label": "raw_tid_31",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 31,
+      "payload_hex": "01000800300100",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "01000800300100df"
+        }
+      ]
+    },
+    {
+      "label": "raw_tid_0",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "01000800300100",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "01000800300100c0"
+        }
+      ]
+    },
+    {
+      "label": "raw_tid_1",
+      "type": "uavcan.equipment.esc.RawCommand",
+      "service": null,
+      "transfer_id": 1,
+      "payload_hex": "01000800300100",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "01000800300100c1"
+        }
+      ]
+    },
+    {
+      "label": "arming_disarmed",
+      "type": "uavcan.equipment.safety.ArmingStatus",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "00",
+      "payload_bytes": 1,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "08044c2a",
+          "data_hex": "00c0"
+        }
+      ]
+    },
+    {
+      "label": "arming_fully_armed",
+      "type": "uavcan.equipment.safety.ArmingStatus",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "ff",
+      "payload_bytes": 1,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "08044c2a",
+          "data_hex": "ffc0"
+        }
+      ]
+    },
+    {
+      "label": "arming_reserved_status",
+      "type": "uavcan.equipment.safety.ArmingStatus",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "01",
+      "payload_bytes": 1,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "08044c2a",
+          "data_hex": "01c0"
+        }
+      ]
+    },
+    {
+      "label": "esc_status",
+      "type": "uavcan.equipment.esc.Status",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "7b000000204e003db05ce02e190c",
+      "payload_bytes": 14,
+      "frame_count": 3,
+      "frames": [
+        {
+          "extended_id": "10040a2a",
+          "data_hex": "d0127b0000002080"
+        },
+        {
+          "extended_id": "10040a2a",
+          "data_hex": "4e003db05ce02e20"
+        },
+        {
+          "extended_id": "10040a2a",
+          "data_hex": "190c40"
+        }
+      ]
+    },
+    {
+      "label": "esc_unknown_negative_rpm",
+      "type": "uavcan.equipment.esc.Status",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "00000000ff7fff7fff7f0000807c",
+      "payload_bytes": 14,
+      "frame_count": 3,
+      "frames": [
+        {
+          "extended_id": "10040a2a",
+          "data_hex": "4bea00000000ff80"
+        },
+        {
+          "extended_id": "10040a2a",
+          "data_hex": "7fff7fff7f000020"
+        },
+        {
+          "extended_id": "10040a2a",
+          "data_hex": "807c40"
+        }
+      ]
+    },
+    {
+      "label": "node_status",
+      "type": "uavcan.protocol.NodeStatus",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "40e20100003412",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "1001552a",
+          "data_hex": "40e20100003412c0"
+        }
+      ]
+    },
+    {
+      "label": "get_node_info_request",
+      "type": "uavcan.protocol.GetNodeInfo",
+      "service": "request",
+      "transfer_id": 0,
+      "payload_hex": "",
+      "payload_bytes": 0,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "1001c9aa",
+          "data_hex": "c0"
+        }
+      ]
+    },
+    {
+      "label": "get_node_info_response",
+      "type": "uavcan.protocol.GetNodeInfo",
+      "service": "response",
+      "transfer_id": 0,
+      "payload_hex": "40e201000000000100000000000000000000000000000000000102030405060708090a0b0c0d0e0f006f72672e727573742d61702e666d75763678",
+      "payload_bytes": 59,
+      "frame_count": 9,
+      "frames": [
+        {
+          "extended_id": "100149aa",
+          "data_hex": "a39e40e201000080"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "0000010000000020"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "0000000000000000"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "0000000000000120"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "0203040506070800"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "090a0b0c0d0e0f20"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "006f72672e727500"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "73742d61702e6620"
+        },
+        {
+          "extended_id": "100149aa",
+          "data_hex": "6d7576367840"
+        }
+      ]
+    },
+    {
+      "label": "get_param_index",
+      "type": "uavcan.protocol.param.GetSet",
+      "service": "request",
+      "transfer_id": 0,
+      "payload_hex": "0700",
+      "payload_bytes": 2,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "0700c0"
+        }
+      ]
+    },
+    {
+      "label": "set_param_integer",
+      "type": "uavcan.protocol.param.GetSet",
+      "service": "request",
+      "transfer_id": 0,
+      "payload_hex": "00012a0000000000000043414e5f4e4f44455f4944",
+      "payload_bytes": 21,
+      "frame_count": 4,
+      "frames": [
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "89d500012a000080"
+        },
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "0000000000434120"
+        },
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "4e5f4e4f44455f00"
+        },
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "494460"
+        }
+      ]
+    },
+    {
+      "label": "set_param_real",
+      "type": "uavcan.protocol.param.GetSet",
+      "service": "request",
+      "transfer_id": 0,
+      "payload_hex": "00020000284243414e5f4e4f44455f4944",
+      "payload_bytes": 17,
+      "frame_count": 3,
+      "frames": [
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "915a000200002880"
+        },
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "4243414e5f4e4f20"
+        },
+        {
+          "extended_id": "100bc9aa",
+          "data_hex": "44455f494440"
+        }
+      ]
+    },
+    {
+      "label": "get_param_response",
+      "type": "uavcan.protocol.param.GetSet",
+      "service": "response",
+      "transfer_id": 0,
+      "payload_hex": "02000028420200002842020000fe42020000803f43414e5f4e4f44455f4944",
+      "payload_bytes": 31,
+      "frame_count": 5,
+      "frames": [
+        {
+          "extended_id": "100b49aa",
+          "data_hex": "42ac020000284280"
+        },
+        {
+          "extended_id": "100b49aa",
+          "data_hex": "0200002842020020"
+        },
+        {
+          "extended_id": "100b49aa",
+          "data_hex": "00fe420200008000"
+        },
+        {
+          "extended_id": "100b49aa",
+          "data_hex": "3f43414e5f4e4f20"
+        },
+        {
+          "extended_id": "100b49aa",
+          "data_hex": "44455f494440"
+        }
+      ]
+    },
+    {
+      "label": "save_request",
+      "type": "uavcan.protocol.param.ExecuteOpcode",
+      "service": "request",
+      "transfer_id": 0,
+      "payload_hex": "00000000000000",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "100ac9aa",
+          "data_hex": "00000000000000c0"
+        }
+      ]
+    },
+    {
+      "label": "save_response",
+      "type": "uavcan.protocol.param.ExecuteOpcode",
+      "service": "response",
+      "transfer_id": 0,
+      "payload_hex": "00000000000080",
+      "payload_bytes": 7,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "100a49aa",
+          "data_hex": "00000000000080c0"
+        }
+      ]
+    },
+    {
+      "label": "restart_request",
+      "type": "uavcan.protocol.RestartNode",
+      "service": "request",
+      "transfer_id": 0,
+      "payload_hex": "1e1b55ceac",
+      "payload_bytes": 5,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "1005c9aa",
+          "data_hex": "1e1b55ceacc0"
+        }
+      ]
+    },
+    {
+      "label": "restart_response",
+      "type": "uavcan.protocol.RestartNode",
+      "service": "response",
+      "transfer_id": 0,
+      "payload_hex": "80",
+      "payload_bytes": 1,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "100549aa",
+          "data_hex": "80c0"
+        }
+      ]
+    },
+    {
+      "label": "fix2_covariance_0",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f530000003d",
+      "payload_bytes": 50,
+      "frame_count": 8,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "94fd000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f530000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "00003d60"
+        }
+      ]
+    },
+    {
+      "label": "fix2_covariance_1",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f5300010034003d",
+      "payload_bytes": 52,
+      "frame_count": 8,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "9e75000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f530000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "010034003d60"
+        }
+      ]
+    },
+    {
+      "label": "fix2_covariance_6",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f530006003400340034003400340034003d",
+      "payload_bytes": 62,
+      "frame_count": 10,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "4f0b000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f530000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0600340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3d60"
+        }
+      ]
+    },
+    {
+      "label": "fix2_covariance_21",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f530015003400340034003400340034003400340034003400340034003400340034003400340034003400340034003d",
+      "payload_bytes": 92,
+      "frame_count": 14,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "9194000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f530000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1500340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "34003d60"
+        }
+      ]
+    },
+    {
+      "label": "fix2_covariance_36",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f530024003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003d",
+      "payload_bytes": 122,
+      "frame_count": 18,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "99af000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f530000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "2400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "340034003d60"
+        }
+      ]
+    },
+    {
+      "label": "fix2_rtk_float",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f532024003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003d",
+      "payload_bytes": 122,
+      "frame_count": 18,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "a453000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f532000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "2400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "340034003d60"
+        }
+      ]
+    },
+    {
+      "label": "fix2_rtk_fixed",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f532064003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003d",
+      "payload_bytes": 122,
+      "frame_count": 18,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "fb6b000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f532000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "6400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "340034003d60"
+        }
+      ]
+    },
+    {
+      "label": "fix2_max_arrays",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f532064003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003400340034003d0000803f0000004000004040e8030000030f8fffffb80b00000024003800380038003800380038003800380038003800380038003800380038003800380038003800380038003800380038003800380038003800380038003800380038003800380038",
+      "payload_bytes": 221,
+      "frame_count": 32,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "37ae000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000402220182420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0a0640001bb26400"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "1628ea758700c020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "5038804504300800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000803f00000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "c00000003f532000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "6400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3400340034003420"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0034003400340000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "340034003d000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "803f000000400000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "004040e803000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "030f8fffffb80b00"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000002400380020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3800380038003800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0038003800380020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3800380038003800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0038003800380020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3800380038003800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0038003800380020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3800380038003800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0038003800380020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "3800380038003800"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "00380038003860"
+        }
+      ]
+    },
+    {
+      "label": "fix2_no_fix",
+      "type": "uavcan.equipment.gnss.Fix2",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff7f",
+      "payload_bytes": 50,
+      "frame_count": 8,
+      "frames": [
+        {
+          "extended_id": "1004272a",
+          "data_hex": "7d51000000000080"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000000000000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000000000000000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000000000000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000000000000000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000000000000020"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "0000000000000000"
+        },
+        {
+          "extended_id": "1004272a",
+          "data_hex": "00ff7f60"
+        }
+      ]
+    },
+    {
+      "label": "gnss_auxiliary",
+      "type": "uavcan.equipment.gnss.Auxiliary",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "003c003d003a003eff7fff7fff7f38a0",
+      "payload_bytes": 16,
+      "frame_count": 3,
+      "frames": [
+        {
+          "extended_id": "1004252a",
+          "data_hex": "8bab003c003d0080"
+        },
+        {
+          "extended_id": "1004252a",
+          "data_hex": "3a003eff7fff7f20"
+        },
+        {
+          "extended_id": "1004252a",
+          "data_hex": "ff7f38a040"
+        }
+      ]
+    },
+    {
+      "label": "rtcm_0",
+      "type": "uavcan.equipment.gnss.RTCMStream",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "03",
+      "payload_bytes": 1,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "1804262a",
+          "data_hex": "03c0"
+        }
+      ]
+    },
+    {
+      "label": "rtcm_1",
+      "type": "uavcan.equipment.gnss.RTCMStream",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "0300",
+      "payload_bytes": 2,
+      "frame_count": 1,
+      "frames": [
+        {
+          "extended_id": "1804262a",
+          "data_hex": "0300c0"
+        }
+      ]
+    },
+    {
+      "label": "rtcm_128",
+      "type": "uavcan.equipment.gnss.RTCMStream",
+      "service": null,
+      "transfer_id": 0,
+      "payload_hex": "03000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "payload_bytes": 129,
+      "frame_count": 19,
+      "frames": [
+        {
+          "extended_id": "1804262a",
+          "data_hex": "e26e030001020380"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "0405060708090a20"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "0b0c0d0e0f101100"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "1213141516171820"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "191a1b1c1d1e1f00"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "2021222324252620"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "2728292a2b2c2d00"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "2e2f303132333420"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "35363738393a3b00"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "3c3d3e3f40414220"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "4344454647484900"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "4a4b4c4d4e4f5020"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "5152535455565700"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "58595a5b5c5d5e20"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "5f60616263646500"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "666768696a6b6c20"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "6d6e6f7071727300"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "7475767778797a20"
+        },
+        {
+          "extended_id": "1804262a",
+          "data_hex": "7b7c7d7e7f40"
+        }
+      ]
+    }
+  ],
+  "negative_vectors": [
+    {
+      "label": "bad_crc",
+      "expected": "reject",
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "8c99000000000080"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000000000020"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "000040"
+        }
+      ]
+    },
+    {
+      "label": "bad_initial_toggle",
+      "expected": "reject",
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "00000000000000e0"
+        }
+      ]
+    },
+    {
+      "label": "missing_last_frame",
+      "expected": "reject",
+      "frames": [
+        {
+          "extended_id": "0804062a",
+          "data_hex": "8d99000000000080"
+        },
+        {
+          "extended_id": "0804062a",
+          "data_hex": "0000000000000020"
+        }
+      ]
+    }
+  ],
+  "dsdl_sha256": {
+    "uavcan/CoarseOrientation.uavcan": "62e58506852c79f2ab32b4e8e18838632d1515b4861880efb83387092e2e9895",
+    "uavcan/Timestamp.uavcan": "31ff8648230833d0074667bcff4ddfdc53f38b310bbb646b18418703a5715131",
+    "uavcan/equipment/actuator/1010.ArrayCommand.uavcan": "d892ea97670d88c77440bc1a646e635122dd84ae307b9bb29bbaecf2550367d9",
+    "uavcan/equipment/actuator/1011.Status.uavcan": "0dcec21049829214644ef428752839179b69bf6c51c74bdcb1afa694db421ddc",
+    "uavcan/equipment/actuator/Command.uavcan": "2787f7627ee471ccf2121836e9452399339f221310dd8013c53ea791719734b1",
+    "uavcan/equipment/ahrs/1000.Solution.uavcan": "63b5ef59cf18a87df54bd3ae5ef0bf29520c063fdb14ff8fc5c2604eacbc366f",
+    "uavcan/equipment/ahrs/1001.MagneticFieldStrength.uavcan": "eb3b17aff1747e59a241cc26a8ea750818a272e0f4d966febe39faf38bc3ac08",
+    "uavcan/equipment/ahrs/1002.MagneticFieldStrength2.uavcan": "bfe6876c0674d08fc7bdb1dc0f6b98ff24f43e8b7767b007da3491241528a320",
+    "uavcan/equipment/ahrs/1003.RawIMU.uavcan": "cec61856e70f8ca3f18e55a17d821294f9964a6803c22e185fb8069ced5c9f9a",
+    "uavcan/equipment/air_data/1020.TrueAirspeed.uavcan": "5a5abdbfa878f45698041ce5df0ab2df3e62e765defa0cdb23cc2ea6e819d283",
+    "uavcan/equipment/air_data/1021.IndicatedAirspeed.uavcan": "ba4336a79fce254b10fc0b61c16a6b1fe2ff4d49a374e5b33c073871c3363a78",
+    "uavcan/equipment/air_data/1025.AngleOfAttack.uavcan": "9e2c6c68376aa787cac674c5458522b2e26f39ffb86bb9acb3b637d23effb8f7",
+    "uavcan/equipment/air_data/1026.Sideslip.uavcan": "64f95ab12f12f6f6143ffde3218a35604b7736f4d5b0de1fbb66b83325de4d17",
+    "uavcan/equipment/air_data/1027.RawAirData.uavcan": "c494a4e22da8a711115dbdd8952fdd401d53ef4f8280940ab0c557dd564f1f49",
+    "uavcan/equipment/air_data/1028.StaticPressure.uavcan": "6c9bd946843126fa99d1bfa4e47338fcc15224a74bdec72f40741f9e6b3fd98d",
+    "uavcan/equipment/air_data/1029.StaticTemperature.uavcan": "98c656f93cfc1bc3fb8fc9c2ec852dad0a2cbded03370f55d73bc9577e4c4057",
+    "uavcan/equipment/camera_gimbal/1040.AngularCommand.uavcan": "59fa5ddbba5227ca913af96dbb0d29850aedfc9037f7ca4c43160ff29a5176dc",
+    "uavcan/equipment/camera_gimbal/1041.GEOPOICommand.uavcan": "b272c08458396258e78382885f803b6b3e5d477a9a45d10413bd31122872f925",
+    "uavcan/equipment/camera_gimbal/1044.Status.uavcan": "9ab3d62c6b71e8e013b47e2c832a46a0cab3e3bb6931c1adc057219abed67693",
+    "uavcan/equipment/camera_gimbal/Mode.uavcan": "8410ee17cbbca7eac47e4122bffb7979615b47baefa741da9e7ae2ee625842c8",
+    "uavcan/equipment/device/1110.Temperature.uavcan": "5bcc37e1e2ddb4ee0bbe291201d0d7a737512dd79f6855117d6add5c5baeda9b",
+    "uavcan/equipment/esc/1030.RawCommand.uavcan": "f70d08cc8d545b94deeb0a3a769c96a7f8d9590427050b9e6a47c290687c58f8",
+    "uavcan/equipment/esc/1031.RPMCommand.uavcan": "3a72dd10fa75285c422ef91e7e07a02cfe96effc2ed641fc560f06a8cee75cf8",
+    "uavcan/equipment/esc/1034.Status.uavcan": "31e34b605cdf43c64f08dff54471cb2f805d170fa77e167a3ca777a15892a226",
+    "uavcan/equipment/esc/1036.StatusExtended.uavcan": "d583004942a6675a5653821febe7fd51bc978f1f4d17265db9ed0f543184c6ba",
+    "uavcan/equipment/gnss/1060.Fix.uavcan": "293cb85a7c2e8ff643b721ffb41c529f4880cc342639bd83de6702dbc782d9e7",
+    "uavcan/equipment/gnss/1061.Auxiliary.uavcan": "a84833e597dd47ed0d3cf6123730839b4b3e66ab5334a20a5646a1eb7736eaea",
+    "uavcan/equipment/gnss/1062.RTCMStream.uavcan": "29fc87e0dcc30e197baf4e03cccb9a640f1ec5a26b3e3d53ce1569c874c06ea0",
+    "uavcan/equipment/gnss/1063.Fix2.uavcan": "93a38f21babf9975c6617cdd8b9987f775c34c16dd7c44b6727422d199a29d87",
+    "uavcan/equipment/gnss/ECEFPositionVelocity.uavcan": "d27fc7552ee5ada29cd0aaead589af0cce06f567bab7e6295d849b45ca9901db",
+    "uavcan/equipment/hardpoint/1070.Command.uavcan": "d47d835c1e0fa6bf48d41928ba495abdb7c02b570853460a5dfdace80c54cf10",
+    "uavcan/equipment/hardpoint/1071.Status.uavcan": "5c5be1cf87a3ffd51b9fa1ff372b6ec7b5cfcd01a9805f7ada6b86446a2ed649",
+    "uavcan/equipment/ice/1129.FuelTankStatus.uavcan": "413530792706bfbb645ae1ca26127f37909d025805e39bde6b726d3913c78d62",
+    "uavcan/equipment/ice/reciprocating/1120.Status.uavcan": "f51693697e6f0922d2d21141301d0c12e92bbe9fb6445f72e3526efac6cff738",
+    "uavcan/equipment/ice/reciprocating/CylinderStatus.uavcan": "a23fb3b725143cbea8678f2b13cf519fbc60f3efa25f91af38019b1bfcd6d81b",
+    "uavcan/equipment/indication/1080.BeepCommand.uavcan": "e41b3ab011c405d99bcb2ebe8e286d21551a36043bbb70f8c06f8f23a5798433",
+    "uavcan/equipment/indication/1081.LightsCommand.uavcan": "4aa5e07c289987d04fcef11d94e9f1a701ec1108db09a5494cec47766a533a6e",
+    "uavcan/equipment/indication/RGB565.uavcan": "38a6a786cfed056b5fda54485b99b68751a66646ef548a657e894729a0cc7589",
+    "uavcan/equipment/indication/SingleLightCommand.uavcan": "071e71c6d17ce10efa57c225ddf2994921f43e5c578ba67a0b91d009035f7fbb",
+    "uavcan/equipment/power/1090.PrimaryPowerSupplyStatus.uavcan": "1b5d769b228002c0f4c631d67aca6862dcb0dcfe91982a4c636a65b0bf6c6f6e",
+    "uavcan/equipment/power/1091.CircuitStatus.uavcan": "53389334ef06109da1f356220a727b80ad39ed5494c09296295a3e0535a867d3",
+    "uavcan/equipment/power/1092.BatteryInfo.uavcan": "3058de5ae64cb140f1002b3a7b56e8213e80c0597ebcf9f26fee35718e0c44af",
+    "uavcan/equipment/range_sensor/1050.Measurement.uavcan": "6b9529df6b9b862843880d82e108c4e85469c1514ea1bb8057be8be4e4cadebd",
+    "uavcan/equipment/safety/1100.ArmingStatus.uavcan": "a72ff951dc6b0f3f3c06e299163a9ed5643bc0a703035e8a078a83c2396eeeef",
+    "uavcan/navigation/2000.GlobalNavigationSolution.uavcan": "cd7a597843b44b880db964551defd3e983a2cb91485fa9919a8a36292d84cd5f",
+    "uavcan/protocol/1.GetNodeInfo.uavcan": "5609145e4d43e6a0b704025f5525f81da0cecd5ccf64cce2a416ebb7ef06a79c",
+    "uavcan/protocol/2.GetDataTypeInfo.uavcan": "877f1e3b66e3ce635ec4ecfe9c1065e835d3c0feea634c6222fc5d026c5cb579",
+    "uavcan/protocol/341.NodeStatus.uavcan": "5aba45e0315843e2cdb36f720725c235efc7a02d10769140ca7a0e745f032d70",
+    "uavcan/protocol/4.GetTransportStats.uavcan": "5e066fdf1f7bff8e48e9aa11d819e78857211f103e6de337b70df2d4b3d1d2e8",
+    "uavcan/protocol/4.GlobalTimeSync.uavcan": "4144187bdbb7a30d220225cad4f5c886a5d5787734f4e9a48207cc1826dfa5df",
+    "uavcan/protocol/5.Panic.uavcan": "2621ff1e80b40871fac50beba76310693386bfc5aa527f508fd59915f719e85c",
+    "uavcan/protocol/5.RestartNode.uavcan": "f847efa69763a6e637f812b7ace15a386db0c5f0c720c9b214ad0135afb1c2e1",
+    "uavcan/protocol/6.AccessCommandShell.uavcan": "bdba5e0408fc07bdd7fcbb6c4eae221072695c78697f83755cdf9e2aef87b562",
+    "uavcan/protocol/CANIfaceStats.uavcan": "efc4d1401d184cb51a3e57572a19952625238ec5406fef692b5b7d403e70ac80",
+    "uavcan/protocol/DataTypeKind.uavcan": "c94faa73032e54d907f1a90f3a2acd383867c9559764c9bccb0b9bbe623dee5e",
+    "uavcan/protocol/HardwareVersion.uavcan": "11186da8f71a1bac866c3b39f333982d5b14e38ec2bd79485425923263af832f",
+    "uavcan/protocol/SoftwareVersion.uavcan": "3a230b2b1bc2055e652154e158e0880fd1a834401c84598472c369500a825678",
+    "uavcan/protocol/debug/16370.KeyValue.uavcan": "b9315e02474890799a9629ca723ba82ff3f9225e8fbeca92ce73d5fe6c691410",
+    "uavcan/protocol/debug/16383.LogMessage.uavcan": "4107cf72c8f9e2f214f690787fe4ec0a07d90a2c61ede3adf1160322fa61b85f",
+    "uavcan/protocol/debug/LogLevel.uavcan": "fb5aabe1b4f88081d80e1a6990932f2a59e8f79b56cc20a1e07b56ca4068d3bc",
+    "uavcan/protocol/dynamic_node_id/1.Allocation.uavcan": "7d14215db4da5016858630ead52c68115db178b1f462b09262bed33e0185c036",
+    "uavcan/protocol/dynamic_node_id/server/30.AppendEntries.uavcan": "645e3eeb1d5efb5e5005a3678b6437a12c1326fb5960fe7ce58d2c9a4dd2dc5e",
+    "uavcan/protocol/dynamic_node_id/server/31.RequestVote.uavcan": "cf587d3f603892f05c1dd975359553ac57e73824e382d6ed605b19effed6b8a4",
+    "uavcan/protocol/dynamic_node_id/server/390.Discovery.uavcan": "6b13c59a32717a4cfde7c75d598e1f848b048a29c14a1f3952e83f7307e36843",
+    "uavcan/protocol/dynamic_node_id/server/Entry.uavcan": "66f167f1656a0ccea059626128a5dd0d125c54d594eb8e05338e6e76afa94b8f",
+    "uavcan/protocol/enumeration/15.Begin.uavcan": "c5607b370b6f5efff64142897f13716b5fe09e5f17cf9c4e4bf0e76efb7c39ba",
+    "uavcan/protocol/enumeration/380.Indication.uavcan": "bf977a984e294e1d052de581f1d7b41bdfd121c54ad61e9a3d9b61b62107efae",
+    "uavcan/protocol/file/40.BeginFirmwareUpdate.uavcan": "e54541f11949e6ae486ed272ceb3049a23f10e1657d5c4c054a52773bb033f5e",
+    "uavcan/protocol/file/45.GetInfo.uavcan": "03a0263c3af7ae55347363e0ed77d6529eaa8b71dab72da59cfce529e95222d1",
+    "uavcan/protocol/file/46.GetDirectoryEntryInfo.uavcan": "c2a7deb1deffa6dfe499bc5bda162890b75139989d8bd6342ffa98a8c131c462",
+    "uavcan/protocol/file/47.Delete.uavcan": "6956973af79f4334a9f0e1de12b9d145ccac642e1e3b33f838ddbc248f8c5708",
+    "uavcan/protocol/file/48.Read.uavcan": "ff4be0886aeabfc737af94c92c4833fe28c9ce8bc0deb2122c9a4a9ee25dfa39",
+    "uavcan/protocol/file/49.Write.uavcan": "ec261c76eb4d9e81796da68e4f880c454032090e7db11abea2a2455ef386501d",
+    "uavcan/protocol/file/EntryType.uavcan": "153484251853a56cf686da55442bd1ea7e1600a37ee277f8df483930b8a74d57",
+    "uavcan/protocol/file/Error.uavcan": "a3777fc3a0b79fa9b25ea7065b36e5b4b5fc9734e06dd25056b2d919a61f606a",
+    "uavcan/protocol/file/Path.uavcan": "5c022f66768deb93b42415ca1542ff203c6898fed22bb91963896b8836097a76",
+    "uavcan/protocol/param/10.ExecuteOpcode.uavcan": "5de3a06db74ef1c638ddfd22a6f11c1308d88519beb96e41ed1f0fc74a81e7ad",
+    "uavcan/protocol/param/11.GetSet.uavcan": "eddeed06634ee90a087cc4a5cc215eb0078cbf6ef019939e79ba68514b792d2c",
+    "uavcan/protocol/param/Empty.uavcan": "96050e5c520ac43515abed88c8e4cca28f2b3e6e98c0224569e6c3a5879b8320",
+    "uavcan/protocol/param/NumericValue.uavcan": "b24510ed616d2dd14621e28b8e489e105b0224fc4fce6bb6be986df03d1fb03b",
+    "uavcan/protocol/param/Value.uavcan": "3f69465029592950fe07a59e6657006420a1345f36fb5270992e230d3a514492",
+    "uavcan/tunnel/2010.Broadcast.uavcan": "c4711c4f6b3f4c1032058b3899ce51bcce5401cf8e0e764a7049774c18c22635",
+    "uavcan/tunnel/2011.SerialConfig.uavcan": "19994291c91e61b96f7fe2a53e52ca4e40d1408ba3fc94146bd334a081e0e1ec",
+    "uavcan/tunnel/3001.Targetted.uavcan": "6113bc82044e1e5733408eca96a0315612b01d153e1915aeb67bd39dc006ea02",
+    "uavcan/tunnel/63.Call.uavcan": "c6020a9be7b52eb8461dccf6e0d2de7255ed8eebfb147207905f500ac0931edb",
+    "uavcan/tunnel/Protocol.uavcan": "bf958a2141cb240e78ecadeb68244c4831533032ffd4fa77baf31b4d8fb754c8"
+  }
+}

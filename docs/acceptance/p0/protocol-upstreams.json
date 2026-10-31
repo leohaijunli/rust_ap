@@ -1,0 +1,56 @@
+{
+  "DSDL": {
+    "path": "/tmp/opencode/rust-ap-p0-20261031/DSDL",
+    "commit": "b4653c7abc3c47cb31b16efa24ea755232774756",
+    "origin": "https://github.com/dronecan/DSDL.git",
+    "commit_date": "2026-02-05T13:26:04+11:00",
+    "status": "",
+    "submodules": "",
+    "license_files_sha256": {
+      "LICENSE": "079278368091643316ed26fb0cd043826914cb68080224efa216d6a232bab06b"
+    }
+  },
+  "dronecan-rust": {
+    "path": "/tmp/opencode/rust-ap-p0-20261031/dronecan-rust",
+    "commit": "0f5ffc906aa4527e57b8db343a7f133874eece27",
+    "origin": "https://github.com/umi-eng/dronecan-rust.git",
+    "commit_date": "2026-04-15T22:38:51+10:00",
+    "status": "",
+    "submodules": "",
+    "license_files_sha256": {
+      "LICENSE": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+    }
+  },
+  "dronecan-stm32": {
+    "path": "/tmp/opencode/rust-ap-p0-20261031/dronecan-stm32",
+    "commit": "06ee0c35d204b46dcac5152ef299b4e507a8b9b2",
+    "origin": "https://github.com/David-OConnor/dronecan.git",
+    "commit_date": "2024-12-26T17:46:14-05:00",
+    "status": "",
+    "submodules": "",
+    "license_files_sha256": {}
+  },
+  "pydronecan-px4": {
+    "path": "/home/dev/PX4-Autopilot-v1.17/src/drivers/uavcan/libdronecan/libuavcan/dsdl_compiler/pydronecan",
+    "commit": "19fdf2e5b383243ccdb1094edae0603cf11469e8",
+    "origin": "https://github.com/dronecan/pydronecan",
+    "commit_date": "2022-11-17T09:49:47+10:00",
+    "status": "",
+    "submodules": "",
+    "license_files_sha256": {
+      "LICENSE": "5d2fc12a239190160d437c3f21219d6288ca9982c12e3940da4132a8a3927466"
+    }
+  },
+  "nuttx-px4": {
+    "path": "/home/dev/PX4-Autopilot-v1.17/platforms/nuttx/NuttX/nuttx",
+    "commit": "fb2fadf6f599c1406f052db013efd00a2518e72c",
+    "origin": "https://github.com/PX4/NuttX.git",
+    "commit_date": "2025-10-30T13:09:28-04:00",
+    "status": "",
+    "submodules": "",
+    "license_files_sha256": {
+      "LICENSE": "9f7c5fa2fceeb49efe189766ad385e412b003c35e496053c3799f542686a9e76",
+      "NOTICE": "1f6ac972692c4f94fe4b904590654aeb795ff08efd9799427c2358fb568814bb"
+    }
+  }
+}

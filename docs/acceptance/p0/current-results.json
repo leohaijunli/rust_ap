@@ -1,0 +1,50 @@
+[
+  {
+    "id": "current-check",
+    "argv": [
+      "bash",
+      "tools/firmware.sh",
+      "check"
+    ],
+    "cwd": "/home/dev/rust_ap",
+    "exit": 0,
+    "elapsed_seconds": 2.993
+  },
+  {
+    "id": "current-build",
+    "argv": [
+      "bash",
+      "tools/firmware.sh",
+      "build"
+    ],
+    "cwd": "/home/dev/rust_ap",
+    "exit": 0,
+    "elapsed_seconds": 0.405
+  },
+  {
+    "id": "current-size",
+    "argv": [
+      "cargo",
+      "size",
+      "--release",
+      "--locked",
+      "--",
+      "-A"
+    ],
+    "cwd": "/home/dev/rust_ap",
+    "exit": 0,
+    "elapsed_seconds": 0.247
+  },
+  {
+    "id": "current-dependency-duplicates",
+    "argv": [
+      "cargo",
+      "tree",
+      "--locked",
+      "--duplicates"
+    ],
+    "cwd": "/home/dev/rust_ap",
+    "exit": 0,
+    "elapsed_seconds": 0.099
+  }
+]

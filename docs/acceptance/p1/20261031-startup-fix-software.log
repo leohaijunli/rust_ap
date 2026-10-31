@@ -1,0 +1,63 @@
+   Compiling v6x-rust-led v0.2.0 (/home/dev/rust_ap)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.75s
+   Compiling v6x-rust-led v0.2.0 (/home/dev/rust_ap)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.39s
+   Compiling v6x-rust-led v0.2.0 (/home/dev/rust_ap)
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.27s
+   Compiling v6x-rust-led v0.2.0 (/home/dev/rust_ap)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+     Running unittests src/lib.rs (target/x86_64-unknown-linux-gnu/debug/deps/v6x_rust_led-3d03bf12d7ba235f)
+
+running 12 tests
+test fault_record::tests::crc_matches_independent_ieee_vector ... ok
+test fault_record::tests::damaged_stacks_and_invalid_exception_returns_are_not_dereferenced ... ok
+test fault_record::tests::interrupted_commit_never_accepts_partial_record ... ok
+test fault_record::tests::file_hash_matches_the_host_decoder_fixture ... ok
+test metrics::tests::bookkeeping_overrun_is_visible_and_never_replayed ... ok
+test metrics::tests::impossible_cpu_windows_cannot_appear_as_zero_load_success ... ok
+test metrics::tests::cycles_wrap_but_multiwrap_observations_are_invalid ... ok
+test metrics::tests::regressing_time_is_visible ... ok
+test metrics::tests::cpu_windows_include_busy_time_and_handle_idle_counter_wrap ... ok
+test metrics::tests::stalls_are_counted_without_replaying_old_releases ... ok
+test fault_record::tests::every_single_bit_corruption_is_rejected ... ok
+test metrics::tests::absolute_phase_does_not_drift_with_variable_runtime ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling v6x-rust-led v0.2.0 (/home/dev/rust_ap)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+...........................................................
+----------------------------------------------------------------------
+Ran 59 tests in 0.151s
+
+OK
+   Compiling v6x-rust-led v0.2.0 (/home/dev/rust_ap)
+    Finished `release` profile [optimized + debuginfo] target(s) in 5.65s
+Packaged 134212 raw bytes as 134240 flash bytes
+Board ID: 53; application address: 0x08020000
+USB upload image: /home/dev/rust_ap/target/thumbv7em-none-eabihf/release/v6x-rust-led.px4
+{
+  "flash_raw_bytes": 134212,
+  "flash_padded_bytes": 134240,
+  "flash_partition_bytes": 1966080,
+  "static_ram_bytes": 17796,
+  "static_ram_free_bytes": 439932,
+  "shared_stack_reserved_bytes": 65536,
+  "fault_stack_reserved_bytes": 1024
+}
+source=4cba95aa54cd899a; report=/home/dev/rust_ap/target/thumbv7em-none-eabihf/release/v6x-rust-led.build.json
+   Compiling v6x-rust-led v0.2.0 (/home/dev/rust_ap)
+    Finished `release` profile [optimized + debuginfo] target(s) in 2.20s
+Packaged 34788 raw bytes as 34816 flash bytes
+Board ID: 53; application address: 0x08020000
+USB upload image: target/p1-fault-dump/thumbv7em-none-eabihf/release/v6x-rust-led.px4
+{
+  "flash_raw_bytes": 34788,
+  "flash_padded_bytes": 34816,
+  "flash_partition_bytes": 1966080,
+  "static_ram_bytes": 10996,
+  "static_ram_free_bytes": 446732,
+  "shared_stack_reserved_bytes": 65536,
+  "fault_stack_reserved_bytes": 1024
+}
+source=15432408177fb110; report=/home/dev/rust_ap/target/p1-fault-dump/thumbv7em-none-eabihf/release/v6x-rust-led.build.json

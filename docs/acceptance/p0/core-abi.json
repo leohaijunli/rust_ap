@@ -1,0 +1,32 @@
+{
+  "target": "thumbv7em-none-eabihf",
+  "toolchain": "1.99.1",
+  "object_sha256": "9304d898433daa2c4707163a2bcbbaab67c6113a7e916618f50712e2ef635d38",
+  "scope": "size_of/align_of only; excludes temporaries, stack, tasks and allocator overhead",
+  "types": {
+    "IndiController": {
+      "bytes": 1852,
+      "alignment": 4
+    },
+    "Eskf": {
+      "bytes": 1068,
+      "alignment": 4
+    },
+    "SimpleSqpSolver": {
+      "bytes": 35000,
+      "alignment": 4
+    },
+    "FullSqpSolver": {
+      "bytes": 54788,
+      "alignment": 4
+    },
+    "BfgsWorkspace": {
+      "bytes": 55788,
+      "alignment": 4
+    },
+    "MincoSnap": {
+      "bytes": 85616,
+      "alignment": 4
+    }
+  }
+}

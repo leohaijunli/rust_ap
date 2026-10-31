@@ -1,0 +1,27 @@
+{
+  "v6x-rust-led.bin": {
+    "bytes": 115884,
+    "sha256": "021732ea23c03ef32e773f0b99c831a2fcda38e15f733bfecb78c2a0d40675d5",
+    "saved_at": "/home/dev/rust_ap/.p0-baseline/20261031/v6x-rust-led.bin"
+  },
+  "v6x-rust-led.px4": {
+    "bytes": 95479,
+    "sha256": "d74b3b80e7c35bf4354ea568c09631f2fad362570caff414516ee0fe48a3c02d",
+    "saved_at": "/home/dev/rust_ap/.p0-baseline/20261031/v6x-rust-led.px4"
+  },
+  "v6x-rust-led": {
+    "bytes": 3638464,
+    "sha256": "46d017f6a0f533fafc9f548a6bb4ec57012c60e6a18608298f0a97e44e5a0153",
+    "saved_at": "/home/dev/rust_ap/.p0-baseline/20261031/v6x-rust-led"
+  },
+  "tracked-at-entry.diff": {
+    "bytes": 3182,
+    "sha256": "f9222cd00f2323182343fc1c32ba19be8236c59ed2dcffc3650ba375c542eaa8",
+    "saved_at": "/home/dev/rust_ap/.p0-baseline/20261031/tracked-at-entry.diff"
+  },
+  "source-at-entry.tar.gz": {
+    "bytes": 72778,
+    "sha256": "d2c205aaa0f677b086b38afe3569e9b51061f58f214b60ff43be9af0a8d3ea8c",
+    "saved_at": "/home/dev/rust_ap/.p0-baseline/20261031/source-at-entry.tar.gz"
+  }
+}

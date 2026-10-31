@@ -1,20 +1,26 @@
 [package]
 name = "v6x-rust-led"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Standalone Rust USB CDC and ETH LED bring-up for the FMUv6X STM32H753"
+description = "Rust/Embassy platform bring-up and timing diagnostics for the FMUv6X STM32H753"
 publish = false
 
-[dependencies]
+[features]
+default = []
+fault-injection = []
+fault-dump = []
+
+[target.'cfg(target_os = "none")'.dependencies]
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
-cortex-m-rt = { version = "0.7.5", features = ["set-vtor"] }
+cortex-m-rt = { version = "0.7.5", features = ["set-vtor", "paint-stack"] }
 embassy-executor = { version = "0.9.1", features = ["arch-cortex-m", "executor-thread", "executor-interrupt"] }
 embassy-futures = "0.1.2"
-embassy-stm32 = { version = "0.5.0", features = ["stm32h753ii", "time-driver-any", "exti", "unstable-pac"] }
+embassy-stm32 = { version = "0.5.0", features = ["stm32h753ii", "time-driver-tim2", "exti", "unstable-pac"] }
 embassy-sync = "0.7.2"
 embassy-time = { version = "0.5.0", features = ["tick-hz-1_000_000"] }
 embassy-usb = { version = "0.5.1", default-features = false }
 mavlink = { version = "0.17.1", default-features = false, features = ["common", "embedded", "emit-extensions"] }
+static_cell = "2.1.1"
 
 [[bin]]
 name = "v6x-rust-led"

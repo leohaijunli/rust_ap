@@ -1,0 +1,150 @@
+$ cargo build -p cybflight --target thumbv7em-none-eabihf --release --locked
+cwd=/tmp/opencode/rust-ap-p0-20261031/cybflight
+RUSTUP_TOOLCHAIN=1.94.0 VEHICLE=sakura_vicon
+
+ Downloading crates ...
+  Downloaded bitflags v2.11.1
+  Downloaded static_cell v2.1.1
+  Downloaded futures-sink v0.3.32
+  Downloaded embedded-storage v0.3.1
+  Downloaded panic-probe v1.0.0
+  Downloaded embassy-usb-driver v0.2.0
+  Downloaded defmt v0.3.100
+  Downloaded cortex-m-rt-macros v0.7.5
+  Downloaded cobs v0.5.1
+  Downloaded futures-task v0.3.32
+  Downloaded embedded-storage-async v0.4.1
+  Downloaded embassy-usb-synopsys-otg v0.3.2
+  Downloaded cortex-m-rt v0.7.5
+  Downloaded cortex-m v0.7.7
+  Downloaded portable-atomic v1.13.1
+  Downloaded futures-util v0.3.32
+  Downloaded discrete_pid v0.1.0
+   Compiling defmt v1.0.1
+   Compiling thiserror v2.0.18
+   Compiling defmt-macros v1.0.1
+   Compiling bitflags v1.3.2
+   Compiling semver-parser v0.7.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling critical-section v1.2.0
+   Compiling libm v0.2.16
+   Compiling nb v1.1.0
+   Compiling syn v2.0.117
+   Compiling proc-macro-error-attr2 v2.0.0
+   Compiling cortex-m v0.7.7
+   Compiling num-traits v0.2.19
+   Compiling cfg-if v1.0.4
+   Compiling byteorder v1.5.0
+   Compiling cortex-m-rt v0.7.5
+   Compiling nb v0.1.3
+   Compiling futures-core v0.3.32
+   Compiling void v1.0.2
+   Compiling semver v0.9.0
+   Compiling embedded-hal v0.2.7
+   Compiling embedded-io-async v0.6.1
+   Compiling embassy-time-driver v0.2.2
+   Compiling hash32 v0.3.1
+   Compiling litrs v1.0.0
+   Compiling embedded-io v0.6.1
+   Compiling embedded-hal v1.0.0
+   Compiling rustc_version v0.2.3
+   Compiling heapless v0.8.0
+   Compiling futures-sink v0.3.32
+   Compiling embedded-hal-async v1.0.0
+   Compiling vcell v0.1.3
+   Compiling heapless v0.9.3
+   Compiling volatile-register v0.2.2
+   Compiling embassy-sync v0.7.2
+   Compiling bitfield v0.13.2
+   Compiling bare-metal v0.2.5
+   Compiling serde_core v1.0.228
+   Compiling as-slice v0.2.1
+   Compiling typenum v1.20.0
+   Compiling stm32-metapac v19.0.0
+   Compiling serde v1.0.228
+   Compiling aligned v0.4.3
+   Compiling document-features v0.2.12
+   Compiling crc32fast v1.5.0
+   Compiling embassy-futures v0.1.2
+   Compiling strsim v0.11.1
+   Compiling embassy-sync v0.8.0
+   Compiling equivalent v1.0.2
+   Compiling syn v1.0.109
+   Compiling fnv v1.0.7
+   Compiling embassy-time-queue-utils v0.3.2
+   Compiling hashbrown v0.17.0
+   Compiling embassy-hal-internal v0.3.0
+   Compiling ident_case v1.0.1
+   Compiling block-device-driver v0.2.0 (https://github.com/MabezDev/embedded-fatfs?rev=518528cc111fcf65c48abbdeb80735a38eada112#518528cc)
+   Compiling embassy-executor-timer-queue v0.1.0
+   Compiling itoa v1.0.18
+   Compiling num-integer v0.1.46
+   Compiling num-complex v0.4.6
+   Compiling approx v0.5.1
+   Compiling air-filters v0.0.5
+   Compiling float-cmp v0.10.0
+   Compiling unsafe-libyaml v0.2.11
+   Compiling embedded-storage v0.3.1
+   Compiling embassy-hal-internal v0.4.0
+   Compiling ryu v1.0.23
+   Compiling num-rational v0.4.2
+   Compiling simba v0.9.1
+   Compiling embedded-storage-async v0.4.1
+   Compiling portable-atomic v1.13.1
+   Compiling indexmap v2.14.0
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-task v0.3.32
+   Compiling futures-util v0.3.32
+   Compiling embedded-hal-nb v1.0.0
+   Compiling stm32-fmc v0.4.0
+   Compiling embedded-can v0.4.1
+   Compiling embassy-executor v0.9.1
+   Compiling sdio-host v0.9.0
+   Compiling static_assertions v1.1.0
+   Compiling bit_field v0.10.3
+   Compiling rand_core v0.9.5
+   Compiling embassy-usb v0.5.1
+   Compiling bitflags v2.11.1
+   Compiling panic-probe v1.0.0
+   Compiling rand_core v0.6.4
+   Compiling discrete_pid v0.1.0
+   Compiling proc-macro-error2 v2.0.1
+   Compiling darling_core v0.20.11
+   Compiling static_cell v2.1.1
+   Compiling trait-set v0.3.0
+   Compiling thiserror-impl v2.0.18
+   Compiling nalgebra-macros v0.3.0
+   Compiling cortex-m-rt-macros v0.7.5
+   Compiling cybflight-params-derive v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/params_derive)
+   Compiling serde_derive v1.0.228
+   Compiling darling_macro v0.20.11
+   Compiling nalgebra v0.34.2
+   Compiling defmt-parser v1.0.0
+   Compiling cobs v0.5.1
+   Compiling darling v0.20.11
+   Compiling embassy-executor-macros v0.7.0
+   Compiling defmt v0.3.100
+   Compiling embedded-io v0.7.1
+   Compiling embassy-time v0.5.1
+   Compiling embassy-usb-driver v0.2.0
+   Compiling bsp-types v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/bsp/types)
+   Compiling embassy-net-driver v0.2.0
+   Compiling embedded-io-async v0.7.0
+   Compiling block-device-adapters v0.2.0 (https://github.com/MabezDev/embedded-fatfs?rev=518528cc111fcf65c48abbdeb80735a38eada112#518528cc)
+   Compiling embedded-fatfs v0.1.0 (https://github.com/MabezDev/embedded-fatfs?rev=518528cc111fcf65c48abbdeb80735a38eada112#518528cc)
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling embedded-partitions v0.1.0 (https://github.com/MabezDev/embedded-fatfs?rev=518528cc111fcf65c48abbdeb80735a38eada112#518528cc)
+   Compiling embassy-embedded-hal v0.5.0
+   Compiling embassy-net-driver-channel v0.3.2
+   Compiling embassy-usb-synopsys-otg v0.3.2
+   Compiling embassy-stm32 v0.5.0
+   Compiling flight-solver v0.1.0
+   Compiling cybflight-core v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/cybflight_core)
+   Compiling vehicle-yaml v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/vehicle_yaml)
+   Compiling cybflight v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/cybflight)
+   Compiling cybflight-msgs v0.2.0
+   Compiling cybflight-drivers v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/drivers)
+   Compiling bsp-sakurah743 v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/bsp/sakurah743)
+    Finished `release` profile [optimized + debuginfo] target(s) in 59.89s
+
+exit=0; elapsed_seconds=60.018

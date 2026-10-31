@@ -1,0 +1,12 @@
+{
+  "path": "/tmp/opencode/rust-ap-p0-20261031/AM32",
+  "origin": "https://github.com/am32-firmware/AM32.git",
+  "commit": "86cf1e55e56c7e7e622d01ba6855905504f15105",
+  "commit_date": "2026-10-28T10:19:21-03:00",
+  "status": "",
+  "submodules": "",
+  "scope": "ESC behavior reference only; installed ESC firmware version remains unverified",
+  "license_files_sha256": {
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  }
+}

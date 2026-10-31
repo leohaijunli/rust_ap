@@ -2,3 +2,6 @@
 __pycache__/
 *.py[cod]
 /rust_ap.zip
+/.venv/
+/.idea/
+/.p0-baseline/

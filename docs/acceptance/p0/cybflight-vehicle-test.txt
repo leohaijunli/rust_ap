@@ -1,0 +1,112 @@
+$ cargo test -p vehicle-yaml --target x86_64-unknown-linux-gnu --release --locked
+cwd=/tmp/opencode/rust-ap-p0-20261031/cybflight
+RUSTUP_TOOLCHAIN=1.94.0 VEHICLE=sakura_vicon
+
+ Downloading crates ...
+  Downloaded unsafe-libyaml v0.2.11
+  Downloaded serde_yaml v0.9.34+deprecated
+  Downloaded hashbrown v0.17.0
+   Compiling serde_core v1.0.228
+   Compiling libm v0.2.16
+   Compiling serde v1.0.228
+   Compiling equivalent v1.0.2
+   Compiling hashbrown v0.17.0
+   Compiling ryu v1.0.23
+   Compiling unsafe-libyaml v0.2.11
+   Compiling typenum v1.20.0
+   Compiling itoa v1.0.18
+   Compiling serde_derive v1.0.228
+   Compiling cfg-if v1.0.4
+   Compiling crc32fast v1.5.0
+   Compiling float-cmp v0.10.0
+   Compiling indexmap v2.14.0
+   Compiling num-traits v0.2.19
+   Compiling num-complex v0.4.6
+   Compiling num-integer v0.1.46
+   Compiling approx v0.5.1
+   Compiling air-filters v0.0.5
+   Compiling num-rational v0.4.2
+   Compiling simba v0.9.1
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling vehicle-yaml v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/vehicle_yaml)
+   Compiling nalgebra v0.34.2
+   Compiling flight-solver v0.1.0
+   Compiling cybflight-core v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/cybflight/crates/cybflight_core)
+    Finished `release` profile [optimized + debuginfo] target(s) in 30.82s
+     Running unittests src/lib.rs (/tmp/opencode/rust-ap-p0-20261031/builds/cybflight/x86_64-unknown-linux-gnu/release/deps/vehicle_yaml-df6b392c9a4984e9)
+
+running 45 tests
+test mission::tests::durations_convert_to_cumulative_timestamps ... ok
+test mission::tests::flatness_map_defaults_to_tilt_yaw ... ok
+test mission::tests::duplicate_head_waypoint_is_dropped ... ok
+test mission::tests::bad_env_is_an_error ... ok
+test mission::tests::headings_parse_in_degrees_to_radians ... ok
+test mission::tests::loads_timestamps_form ... ok
+test mission::tests::length_mismatch_without_head_dup_is_an_error ... ok
+test mission::tests::both_or_neither_timing_is_an_error ... ok
+test mission::tests::lookahead_wins_over_headings ... ok
+test mission::tests::missing_headings_is_none ... ok
+test mission::tests::flatness_map_true_yaw_parses ... ok
+test mission::tests::headings_length_mismatch_is_an_error ... ok
+test mission::tests::headings_dropped_in_sync_with_duplicate_head ... ok
+test mission::tests::non_finite_heading_is_an_error ... ok
+test mission::tests::missing_lookahead_keys_are_an_error ... ok
+test mission::tests::non_positive_yaw_lookahead_dt_is_an_error ... ok
+test mission::tests::non_monotonic_timestamps_are_an_error ... ok
+test mission::tests::out_of_range_yaw_lookahead_dt_is_an_error ... ok
+test mission::tests::plain_mission_has_no_warnings ... ok
+test mission::tests::non_positive_yaw_lookahead_max_rate_is_an_error ... ok
+test mission::tests::unknown_field_is_an_error ... ok
+test mission::tests::unknown_flatness_map_is_an_error ... ok
+test tests::build_bad_value_is_an_error ... ok
+test tests::build_partial_declaration_is_ok ... ok
+test tests::build_section_absent_is_none ... ok
+test tests::build_unknown_knob_is_an_error ... ok
+test tests::build_section_parses_and_validates ... ok
+test tests::dual_antenna_with_unicore_loads ... ok
+test tests::default_mission_parses_and_defaults_none ... ok
+test tests::loads_and_applies_tuning ... ok
+test tests::dual_antenna_without_unicore_is_an_error ... ok
+test tests::missing_mass_is_an_error ... ok
+test tests::origin_absent_is_none ... ok
+test tests::origin_missing_field_is_an_error ... ok
+test tests::origin_parses_at_full_precision ... ok
+test tests::origin_out_of_range_is_an_error ... ok
+test tests::out_of_range_tuning_is_an_error ... ok
+test tests::thrust_model_absent_is_none ... ok
+test tests::thrust_model_bad_table_stem_is_an_error ... ok
+test tests::thrust_model_missing_k_is_an_error ... ok
+test tests::thrust_model_table_parses ... ok
+test tests::thrust_model_unknown_type_is_an_error ... ok
+test tests::thrust_model_quadratic_parses_and_validates_k ... ok
+test tests::unicore_without_dual_antenna_loads ... ok
+test tests::unknown_tuning_key_is_an_error ... ok
+
+test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/vehicle-features.rs (/tmp/opencode/rust-ap-p0-20261031/builds/cybflight/x86_64-unknown-linux-gnu/release/deps/vehicle_features-1d742e909edc2b04)
+
+running 5 tests
+test tests::cli_rejects_unknown_and_conflicting_options ... ok
+test tests::environment_overrides_yaml_and_empty_overrides_are_ignored ... ok
+test tests::heading_requires_unicore_and_gps_features_require_gps_position ... ok
+test tests::invalid_settings_and_missing_vehicles_fail ... ok
+test tests::release_vehicles_select_expected_features ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/airframe_identity.rs (/tmp/opencode/rust-ap-p0-20261031/builds/cybflight/x86_64-unknown-linux-gnu/release/deps/airframe_identity-17f7e68bebbef73a)
+
+running 1 test
+test same_name_airframes_agree ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests vehicle_yaml
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+exit=0; elapsed_seconds=31.037

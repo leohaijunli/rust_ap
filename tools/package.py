@@ -38,7 +38,7 @@ def make_package(image: bytes) -> dict:
         "magic": "PX4FWv1",
         "board_id": BOARD_ID,
         "board_revision": 0,
-        "description": "Standalone Rust FMUv6X USB CDC and ETH LED firmware",
+        "description": "Rust/Embassy FMUv6X platform and timing diagnostics",
         "git_identity": "v6x-rust-led",
         "image_size": len(payload),
         "image_maxsize": APP_SIZE,

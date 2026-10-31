@@ -1,0 +1,31 @@
+name: P1 software checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust
+        run: rustup show
+      - name: Install pinned host tools
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r tools/requirements.txt
+      - name: Host tests, lint, H753 build and package checks
+        run: bash tools/firmware.sh check
+      - name: Separate fault-injection build (never flashed in CI)
+        run: bash tools/firmware.sh build-injection
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p1-firmware-and-reports
+          path: |
+            target/thumbv7em-none-eabihf/release/v6x-rust-led*
+            target/thumbv7em-none-eabihf/release/SHA256SUMS
+            target/thumbv7em-none-eabihf/release/sections.txt
+            target/thumbv7em-none-eabihf/release/disassembly.txt
+            target/p1-fault-injection/thumbv7em-none-eabihf/release/v6x-rust-led*
+            target/p1-fault-injection/thumbv7em-none-eabihf/release/SHA256SUMS
+            target/p1-fault-injection/thumbv7em-none-eabihf/release/sections.txt
+            target/p1-fault-injection/thumbv7em-none-eabihf/release/disassembly.txt

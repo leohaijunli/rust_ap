@@ -1,0 +1,41 @@
+Found board 53,0 protocol v5 on /dev/serial/by-id/usb-Auterion_PX4_BL_FMU_v6X.x_0-if00
+
+Firmware: board_id=53, revision=0
+Size: 134208 bytes (6.8%)
+Bootloader version: unknown
+Serial: 004900223132510339313731
+Chip: 0x20036450
+Family: STM32H7[4|5]x
+Revision: V
+Flash: 1966080 bytes
+Windowed mode: no
+
+Erasing, progress: 0%
+Erasing, progress: 5%
+Erasing, progress: 10%
+Erasing, progress: 15%
+Erasing, progress: 20%
+Erasing, progress: 25%
+Erasing, progress: 30%
+Erasing, progress: 35%
+Erasing, progress: 40%
+Erasing, progress: 45%
+Programming, progress: 50%
+Programming, progress: 55%
+Programming, progress: 60%
+Programming, progress: 65%
+Programming, progress: 70%
+Programming, progress: 75%
+Programming, progress: 80%
+Programming, progress: 85%
+Programming, progress: 90%
+Programming, progress: 95%
+Verifying, progress: 99%
+Done, progress: 100%
+
+[INFO] Verifying image signature
+[INFO] Rebooting to application
+
+Uploaded in 17s
+
+Process finished with exit code 0

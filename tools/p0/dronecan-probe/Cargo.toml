@@ -1,0 +1,8 @@
+[package]
+name = "p0-dronecan-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+dronecan = { git = "https://github.com/umi-eng/dronecan-rust", rev = "0f5ffc906aa4527e57b8db343a7f133874eece27" }

@@ -1,0 +1,865 @@
+--- /dev/null
++++ src/backup_domain.rs
+@@ -0,0 +1,140 @@
++//! Preserve the RTC configuration inherited from PX4 across Embassy init.
++//!
++//! embassy-stm32 0.5.0 resets the backup domain when LsConfig differs from
++//! BDCR, then the generated ClockMux writes RTCSEL again. Both must match.
++//! References and supported retained states: docs/fmuv6x-hardware.md.
++
++use core::cell::Cell;
++use core::fmt;
++
++use cortex_m::interrupt::{free, Mutex};
++use embassy_stm32::pac::rcc::regs::Bdcr;
++use embassy_stm32::pac::rcc::vals::Lsedrv;
++use embassy_stm32::pac::{RCC, RTC};
++use embassy_stm32::rcc::{LsConfig, LseConfig, LseDrive, LseMode, RtcClockSource};
++use embassy_stm32::time::Hertz;
++use embassy_stm32::{Config, Peripherals};
++
++// H753 BDCR configuration bits: LSEON/BYP/DRV/CSSON, RTCSEL/EN, BDRST.
++// LSERDY and LSECSSD are live status, not configuration to restore.
++const CONFIG_MASK: u32 = 0x0001_833d;
++
++#[derive(Clone, Copy)]
++struct Status {
++    bdcr_before: u32,
++    bdcr_after: u32,
++    csr_before: u32,
++    csr_after: u32,
++    bkp_preserved: bool,
++}
++
++impl Status {
++    fn config_preserved(self) -> bool {
++        (self.bdcr_before ^ self.bdcr_after) & CONFIG_MASK == 0
++    }
++}
++
++static STATUS: Mutex<Cell<Option<Status>>> = Mutex::new(Cell::new(None));
++
++fn configure(config: &mut Config, bdcr: Bdcr) {
++    let rtc = bdcr.rtcsel();
++    // These states cannot be represented by this fixed HAL without a reset
++    // or its HSE-RTC todo!(). Reject BEFORE calling it, leaving BDCR intact.
++    assert!(!bdcr.bdrst(), "backup domain held in reset");
++    assert!(rtc != RtcClockSource::HSE, "HAL cannot preserve HSE RTC");
++    assert_eq!(
++        bdcr.rtcen(),
++        rtc != RtcClockSource::DISABLE,
++        "HAL cannot preserve this RTCSEL/RTCEN combination"
++    );
++    assert!(
++        bdcr.lseon() || (!bdcr.lsebyp() && rtc != RtcClockSource::LSE),
++        "HAL cannot preserve this stopped LSE configuration"
++    );
++
++    let mut ls = LsConfig::off();
++    ls.rtc = rtc;
++    // The HAL does not disable LSI when false. Enable it only when selected
++    // by the retained RTC; an unrelated running LSI is left alone.
++    ls.lsi = rtc == RtcClockSource::LSI;
++    if bdcr.lseon() {
++        let mode = if bdcr.lsebyp() {
++            LseMode::Bypass
++        } else {
++            // Match the selected H753 PAC, whose two medium encodings differ
++            // from the generic H7 PAC; HAL converts these variants back to it.
++            let drive = match bdcr.lsedrv() {
++                Lsedrv::LOW => LseDrive::Low,
++                Lsedrv::MEDIUM_LOW => LseDrive::MediumLow,
++                Lsedrv::MEDIUM_HIGH => LseDrive::MediumHigh,
++                Lsedrv::HIGH => LseDrive::High,
++            };
++            LseMode::Oscillator(drive)
++        };
++        ls.lse = Some(LseConfig {
++            frequency: Hertz(32_768), // fixed FMUv6X board.h, not a measurement
++            mode,
++        });
++    }
++    config.rcc.ls = ls;
++    config.rcc.mux.rtcsel = rtc;
++}
++
++fn backup_words() -> [u32; 32] {
++    let mut words = [0; 32];
++    for (index, word) in words.iter_mut().enumerate() {
++        *word = RTC.bkpr(index).read().bkp();
++    }
++    words
++}
++
++// A single audited startup boundary shared by normal and diagnostic images.
++#[inline(never)]
++pub fn init(mut config: Config) -> Peripherals {
++    RCC.apb4enr().modify(|w| w.set_rtcapben(true));
++    let _ = RCC.apb4enr().read();
++    let bdcr = RCC.bdcr().read();
++    let csr = RCC.csr().read().0;
++    let words = backup_words();
++    configure(&mut config, bdcr);
++
++    let p = embassy_stm32::init(config);
++    let status = Status {
++        bdcr_before: bdcr.0,
++        bdcr_after: RCC.bdcr().read().0,
++        csr_before: csr,
++        csr_after: RCC.csr().read().0,
++        bkp_preserved: words == backup_words(),
++    };
++    // Do not repair BKP words after a reset and report that as preservation:
++    // it would hide a lost RTC calendar/configuration. Dump can report failure.
++    free(|cs| STATUS.borrow(cs).set(Some(status)));
++    p
++}
++
++#[inline(never)]
++pub fn preserved() -> bool {
++    free(|cs| {
++        STATUS
++            .borrow(cs)
++            .get()
++            .is_some_and(|status| status.config_preserved() && status.bkp_preserved)
++    })
++}
++
++pub fn write_diagnostics(out: &mut impl fmt::Write, prefix: &str) -> fmt::Result {
++    if let Some(status) = free(|cs| STATUS.borrow(cs).get()) {
++        writeln!(
++            out,
++            "{prefix} bdcr_before={:08x} bdcr_after={:08x} csr_before={:08x} csr_after={:08x} config_preserved={} bkp_preserved={}",
++            status.bdcr_before,
++            status.bdcr_after,
++            status.csr_before,
++            status.csr_after,
++            status.config_preserved(),
++            status.bkp_preserved
++        )
++    } else {
++        writeln!(out, "{prefix} unavailable=true")
++    }
++}
+--- before/src/fault.rs
++++ src/fault.rs
+@@ -13,7 +13,6 @@
+ 
+ const FIRST_BKP: usize = 16;
+ static LAST: Mutex<Cell<Option<FaultRecord>>> = Mutex::new(Cell::new(None));
+-static BACKUP: Mutex<Cell<[u32; 32]>> = Mutex::new(Cell::new([0; 32]));
+ static RESET_FLAGS: AtomicU32 = AtomicU32::new(0);
+ 
+ fn enable_backup_access() -> bool {
+@@ -53,28 +52,9 @@
+ pub fn capture_before_hal() {
+     RCC.apb4enr().modify(|w| w.set_rtcapben(true));
+     let _ = RCC.apb4enr().read();
+-    let mut backup = [0; 32];
+-    for (index, word) in backup.iter_mut().enumerate() {
+-        *word = RTC.bkpr(index).read().bkp();
+-    }
+-    free(|cs| BACKUP.borrow(cs).set(backup));
+     free(|cs| LAST.borrow(cs).set(read_record()));
+     RESET_FLAGS.store(RCC.rsr().read().0, Ordering::Relaxed);
+     RCC.rsr().modify(|w| w.set_rmvf(true));
+-}
+-
+-pub fn restore_after_hal() {
+-    // Preserve other owners' backup words too, not just our fault record.
+-    // This does not promise to preserve calendar time if HAL resets the RTC.
+-    let backup = free(|cs| BACKUP.borrow(cs).get());
+-    if enable_backup_access() {
+-        for (index, &word) in backup.iter().enumerate() {
+-            if RTC.bkpr(index).read().bkp() != word {
+-                RTC.bkpr(index).write(|w| w.set_bkp(word));
+-            }
+-        }
+-        cortex_m::asm::dsb();
+-    }
+ }
+ 
+ pub fn reset_flags() -> u32 {
+--- before/src/fault_dump.rs
++++ src/fault_dump.rs
+@@ -2,9 +2,9 @@
+ //!
+ //! Read retained state before the HAL can touch the backup domain, then bring
+ //! up the known-good P0 clock tree (HSI + PLL3Q/48 MHz USB) and stream the
+-//! captured data over USB CDC. This image never writes the fault record; it
+-//! only restores the bytes it captured so a power cycle still returns to the
+-//! PX4 bootloader when the bootloader requested it.
++//! captured data over USB CDC. Both images preserve the inherited RTC/LSE
++//! configuration. This image checks all BKP words without writing them;
++//! only an explicit !bootloader command writes the request in BKP0.
+ 
+ use core::fmt::{self, Write};
+ 
+@@ -88,26 +88,7 @@
+         divr: Some(PllDiv::DIV2),
+     });
+     config.rcc.mux.usbsel = mux::Usbsel::PLL3_Q;
+-    embassy_stm32::init(config)
+-}
+-
+-fn restore_backup(words: &[u32; 32]) -> bool {
+-    PWR.cr1().modify(|w| w.set_dbp(true));
+-    for _ in 0..10_000 {
+-        if PWR.cr1().read().dbp() {
+-            break;
+-        }
+-    }
+-    if !PWR.cr1().read().dbp() {
+-        return false;
+-    }
+-    for (index, &value) in words.iter().enumerate() {
+-        if RTC.bkpr(index).read().bkp() != value {
+-            RTC.bkpr(index).write(|w| w.set_bkp(value));
+-        }
+-    }
+-    cortex_m::asm::dsb();
+-    true
++    crate::backup_domain::init(config)
+ }
+ 
+ fn reboot_to_bootloader() -> ! {
+@@ -224,19 +205,20 @@
+     )
+ }
+ 
+-fn make_report(before: &Snapshot, after: &Snapshot, restored: bool) -> Report {
++fn make_report(before: &Snapshot, after: &Snapshot, preserved: bool) -> Report {
+     let mut out = Report::new();
+     let _ = write!(
+         out,
+-        "V6X_DUMP schema=1 version={} source={} git={} feature=fault-dump\r\n",
++        "V6X_DUMP schema=2 version={} source={} git={} feature=fault-dump\r\n",
+         env!("CARGO_PKG_VERSION"),
+         env!("BUILD_SOURCE_ID"),
+         env!("BUILD_GIT")
+     );
++    let _ = crate::backup_domain::write_diagnostics(&mut out, "V6X_DUMP_BACKUP");
+     let _ = write!(
+         out,
+-        "V6X_DUMP_STATE stage=entry rsr={:08x} idc={:08x} backup_restored={}\r\n",
+-        before.rsr, before.idc, restored
++        "V6X_DUMP_STATE stage=entry rsr={:08x} idc={:08x} backup_preserved={}\r\n",
++        before.rsr, before.idc, preserved
+     );
+     let _ = write_rcc(&mut out, "entry", &before.rcc);
+     let _ = write_power(&mut out, "entry", before);
+@@ -244,8 +226,8 @@
+     let _ = write_fault(&mut out, &before.bkp);
+     let _ = write!(
+         out,
+-        "V6X_DUMP_STATE stage=p0 rsr={:08x} idc={:08x} backup_restored={}\r\n",
+-        after.rsr, after.idc, restored
++        "V6X_DUMP_STATE stage=p0 rsr={:08x} idc={:08x} backup_preserved={}\r\n",
++        after.rsr, after.idc, preserved
+     );
+     let _ = write_rcc(&mut out, "p0", &after.rcc);
+     let _ = write_power(&mut out, "p0", after);
+@@ -368,9 +350,8 @@
+ pub fn run() -> ! {
+     let before = capture();
+     let p = init_p0();
+-    let restored = restore_backup(&before.bkp);
+     let after = capture();
+-    let report = make_report(&before, &after, restored);
++    let report = make_report(&before, &after, crate::backup_domain::preserved());
+ 
+     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
+     let executor = EXECUTOR.init(Executor::new(usize::MAX as *mut ()));
+--- before/src/main.rs
++++ src/main.rs
+@@ -4,6 +4,7 @@
+ #[cfg(all(feature = "fault-dump", feature = "fault-injection"))]
+ compile_error!("fault-dump and fault-injection are mutually exclusive");
+ 
++mod backup_domain;
+ #[cfg(not(feature = "fault-dump"))]
+ mod diagnostics;
+ #[cfg(not(feature = "fault-dump"))]
+--- before/src/platform.rs
++++ src/platform.rs
+@@ -6,8 +6,8 @@
+ use embassy_stm32::interrupt::{InterruptExt, Priority};
+ use embassy_stm32::pac::{DBGMCU, FLASH, PWR, RCC, SYSCFG, TIM2};
+ use embassy_stm32::rcc::{
+-    mux, AHBPrescaler, APBPrescaler, Hse, HseMode, LsConfig, Pll, PllDiv, PllMul, PllPreDiv,
+-    PllSource, Sysclk, VoltageScale,
++    mux, AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllDiv, PllMul, PllPreDiv, PllSource,
++    Sysclk, VoltageScale,
+ };
+ use embassy_stm32::time::Hertz;
+ use embassy_stm32::{Config, Peripherals};
+@@ -74,16 +74,8 @@
+         divr: Some(PllDiv::DIV2),
+     });
+     config.rcc.mux.usbsel = mux::Usbsel::PLL3_Q;
+-    // No RTC service is needed. Keep the existing baseline's LSI config when
+-    // present, otherwise use off. Our retained fault is captured before any
+-    // HAL backup-domain reset and restored afterward.
+-    config.rcc.ls = if RCC.bdcr().read().rtcsel() == embassy_stm32::rcc::RtcClockSource::LSI {
+-        LsConfig::default_lsi()
+-    } else {
+-        LsConfig::off()
+-    };
+-    let p = embassy_stm32::init(config);
+-    crate::fault::restore_after_hal();
++    let p = crate::backup_domain::init(config);
++    assert!(crate::backup_domain::preserved());
+ 
+     embassy_stm32::interrupt::TIM2.set_priority(Priority::P1);
+     embassy_stm32::interrupt::TIM7.set_priority(Priority::P3);
+@@ -141,12 +133,13 @@
+     let scb = unsafe { &*SCB::PTR };
+     writeln!(
+         out,
+-        "P1_PLATFORM schema=1 version={} source={} git={} fault_injection={}",
++        "P1_PLATFORM schema=2 version={} source={} git={} fault_injection={}",
+         env!("CARGO_PKG_VERSION"),
+         env!("BUILD_SOURCE_ID"),
+         env!("BUILD_GIT"),
+         cfg!(feature = "fault-injection")
+     )?;
++    crate::backup_domain::write_diagnostics(out, "BACKUP")?;
+     writeln!(out, "CLOCK configured_cpu_hz={CPU_HZ} hclk_hz={HCLK_HZ} pclk_hz={PCLK_HZ} usb_hz=48000000 tick_hz={TICK_HZ} registers_ok={}", clock_registers_ok())?;
+     writeln!(out, "RCC cr={:08x} cfgr={:08x} d1={:08x} d2={:08x} d3={:08x} pllck={:08x} pllcfg={:08x} pll1={:08x} pll3={:08x} usbsel={:08x}",
+         RCC.cr().read().0, RCC.cfgr().read().0, RCC.d1cfgr().read().0, RCC.d2cfgr().read().0, RCC.d3cfgr().read().0,
+--- /dev/null
++++ tools/backup_domain.py
+@@ -0,0 +1,31 @@
++"""Decode P1 schema-2 backup-domain evidence, without accessing hardware."""
++
++import re
++
++# H753 RCC_BDCR: LSEON/BYP/DRV/CSSON, RTCSEL/EN, BDRST. See hardware ledger.
++CONFIG_MASK = 0x0001833D
++RTC_SOURCES = ("DISABLE", "LSE", "LSI", "HSE")
++
++
++def decode_backup(values):
++    if not values:
++        return None  # Legacy reports contain no evidence of preservation.
++    result = {}
++    for name in ("bdcr_before", "bdcr_after", "csr_before", "csr_after"):
++        raw = values.get(name, "")
++        if not re.fullmatch(r"[0-9a-fA-F]{8}", raw):
++            raise ValueError(f"missing/invalid backup-domain {name}")
++        result[name] = int(raw, 16)
++    for name in ("config_preserved", "bkp_preserved"):
++        if values.get(name) not in ("true", "false"):
++            raise ValueError(f"missing/invalid backup-domain {name}")
++        result[name] = values[name] == "true"
++    before, after = result["bdcr_before"], result["bdcr_after"]
++    result["config_matches"] = (before ^ after) & CONFIG_MASK == 0
++    result["rtc_before"] = RTC_SOURCES[(before >> 8) & 3]
++    result["rtc_after"] = RTC_SOURCES[(after >> 8) & 3]
++    result["preserved"] = (
++        result["config_matches"] and result["config_preserved"]
++        and result["bkp_preserved"] and not ((before | after) & (1 << 16))
++    )
++    return result
+--- before/tools/decode_fault_dump.py
++++ tools/decode_fault_dump.py
+@@ -14,6 +14,8 @@
+ import time
+ import zlib
+ from pathlib import Path
++
++from backup_domain import decode_backup
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ MAGIC = 0x5031_4631
+@@ -242,6 +244,7 @@
+         "reset_flags": flags(rsr, RSR_FLAGS),
+         "bkp0": bkp0_value,
+         "bootloader_request": bkp0_value == 0xB007_B007,
++        "backup_domain": decode_backup(find(lines, "V6X_DUMP_BACKUP")),
+         "fault": decode_fault(words),
+         "entry_clock": decode_pll_clock(rcc),
+         "p0_clock": decode_pll_clock(post_rcc),
+@@ -272,6 +275,14 @@
+     print(f"reset cause: 0x{reset:08x} {' '.join(result['reset_flags']) or '(none)'}")
+     print(f"BKP0: 0x{result['bkp0']:08x} "
+           f"{'(bootloader requested)' if result['bootloader_request'] else ''}")
++    backup = result.get("backup_domain")
++    if backup is None:
++        print("backup-domain preservation: unknown (no schema-2 evidence)")
++    else:
++        print(f"backup-domain preservation: {'YES' if backup['preserved'] else 'NO'} "
++              f"BDCR=0x{backup['bdcr_before']:08x}->0x{backup['bdcr_after']:08x} "
++              f"RTC={backup['rtc_before']}->{backup['rtc_after']} "
++              f"BKP={'unchanged' if backup['bkp_preserved'] else 'changed'}")
+     fault = result["fault"]
+     print(f"retained fault: valid={'YES' if fault['valid'] else 'NO'} "
+           f"kind={fault['kind']} ({fault['kind_name']})")
+--- before/tools/p1_capture.py
++++ tools/p1_capture.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Human-run P1 USB capture; never uploads, reboots, clears faults or injects them."""
++"""Engineer-run P1 USB capture; never uploads, reboots, clears faults or injects them."""
+ 
+ import argparse
+ import json
+@@ -10,10 +10,11 @@
+ import serial
+ from pymavlink.dialects.v20 import common as mav2
+ 
++from backup_domain import decode_backup
+ from check_mavlink import find_port
+ 
+ PREFIXES = {
+-    "P1_PLATFORM", "CLOCK", "RCC", "POWER", "CORE", "TIMER",
++    "P1_PLATFORM", "BACKUP", "CLOCK", "RCC", "POWER", "CORE", "TIMER",
+     "P1_METRICS", "PERIOD", "LATE_HIST", "EXEC", "CPU", "STACK", "RAM",
+     "P1_FAULT", "FRAME", "FAULT_REG", "OK", "ERR",
+ }
+@@ -155,6 +156,11 @@
+         issues.append("shared-stack margin <32 KiB or guard failed")
+     if platform.get("CLOCK", {}).get("registers_ok") != "true":
+         issues.append("clock register verification failed")
++    backup = decode_backup(platform.get("BACKUP"))
++    if backup is None:
++        issues.append("missing backup-domain verification (schema 2 firmware required)")
++    elif not backup["preserved"]:
++        issues.append("backup-domain configuration or BKP preservation failed")
+     snapshot_delta = (int(b["P1_METRICS"]["snapshot_us"]) - int(a["P1_METRICS"]["snapshot_us"])) / 1e6
+     count_delta = int(b["PERIOD"]["samples"]) - int(a["PERIOD"]["samples"])
+     rate = count_delta / snapshot_delta if snapshot_delta > 0 else 0
+@@ -175,8 +181,9 @@
+         "period_rate_hz": rate, "cpu_max_permille": cpu_max, "stack_min_untouched_bytes": stack_min,
+         "cpu_quantization_bound_permille": quantization,
+         "cpu_integer_rounding_bound_permille": 1,
++        "backup_domain": backup,
+         "issues": issues, "software_measurement_gate": "pass" if not issues else "not passed",
+-        "scope": "CPU excludes masked-WFE bracket (including MMIO/DSB overhead); tick bound excludes that hardware overhead. Not WCET/DRDY/IMU evidence. Human recovery/LED/QGC checks still required.",
++        "scope": "CPU excludes masked-WFE bracket (including MMIO/DSB overhead); tick bound excludes that hardware overhead. Not WCET/DRDY/IMU evidence. Engineer recovery/LED/QGC checks still required.",
+     }
+ 
+ 
+--- /dev/null
++++ tools/replay_backup_domain.py
+@@ -0,0 +1,302 @@
++#!/usr/bin/env python3
++"""Execute the compiled startup caller, RTC wrapper and HAL with Unicorn 2.1.4.
++
++Synthetic retained states and immediate-ready MMIO model; not board/RTC timing
++evidence. Loads ELF data/BSS like the runtime, starts at main, and stops after
++backup_domain::init returns (or before the panic handler can write a fault).
++No Rust ABI layout guesses, skipped HAL calls, serial access or image changes.
++"""
++
++import argparse
++import itertools
++import json
++import struct
++import zlib
++from pathlib import Path
++
++from backup_domain import CONFIG_MASK, RTC_SOURCES
++from build_report import Elf32, require, sha256
++
++# Fixed stm32-metapac 19.0.0, cross-checked with PX4/NuttX STM32H7 headers.
++# Exact sources and model limits: docs/acceptance/p1/20261031-backup-domain.md.
++APP_START = 0x08020000
++RAM_START, RAM_SIZE = 0x24000000, 0x80000
++RETURN_PC = 0x20000000
++RCC_CR, CFGR = 0x58024400, 0x58024410
++BDCR, CSR, APB4ENR = 0x58024470, 0x58024474, 0x580244F4
++PWR_CR1, PWR_CSR1, PWR_CR3, PWR_D3CR = 0x58024800, 0x58024804, 0x5802480C, 0x58024818
++RTC, BKP = 0x58004000, 0x58004050
++RTC_END = BKP + 32 * 4
++BDRST, RTCSEL, LSEON, LSERDY = 1 << 16, 3 << 8, 1, 2
++
++
++def symbol(elf, *parts):
++    matches = [s['value'] for name, s in elf.symbols.items()
++               if all(part in name for part in parts) and s['size']]
++    require(len(matches) == 1, f'Expected one symbol matching {parts}, found {len(matches)}')
++    return matches[0] & ~1
++
++
++def seed_rtc():
++    # Distinct synthetic sentinels, including PX4 magic and a CRC-valid fault.
++    calendar = [0x12340000 + i for i in range((BKP - RTC) // 4)]
++    words = [0xA5A50000 + i for i in range(32)]
++    words[0:2] = [0xB007B007, 0xFACEFEED]
++    words[16:20] = [0x50314631, 1, 0x89ABCDEF, 0x01234567]
++    words[31] = zlib.crc32(struct.pack('<15I', *words[16:31])) & 0xFFFFFFFF
++    return struct.pack('<52I', *calendar, *words)
++
++
++def clocks_ready(value):
++    # HSIRDY/CSIRDY/HSI48RDY/HSERDY/PLL1..3RDY follow their enable bits.
++    for enable, ready in ((0, 2), (7, 8), (12, 13), (16, 17), (24, 25), (26, 27), (28, 29)):
++        value = (value & ~(1 << ready)) | (((value >> enable) & 1) << ready)
++    return value | (1 << 5)  # HSIDIVF: divider update complete
++
++
++class Replay:
++    def __init__(self, elf, image, bdcr, csr, disturbance=None):
++        import unicorn as u
++        from unicorn import arm_const as arm
++
++        self.arm = arm
++        self.cpu = cpu = u.Uc(u.UC_ARCH_ARM, u.UC_MODE_THUMB | u.UC_MODE_MCLASS)
++        cpu.ctl_set_cpu_model(arm.UC_CPU_ARM_CORTEX_M7)
++        cpu.mem_map(APP_START, (len(image) + 4095) & ~4095)
++        cpu.mem_write(APP_START, image)
++        cpu.mem_protect(APP_START, (len(image) + 4095) & ~4095, u.UC_PROT_READ | u.UC_PROT_EXEC)
++        cpu.mem_map(RAM_START, RAM_SIZE)
++        cpu.mem_map(RETURN_PC, 4096)
++        for page in (0x40000000, 0x52002000, 0x58000000, 0x58004000,
++                     0x58020000, 0x58021000, 0x58022000, 0x58024000,
++                     0x5C001000, 0xE0001000, 0xE000E000, 0xE000F000):
++            cpu.mem_map(page, 4096)
++        # RAM starts zeroed; initialize .data at its run address, not flash LMA.
++        for ptype, offset, vaddr, _, filesz, memsz, _, _ in elf.headers:
++            if ptype == 1 and memsz and RAM_START <= vaddr < RAM_START + RAM_SIZE:
++                require(vaddr + memsz <= RAM_START + RAM_SIZE, 'ELF RAM segment outside AXI SRAM')
++                cpu.mem_write(vaddr, elf.slice(offset, filesz))
++        self.registers = {
++            RCC_CR: clocks_ready(1), CFGR: 0, BDCR: bdcr, CSR: csr,
++            PWR_CSR1: 0xE000, PWR_CR3: 0x05000042, PWR_D3CR: 0xE000,
++        }
++        for address, value in self.registers.items():
++            self.write_word(address, value)
++        self.write_word(0x5800042C, 0x81)  # SYSCFG.PWRCR, ODEN
++        self.write_word(0x52002000, 0x22)  # FLASH.ACR, initial P0 value
++        self.write_word(0x5C001000, 0x20030450)  # DBGMCU.IDC, revision V
++        self.seed = seed_rtc()
++        cpu.mem_write(RTC, self.seed)
++        self.before = bdcr
++        self.writes = []
++        self.hal_entered = False
++        self.panicked = False
++        self.disturbance = disturbance
++        self.disturbed = False
++        self.init = symbol(elf, 'backup_domain', '4init')
++        self.predicate = symbol(elf, 'backup_domain', '9preserved')
++        # LTO inlines Dump's WFI-only handler into core::panicking functions.
++        # Stop at panic entry points, before either image can handle a fault.
++        panic_entries = {s['value'] & ~1 for name, s in elf.symbols.items()
++                         if s['size'] and ('9panicking' in name or 'rust_begin_unwind' in name)}
++        require(panic_entries, 'ELF has no identifiable panic entry points')
++        self.main = elf.symbols['main']['value']
++        cpu.hook_add(u.UC_HOOK_MEM_READ, self.on_read, begin=0x40000000, end=0x5FFFFFFF)
++        cpu.hook_add(u.UC_HOOK_MEM_WRITE, self.on_write, begin=0x40000000, end=0x5FFFFFFF)
++        cpu.hook_add(u.UC_HOOK_MEM_INVALID, self.on_invalid)
++        for entry in sorted(panic_entries):
++            cpu.hook_add(u.UC_HOOK_CODE, self.on_panic, begin=entry, end=entry)
++        cpu.reg_write(arm.UC_ARM_REG_SP, RAM_START + RAM_SIZE)
++        cpu.reg_write(arm.UC_ARM_REG_LR, RETURN_PC | 1)
++
++    def write_word(self, address, value):
++        self.cpu.mem_write(address, struct.pack('<I', value))
++
++    def read_word(self, address):
++        return struct.unpack('<I', self.cpu.mem_read(address, 4))[0]
++
++    def on_read(self, cpu, access, address, size, value, user):
++        if RTC <= address < RTC_END:
++            require(self.read_word(APB4ENR) & (1 << 16), 'RTC read with APB clock disabled')
++        if address in self.registers:
++            require(size == 4, f'Unexpected MMIO read width at {address:#x}: {size}')
++            self.write_word(address, self.registers[address])
++
++    def on_write(self, cpu, access, address, size, value, user):
++        if address in (BDCR, CSR, PWR_CR3) or RTC <= address < RTC + 0x400:
++            self.writes.append({'pc': cpu.reg_read(self.arm.UC_ARM_REG_PC),
++                                'address': address, 'size': size, 'value': value})
++        if address == PWR_CR3:
++            self.hal_entered = True
++            # Model inherited POR/write-once low byte; not supply validation.
++            self.registers[address] = (value & ~0xFF) | 0x42
++            if self.disturbance == 'hal-mismatch' and not self.disturbed:
++                self.registers[BDCR] ^= 1 << 3
++                self.disturbed = True
++        elif address == RCC_CR:
++            self.registers[address] = clocks_ready(value)
++        elif address == CFGR:
++            self.registers[address] = (value & ~(7 << 3)) | ((value & 7) << 3)
++        elif address == PWR_D3CR:
++            self.registers[address] = value | (1 << 13)
++        elif address == CSR:
++            self.registers[address] = (value & ~2) | ((value & 1) << 1)
++        elif address == BDCR:
++            require(size == 4 and self.read_word(PWR_CR1) & (1 << 8), 'BDCR write without DBP')
++            previous = self.registers[BDCR]
++            if value & BDRST:
++                self.registers[BDCR] = BDRST
++                cpu.mem_write(RTC, bytes(len(self.seed)))
++            else:
++                # RO status bits survive RMW; RTCSEL is locked once nonzero.
++                current = (value & CONFIG_MASK) | (previous & 0x42)
++                if previous & RTCSEL:
++                    current = (current & ~RTCSEL) | (previous & RTCSEL)
++                if not current & LSEON:
++                    current &= ~LSERDY
++                elif not previous & LSEON:
++                    current |= LSERDY
++                self.registers[BDCR] = current
++            # The successful init writes BDCR only at the generated mux. Inject
++            # disturbances here to verify the *compiled* post-HAL comparison.
++            if not self.disturbed and self.disturbance not in (None, 'hal-mismatch'):
++                if self.disturbance.startswith('bkp-'):
++                    target = BKP + int(self.disturbance[4:]) * 4
++                    self.write_word(target, self.read_word(target) ^ 1)
++                else:
++                    require(self.disturbance.startswith('bdcr-'), 'Unknown disturbance')
++                    self.registers[BDCR] ^= int(self.disturbance[5:], 16)
++                self.disturbed = True
++
++    def on_panic(self, cpu, address, size, user):
++        self.panicked = True
++        cpu.emu_stop()
++
++    def on_invalid(self, cpu, access, address, size, value, user):
++        pc = cpu.reg_read(self.arm.UC_ARM_REG_PC)
++        raise RuntimeError(f'Unmapped/protected access {access} at {address:#x}, size={size}, pc={pc:#x}')
++
++    def run_until(self, entry, end, limit=100000):
++        from unicorn import UcError
++
++        try:
++            self.cpu.emu_start(entry | 1, end, count=limit)
++        except UcError as error:
++            pc = self.cpu.reg_read(self.arm.UC_ARM_REG_PC)
++            raise RuntimeError(f'Emulation failed at {pc:#x}: {error}') from error
++        pc = self.cpu.reg_read(self.arm.UC_ARM_REG_PC)
++        require(self.panicked or pc == end, f'Execution did not reach {end:#x}; stopped at {pc:#x}')
++
++    def run(self):
++        self.run_until(self.main, self.init)
++        require(not self.panicked, 'Panic before backup-domain wrapper')
++        return_pc = self.cpu.reg_read(self.arm.UC_ARM_REG_LR) & ~1
++        self.run_until(self.init, return_pc)
++        preserved = None
++        if not self.panicked:
++            self.cpu.reg_write(self.arm.UC_ARM_REG_LR, RETURN_PC | 1)
++            self.run_until(self.predicate, RETURN_PC, 1000)
++            value = self.cpu.reg_read(self.arm.UC_ARM_REG_R0)
++            require(not self.panicked and value in (0, 1), 'Invalid preservation predicate return')
++            preserved = bool(value)
++        retained = bytes(self.cpu.mem_read(RTC, len(self.seed)))
++        bdcr_writes = [w for w in self.writes if w['address'] == BDCR]
++        return {
++            'bdcr_before': self.before, 'bdcr_after': self.registers[BDCR],
++            'csr_after': self.registers[CSR], 'hal_entered': self.hal_entered,
++            'panicked': self.panicked, 'preserved': preserved,
++            'bkp_matches': retained[BKP - RTC:] == self.seed[BKP - RTC:],
++            'calendar_matches': retained[:BKP - RTC] == self.seed[:BKP - RTC],
++            'bdrst_writes': sum(bool(w['value'] & BDRST) for w in bdcr_writes),
++            'config_change_writes': sum(bool((w['value'] ^ self.before) & CONFIG_MASK) for w in bdcr_writes),
++            'rtc_writes': sum(RTC <= w['address'] < RTC + 0x400 for w in self.writes),
++            'disturbed': self.disturbed, 'writes': self.writes,
++        }
++
++
++def cases():
++    # RTC off/LSE/LSI, all four raw drive settings, stopped/oscillator/bypass,
++    # and an unrelated running LSI. HAL must keep the entire retained state.
++    for rtc, mode, drive, csr in itertools.product(range(3), (0, 1, 5), range(4), (0, 3)):
++        if rtc == 1 and mode == 0:
++            continue
++        bdcr = rtc << 8 | bool(rtc) << 15 | mode | drive << 3 | (2 if mode else 0)
++        yield f'{RTC_SOURCES[rtc]}-mode{mode}-drive{drive}-csr{csr}', bdcr, csr, 'preserve', None
++    for drive, status in itertools.product(range(4), (0, 2, 0x40)):
++        yield f'LSE-css-drive{drive}-status{status:02x}', 0x8121 | drive << 3 | status, 0, 'preserve', None
++    for rtc, enabled in itertools.product(range(4), range(2)):
++        if rtc == 3 or bool(rtc) != bool(enabled):
++            yield f'reject-rtc{rtc}-enabled{enabled}', rtc << 8 | enabled << 15 | 3, 0, 'reject', None
++    for rtc in range(3):
++        bdcr = rtc << 8 | bool(rtc) << 15
++        yield f'reject-stopped-bypass-rtc{rtc}', bdcr | 4, 0, 'reject', None
++        yield f'reject-reset-rtc{rtc}', bdcr | BDRST, 0, 'reject', None
++    yield 'reject-stopped-LSE', 0x8100, 0, 'reject', None
++    for index in range(32):
++        yield f'detect-bkp{index}', 0x811B, 0, 'detect', f'bkp-{index}'
++    for bit in (0, 2, 3, 4, 5, 8, 9, 15, 16):
++        yield f'detect-bdcr-bit{bit}', 0x811B, 0, 'detect', f'bdcr-{1 << bit:x}'
++    for bit in (1, 6):
++        yield f'live-bdcr-bit{bit}', 0x811B, 0, 'live', f'bdcr-{1 << bit:x}'
++    yield 'detect-HAL-reset', 0x811B, 0, 'reset', 'hal-mismatch'
++
++
++def check(result, expected, bdcr, csr):
++    require(result['rtc_writes'] == 0, 'Initialization wrote RTC/BKP registers')
++    if expected == 'reject':
++        require(result['panicked'] and not result['hal_entered'], 'Unsupported state reached HAL')
++        require(not result['writes'], 'Unsupported state changed backup domain or entered RCC init')
++    else:
++        require(result['hal_entered'] and not result['panicked'], 'Supported init did not return')
++        require(result['preserved'] == (expected in ('preserve', 'live')), 'Wrong preservation result')
++        require(result['disturbed'] == (expected != 'preserve'), 'Disturbance hook was not exercised')
++    if expected == 'reset':
++        require(result['bdrst_writes'] > 0 and not result['bkp_matches']
++                and not result['calendar_matches'], 'HAL reset control did not erase modeled RTC/BKP')
++    else:
++        require(result['bdrst_writes'] == result['config_change_writes'] == 0,
++                'Initialization attempted to reset/reconfigure the backup domain')
++    if expected in ('preserve', 'reject', 'live'):
++        require((result['bdcr_after'] ^ bdcr) & CONFIG_MASK == 0, 'Retained configuration changed')
++        require(result['bkp_matches'] and result['calendar_matches'], 'Retained RTC/BKP changed')
++    if expected == 'preserve':
++        require(result['csr_after'] == (3 if (bdcr & RTCSEL) == 0x200 else csr), 'Unexpected LSI change')
++        require(sum(w['address'] == BDCR for w in result['writes']) == 1, 'Generated RTC mux write missing')
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('release', type=Path, help='Directory with ELF, bin and build.json')
++    parser.add_argument('--json', type=Path, help='Save detailed per-case MMIO evidence')
++    args = parser.parse_args()
++    try:
++        import unicorn
++    except ImportError:
++        parser.error('Install the optional host dependency unicorn==2.1.4')
++    require(unicorn.__version__ == '2.1.4', 'Replay requires the pinned Unicorn 2.1.4')
++    report = json.loads((args.release / 'v6x-rust-led.build.json').read_text())
++    for name in ('v6x-rust-led', 'v6x-rust-led.bin', 'v6x-rust-led.px4'):
++        require(sha256(args.release / name) == report['artifacts'][name]['sha256'], f'Artifact hash mismatch: {name}')
++    elf = Elf32((args.release / 'v6x-rust-led').read_bytes())
++    image = (args.release / 'v6x-rust-led.bin').read_bytes()
++    results = []
++    print(f"Unicorn {unicorn.__version__} Cortex-M7; source={report['source_id']} features={report['features']}")
++    print('Actual compiled caller + full HAL init; synthetic MMIO, not hardware/timing evidence')
++    for name, bdcr, csr, expected, disturbance in cases():
++        result = Replay(elf, image, bdcr, csr, disturbance).run()
++        results.append({'case': name, 'expected': expected, 'csr_before': csr, **result})
++        print(f"{name}: BDCR={bdcr:08x}->{result['bdcr_after']:08x} "
++              f"panic={result['panicked']} preserved={result['preserved']} BDRST={result['bdrst_writes']}")
++        check(result, expected, bdcr, csr)
++    if args.json:
++        args.json.write_text(json.dumps({
++            'schema': 1, 'unicorn': unicorn.__version__, 'source_id': report['source_id'],
++            'features': report['features'], 'artifacts': report['artifacts'],
++            'tool_sha256': sha256(Path(__file__)), 'cases': results,
++            'scope': 'Compiled startup/HAL with synthetic MMIO; no hardware, timing or RTC calendar progression validation',
++        }, indent=2) + '\n')
++    print(f'{len(results)} compiled backup-domain cases: PASS')
++
++
++if __name__ == '__main__':
++    main()
+--- before/tools/test_decode_fault_dump.py
++++ tools/test_decode_fault_dump.py
+@@ -164,6 +164,39 @@
+         result = decode_report(parse_reports(report(valid_words()))[0])
+         self.assertEqual(result["fault"]["file"], [])
+ 
++    def test_legacy_dump_does_not_claim_backup_preservation(self):
++        result = decode_text(report(valid_words()))
++        self.assertIsNone(result["backup_domain"])
++        output = io.StringIO()
++        with contextlib.redirect_stdout(output):
++            print_report(result)
++        self.assertIn("backup-domain preservation: unknown", output.getvalue())
++
++    def test_schema_2_backup_registers_are_checked_independently(self):
++        text = report(valid_words()).replace("schema=1", "schema=2").replace(
++            "V6X_DUMP_END",
++            "V6X_DUMP_BACKUP bdcr_before=0000811b bdcr_after=0000811b "
++            "csr_before=00000000 csr_after=00000000 config_preserved=true bkp_preserved=true\r\nV6X_DUMP_END",
++        )
++        result = decode_text(text)
++        self.assertTrue(result["backup_domain"]["preserved"])
++        self.assertEqual(result["backup_domain"]["rtc_before"], "LSE")
++        # Readiness is live status; RTC selection, drive, enable and CSS are not.
++        for word, expected in (("00008119", True), ("0000821b", False),
++                               ("0000810b", False), ("0000011b", False),
++                               ("0001811b", False), ("0000813b", False)):
++            with self.subTest(bdcr_after=word):
++                changed = text.replace("bdcr_after=0000811b", f"bdcr_after={word}")
++                self.assertEqual(decode_text(changed)["backup_domain"]["preserved"], expected)
++        changed = text.replace("bkp_preserved=true", "bkp_preserved=false")
++        self.assertFalse(decode_text(changed)["backup_domain"]["preserved"])
++
++    def test_malformed_backup_evidence_is_not_decoded_as_zero(self):
++        base = report(valid_words()).replace("V6X_DUMP_END", "V6X_DUMP_BACKUP {values}\r\nV6X_DUMP_END")
++        for values in ("bdcr_before=garbage", "unavailable=true"):
++            with self.subTest(values=values), self.assertRaisesRegex(ValueError, "backup-domain"):
++                decode_text(base.replace("{values}", values))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+--- before/tools/test_p1_capture.py
++++ tools/test_p1_capture.py
+@@ -4,6 +4,16 @@
+ from pymavlink.dialects.v20 import common as mav2
+ 
+ from p1_capture import Demux, analyze, fields
++
++
++PLATFORM = {
++    "CLOCK": {"registers_ok": "true"},
++    "BACKUP": {
++        "bdcr_before": "0000811b", "bdcr_after": "0000811b",
++        "csr_before": "00000000", "csr_after": "00000000",
++        "config_preserved": "true", "bkp_preserved": "true",
++    },
++}
+ 
+ 
+ def sample(second):
+@@ -47,7 +57,7 @@
+                 fields(lines)
+ 
+     def test_60_second_window_and_rtt_bounds(self):
+-        result = analyze([sample(2), sample(67)], {"CLOCK": {"registers_ok": "true"}})
++        result = analyze([sample(2), sample(67)], PLATFORM)
+         self.assertEqual(result["software_measurement_gate"], "pass")
+         self.assertEqual(result["period_rate_hz"], 1000)
+         self.assertEqual(result["cpu_quantization_bound_permille"], 2)
+@@ -62,22 +72,43 @@
+             samples = copy.deepcopy(baseline)
+             samples[-1]["fields"][prefix][key] = value
+             with self.subTest(prefix=prefix, key=key):
+-                self.assertNotEqual(analyze(samples, {"CLOCK": {"registers_ok": "true"}})["software_measurement_gate"], "pass")
++                self.assertNotEqual(analyze(samples, PLATFORM)["software_measurement_gate"], "pass")
+ 
+     def test_timebase_uncertainty_is_not_silently_a_pass(self):
+         samples = [sample(2), sample(67)]
+         samples[-1]["received_ns"] += 1_000_000_000
+-        self.assertTrue(analyze(samples, {"CLOCK": {"registers_ok": "true"}})["timebase"].startswith("indeterminate"))
++        self.assertTrue(analyze(samples, PLATFORM)["timebase"].startswith("indeterminate"))
+ 
+     def test_stale_stack_and_integer_cpu_rounding_cannot_pass(self):
+         for prefix, key, value in (("STACK", "at_us", "1"), ("CPU", "busy_permille", "497")):
+             samples = [sample(2), sample(67)]
+             samples[-1]["fields"][prefix][key] = value
+             with self.subTest(key=key):
+-                self.assertNotEqual(analyze(samples, {"CLOCK": {"registers_ok": "true"}})["software_measurement_gate"], "pass")
++                self.assertNotEqual(analyze(samples, PLATFORM)["software_measurement_gate"], "pass")
+ 
+     def test_zero_cpu_window_is_rejected(self):
+         samples = [sample(2), sample(67)]
+         samples[-1]["fields"]["CPU"]["window_us"] = "0"
+         with self.assertRaises(ValueError):
+-            analyze(samples, {"CLOCK": {"registers_ok": "true"}})
++            analyze(samples, PLATFORM)
++
++    def test_backup_evidence_survives_mixed_stream_capture(self):
++        line = b"BACKUP bdcr_before=0000811b bdcr_after=0000811b csr_before=00000000 csr_after=00000000 config_preserved=true bkp_preserved=true\r\n"
++        demux = Demux()
++        self.assertEqual(demux.feed(line[:21]), [])
++        events = demux.feed(line[21:] + b"END\n")
++        self.assertEqual(events[0], ("console", line.decode().strip()))
++        self.assertEqual(fields([events[0][1]])["BACKUP"], PLATFORM["BACKUP"])
++
++    def test_missing_or_failed_backup_verification_cannot_pass(self):
++        samples = [sample(2), sample(67)]
++        self.assertNotEqual(analyze(samples, {"CLOCK": PLATFORM["CLOCK"]})["software_measurement_gate"], "pass")
++        for key, value in (
++            ("bdcr_after", "0000821b"), ("bdcr_after", "0000810b"),
++            ("bdcr_after", "0000011b"), ("bkp_preserved", "false"),
++            ("config_preserved", "false"),
++        ):
++            platform = copy.deepcopy(PLATFORM)
++            platform["BACKUP"][key] = value
++            with self.subTest(key=key, value=value):
++                self.assertNotEqual(analyze(samples, platform)["software_measurement_gate"], "pass")

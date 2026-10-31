@@ -19,25 +19,39 @@ pub(crate) fn status(phy: &RefCell<Lan8742<'_>>, eth_power: &Output<'_>) -> Resp
         eth_power.is_set_high()
     );
     let _ = phy.borrow_mut().write_diagnostics(&mut response);
-    let _ = writeln!(response, "END");
+    response.finish();
     response
 }
 
-pub(crate) fn reboot_to_bootloader() -> ! {
-    use embassy_stm32::pac::{PWR, RCC, RTC};
-
-    // PX4's FMUv6X bootloader checks RTC backup register 0 for this signature.
-    RCC.apb4enr().modify(|w| w.set_rtcapben(true));
-    PWR.cr1().modify(|w| w.set_dbp(true));
-    while !PWR.cr1().read().dbp() {}
-    RTC.bkpr(0).write(|w| w.set_bkp(0xb007_b007));
-    cortex_m::asm::dsb();
-    cortex_m::peripheral::SCB::sys_reset();
+pub(crate) fn report(command: Command) -> Response {
+    let mut response = Response::new();
+    let _ = match command {
+        Command::Platform => crate::platform::write_diagnostics(&mut response),
+        Command::Metrics => crate::diagnostics::write_diagnostics(&mut response),
+        Command::MetricsReset => {
+            crate::diagnostics::request_reset();
+            writeln!(response, "OK metrics-reset-requested")
+        }
+        Command::Fault => crate::fault::write_diagnostics(&mut response),
+        Command::FaultClear => writeln!(response, "FAULT_CLEAR ok={}", crate::fault::clear()),
+        _ => writeln!(response, "ERR unsupported-report"),
+    };
+    response.finish();
+    response
 }
 
 pub(crate) enum Command {
     Status,
     Bootloader,
+    Platform,
+    Metrics,
+    MetricsReset,
+    Fault,
+    FaultClear,
+    #[cfg(feature = "fault-injection")]
+    Panic,
+    #[cfg(feature = "fault-injection")]
+    HardFault,
 }
 
 pub(crate) struct CommandLine {
@@ -65,6 +79,15 @@ impl CommandLine {
                 match line {
                     b"!status" => Some(Command::Status),
                     b"!bootloader" => Some(Command::Bootloader),
+                    b"!platform" => Some(Command::Platform),
+                    b"!metrics" => Some(Command::Metrics),
+                    b"!metrics-reset" => Some(Command::MetricsReset),
+                    b"!fault" => Some(Command::Fault),
+                    b"!fault-clear" => Some(Command::FaultClear),
+                    #[cfg(feature = "fault-injection")]
+                    b"!panic" => Some(Command::Panic),
+                    #[cfg(feature = "fault-injection")]
+                    b"!hardfault" => Some(Command::HardFault),
                     _ => None,
                 }
             };
@@ -85,20 +108,31 @@ impl CommandLine {
 }
 
 pub(crate) struct Response {
-    bytes: [u8; 1536],
+    bytes: [u8; 2048],
     len: usize,
+    overflow: bool,
 }
 
 impl Response {
     fn new() -> Self {
         Self {
-            bytes: [0; 1536],
+            bytes: [0; 2048],
             len: 0,
+            overflow: false,
         }
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8] {
         &self.bytes[..self.len]
+    }
+
+    fn finish(&mut self) {
+        let _ = writeln!(self, "END");
+        if self.overflow {
+            self.len = 0;
+            self.overflow = false;
+            let _ = self.write_str("ERR response-overflow\nEND\n");
+        }
     }
 }
 
@@ -106,6 +140,7 @@ impl Write for Response {
     fn write_str(&mut self, text: &str) -> fmt::Result {
         let end = self.len + text.len();
         if end > self.bytes.len() {
+            self.overflow = true;
             return Err(fmt::Error);
         }
         self.bytes[self.len..end].copy_from_slice(text.as_bytes());

@@ -1,0 +1,260 @@
+{
+  "scope": "proposed budgets; record adopted test values and validate in HIL",
+  "assumptions": {
+    "profile": "exploration",
+    "esc_count": 8,
+    "esc_slots": 8,
+    "command_hz": 400,
+    "status_hz": 50,
+    "arming_hz": 10,
+    "fix_hz": 5,
+    "can_bitrate": 1000000,
+    "gnss_node_allowance": 2,
+    "rtcm_input_bytes_per_second": 2048
+  },
+  "transfer_sizes": {
+    "raw_command": {
+      "payload_bytes": 14,
+      "dlcs": [
+        8,
+        8,
+        3
+      ],
+      "frames": 3,
+      "bits": 430
+    },
+    "arming_status": {
+      "payload_bytes": 1,
+      "dlcs": [
+        2
+      ],
+      "frames": 1,
+      "bits": 100
+    },
+    "esc_status": {
+      "payload_bytes": 14,
+      "dlcs": [
+        8,
+        8,
+        3
+      ],
+      "frames": 3,
+      "bits": 430
+    },
+    "fix2_max_arrays": {
+      "payload_bytes": 221,
+      "dlcs": [
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        7
+      ],
+      "frames": 32,
+      "bits": 5110
+    },
+    "gnss_auxiliary": {
+      "payload_bytes": 16,
+      "dlcs": [
+        8,
+        8,
+        5
+      ],
+      "frames": 3,
+      "bits": 450
+    },
+    "node_status": {
+      "payload_bytes": 7,
+      "dlcs": [
+        8
+      ],
+      "frames": 1,
+      "bits": 160
+    },
+    "rtcm_full_chunk": {
+      "payload_bytes": 129,
+      "dlcs": [
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        8,
+        6
+      ],
+      "frames": 19,
+      "bits": 3020
+    }
+  },
+  "transfer_rates_hz": {
+    "raw_command": 400,
+    "arming_status": 10,
+    "esc_status": 400,
+    "fix2_max_arrays": 5,
+    "gnss_auxiliary": 1,
+    "node_status": 12
+  },
+  "can_bits_per_second": {
+    "raw_command": 172000,
+    "arming_status": 1000,
+    "esc_status": 172000,
+    "fix2_max_arrays": 25550,
+    "gnss_auxiliary": 450,
+    "node_status": 1920,
+    "rtcm_frame_limit": 64000,
+    "services_frame_limit": 32000,
+    "other_gnss_broadcast_allowance": 20000
+  },
+  "can_subtotal_percent": 48.892,
+  "error_retry_reserve_percent": 10,
+  "can_with_reserve_percent": 58.892,
+  "within_60_percent_envelope": true,
+  "log_topics": [
+    {
+      "topic": "imu_icm42688",
+      "payload_max_bytes": 56,
+      "hz_total": 1000,
+      "ulog_data_bytes_per_second": 61000
+    },
+    {
+      "topic": "state_estimate",
+      "payload_max_bytes": 76,
+      "hz_total": 250,
+      "ulog_data_bytes_per_second": 20250
+    },
+    {
+      "topic": "rate_debug",
+      "payload_max_bytes": 64,
+      "hz_total": 250,
+      "ulog_data_bytes_per_second": 17250
+    },
+    {
+      "topic": "motor_command_8_slots",
+      "payload_max_bytes": 56,
+      "hz_total": 400,
+      "ulog_data_bytes_per_second": 24400
+    },
+    {
+      "topic": "arming_status",
+      "payload_max_bytes": 24,
+      "hz_total": 10,
+      "ulog_data_bytes_per_second": 290
+    },
+    {
+      "topic": "esc_status",
+      "payload_max_bytes": 40,
+      "hz_total": 400,
+      "ulog_data_bytes_per_second": 18000
+    },
+    {
+      "topic": "mag",
+      "payload_max_bytes": 32,
+      "hz_total": 50,
+      "ulog_data_bytes_per_second": 1850
+    },
+    {
+      "topic": "baro",
+      "payload_max_bytes": 24,
+      "hz_total": 50,
+      "ulog_data_bytes_per_second": 1450
+    },
+    {
+      "topic": "gnss_fix",
+      "payload_max_bytes": 256,
+      "hz_total": 5,
+      "ulog_data_bytes_per_second": 1305
+    },
+    {
+      "topic": "gnss_auxiliary",
+      "payload_max_bytes": 64,
+      "hz_total": 1,
+      "ulog_data_bytes_per_second": 69
+    },
+    {
+      "topic": "rtcm_status",
+      "payload_max_bytes": 64,
+      "hz_total": 1,
+      "ulog_data_bytes_per_second": 69
+    },
+    {
+      "topic": "node_status",
+      "payload_max_bytes": 20,
+      "hz_total": 16,
+      "ulog_data_bytes_per_second": 400
+    },
+    {
+      "topic": "can_stats",
+      "payload_max_bytes": 80,
+      "hz_total": 10,
+      "ulog_data_bytes_per_second": 850
+    },
+    {
+      "topic": "runtime_health",
+      "payload_max_bytes": 64,
+      "hz_total": 10,
+      "ulog_data_bytes_per_second": 690
+    },
+    {
+      "topic": "events_allowance",
+      "payload_max_bytes": 96,
+      "hz_total": 10,
+      "ulog_data_bytes_per_second": 1010
+    },
+    {
+      "topic": "mpc_debug_future",
+      "payload_max_bytes": 128,
+      "hz_total": 50,
+      "ulog_data_bytes_per_second": 6650
+    },
+    {
+      "topic": "path_future",
+      "payload_max_bytes": 128,
+      "hz_total": 20,
+      "ulog_data_bytes_per_second": 2660
+    }
+  ],
+  "log_bytes_per_second": 158193,
+  "log_with_25_percent_margin": 197742,
+  "normal_ring_bytes": 131072,
+  "event_reserve_bytes": 8192,
+  "ring_seconds_at_256000_bytes_per_second": 0.512
+}

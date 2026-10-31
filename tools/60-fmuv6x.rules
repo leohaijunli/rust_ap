@@ -1,0 +1,3 @@
+# Give the active local desktop user access to the Rust application and PX4 bootloader.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0001", ATTRS{serial}=="V6X-RUST-001", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="3185", ATTRS{idProduct}=="0035", TAG+="uaccess"

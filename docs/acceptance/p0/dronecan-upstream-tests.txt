@@ -1,0 +1,35 @@
+$ cargo test --lib --target x86_64-unknown-linux-gnu
+cwd=/tmp/opencode/rust-ap-p0-20261031/dronecan-rust
+RUSTUP_TOOLCHAIN=1.99.1
+
+    Blocking waiting for file lock on package cache
+    Updating crates.io index
+    Blocking waiting for file lock on package cache
+     Locking 13 packages to highest Rust 1.85 compatible versions
+    Blocking waiting for file lock on package cache
+ Downloading crates ...
+  Downloaded defmt v1.2.0
+  Downloaded managed v0.8.0
+  Downloaded defmt-parser v1.1.0
+  Downloaded defmt-macros v1.2.0
+   Compiling nb v1.1.0
+   Compiling managed v0.8.0
+   Compiling embedded-can v0.4.1
+   Compiling dronecan v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/dronecan-rust)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.24s
+     Running unittests src/lib.rs (/tmp/opencode/rust-ap-p0-20261031/builds/p0-probes/x86_64-unknown-linux-gnu/debug/deps/dronecan-94ba54fecb16208e)
+
+running 8 tests
+test id::tests::ardupilot_indication_notify_state ... ok
+test id::tests::create_ids ... ok
+test transfer::tests::tail_byte ... ok
+test id::tests::to_from_raw ... ok
+test id::tests::uavcan_equipment_actuator_array_command ... ok
+test transfer::tests::tansfer_buffer_too_small ... ok
+test transfer::tests::tansfer_multi ... ok
+test transfer::tests::transfer_single ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+exit=0; elapsed_seconds=1.319

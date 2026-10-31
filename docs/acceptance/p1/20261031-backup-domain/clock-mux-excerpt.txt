@@ -1,0 +1,76 @@
+Full generated file: /home/dev/rust_ap/target/thumbv7em-none-eabihf/release/build/embassy-stm32-dd9d0d0e4860e74d/out/_generated.rs
+SHA-256: b74d5c51e15d73cdd5044971a9785036ac819c70cde7b68aaa7576f63691ded5
+Identical generated content selected by the OUT_DIR references in normal/Dump/injection final ELFs.
+Complete generated file archived at target/p1-backup-domain-20261031/upstream/embassy-stm32-generated.rs
+
+3660:     pub use crate::pac::rcc::vals::Cecsel;
+3661:     pub use crate::pac::rcc::vals::Fdcansel;
+3662:     pub use crate::pac::rcc::vals::Fmcsel;
+3663:     pub use crate::pac::rcc::vals::I2c1235sel;
+3664:     pub use crate::pac::rcc::vals::I2c4sel;
+3665:     pub use crate::pac::rcc::vals::Lptim1sel;
+3666:     pub use crate::pac::rcc::vals::Lptim2sel;
+3667:     pub use crate::pac::rcc::vals::Lpuartsel;
+3668:     pub use crate::pac::rcc::vals::Persel;
+3669:     pub use crate::pac::rcc::vals::Rngsel;
+3670:     pub use crate::pac::rcc::vals::Rtcsel;
+3671:     pub use crate::pac::rcc::vals::Saisel;
+3672:     pub use crate::pac::rcc::vals::Sdmmcsel;
+3673:     pub use crate::pac::rcc::vals::Spdifrxsel;
+3674:     pub use crate::pac::rcc::vals::Spi45sel;
+3675:     pub use crate::pac::rcc::vals::Spi6sel;
+3676:     pub use crate::pac::rcc::vals::Usart16910sel;
+3677:     pub use crate::pac::rcc::vals::Usart234578sel;
+3678:     pub use crate::pac::rcc::vals::Usbsel;
+3679:     #[derive(Clone, Copy)]
+3680:     #[non_exhaustive]
+3681:     pub struct ClockMux {
+3682:         pub rtcsel: Rtcsel,
+3683:         pub fmcsel: Fmcsel,
+3684:         pub persel: Persel,
+3685:         pub quadspisel: Fmcsel,
+3686:         pub sdmmcsel: Sdmmcsel,
+3687:         pub fdcansel: Fdcansel,
+3688:         pub sai1sel: Saisel,
+3689:         pub sai23sel: Saisel,
+3690:         pub spdifrxsel: Spdifrxsel,
+3691:         pub spi123sel: Saisel,
+3692:         pub spi45sel: Spi45sel,
+3693:         pub cecsel: Cecsel,
+3694:         pub i2c1235sel: I2c1235sel,
+3695:         pub lptim1sel: Lptim1sel,
+3696:         pub rngsel: Rngsel,
+3697:         pub usart16910sel: Usart16910sel,
+3698:         pub usart234578sel: Usart234578sel,
+3699:         pub usbsel: Usbsel,
+3700:         pub adcsel: Adcsel,
+3701:         pub i2c4sel: I2c4sel,
+3702:         pub lptim2sel: Lptim2sel,
+3703:         pub lpuart1sel: Lpuartsel,
+3704:         pub spi6sel: Spi6sel,
+3705:     }
+3706:     impl ClockMux {
+3707:         pub(crate) const fn default() -> Self {
+3708:             unsafe { ::core::mem::zeroed() }
+3709:         }
+3710:     }
+3711:     impl Default for ClockMux {
+3712:         fn default() -> Self {
+3713:             Self::default()
+3714:         }
+3715:     }
+3716:     impl ClockMux {
+3717:         pub(crate) fn init(&self) {
+3718:             crate::pac::RCC.bdcr().modify(|w| {
+3719:                 w.set_rtcsel(self.rtcsel);
+3720:             });
+3721:             crate::pac::RCC.d1ccipr().modify(|w| {
+3722:                 w.set_fmcsel(self.fmcsel);
+3723:                 w.set_persel(self.persel);
+3724:                 w.set_quadspisel(self.quadspisel);
+3725:                 w.set_sdmmcsel(self.sdmmcsel);
+3726:             });
+3727:             crate::pac::RCC.d2ccip1r().modify(|w| {
+3728:                 w.set_fdcansel(self.fdcansel);
+3729:                 w.set_sai1sel(self.sai1sel);
+3730:                 w.set_sai23sel(self.sai23sel);

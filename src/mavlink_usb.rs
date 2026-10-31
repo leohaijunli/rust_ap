@@ -8,7 +8,7 @@ use embassy_stm32::gpio::Output;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::watch::Watch;
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{with_timeout, Duration, Instant, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, Receiver, Sender};
 use embassy_usb::driver::{Driver, EndpointError};
 use mavlink::common::*;
@@ -26,7 +26,13 @@ const PARAMETERS: [(&str, f32); 2] = [("MAV_SYS_ID", SYSTEM_ID as f32), ("LINK_L
 enum Outbound {
     Message(MavMessage),
     Console(Response),
-    Bootloader { console_ack: bool },
+    Bootloader {
+        console_ack: bool,
+    },
+    #[cfg(feature = "fault-injection")]
+    InjectFault {
+        hard: bool,
+    },
 }
 
 type Replies = Channel<NoopRawMutex, Outbound, 4>;
@@ -144,10 +150,27 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
                 }
                 Either::Second(Outbound::Bootloader { console_ack }) => {
                     if console_ack {
-                        let _ = write_transfer(sender, b"OK bootloader\n").await;
+                        let _ = with_timeout(
+                            Duration::from_millis(100),
+                            write_transfer(sender, b"OK bootloader\n"),
+                        )
+                        .await;
                     }
                     Timer::after_millis(100).await;
-                    usb_console::reboot_to_bootloader();
+                    crate::fault::reboot_to_bootloader();
+                }
+                #[cfg(feature = "fault-injection")]
+                Either::Second(Outbound::InjectFault { hard }) => {
+                    let _ = with_timeout(
+                        Duration::from_millis(100),
+                        write_transfer(sender, b"OK fault-injection\n"),
+                    )
+                    .await;
+                    Timer::after_millis(100).await;
+                    if hard {
+                        cortex_m::asm::udf();
+                    }
+                    panic!("P1 panic injection");
                 }
             };
             if result.is_err() {
@@ -224,6 +247,19 @@ async fn receive<'d, D: Driver<'d>>(
                             replies
                                 .send(Outbound::Bootloader { console_ack: true })
                                 .await;
+                        }
+                        #[cfg(feature = "fault-injection")]
+                        Some(Command::Panic) => {
+                            replies.send(Outbound::InjectFault { hard: false }).await
+                        }
+                        #[cfg(feature = "fault-injection")]
+                        Some(Command::HardFault) => {
+                            replies.send(Outbound::InjectFault { hard: true }).await
+                        }
+                        Some(command) => {
+                            replies
+                                .send(Outbound::Console(usb_console::report(command)))
+                                .await
                         }
                         None => {}
                     }
@@ -365,6 +401,9 @@ fn status_text() -> MavMessage {
 
 fn system_status() -> MavMessage {
     MavMessage::SYS_STATUS(SYS_STATUS_DATA {
+        // The explicit validity/staleness flag is available in !metrics. Before
+        // the first valid window retain the baseline's zero load field.
+        load: crate::diagnostics::cpu_load().unwrap_or(0),
         voltage_battery: u16::MAX,
         current_battery: -1,
         battery_remaining: -1,
@@ -386,8 +425,8 @@ fn autopilot_version() -> MavMessage {
     MavMessage::AUTOPILOT_VERSION(AUTOPILOT_VERSION_DATA {
         capabilities: MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
             | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_C_CAST,
-        flight_sw_version: 1 << 16, // 0.1.0 development build.
-        flight_custom_version: *b"RUSTFMU1",
+        flight_sw_version: v6x_rust_led::build_info::FLIGHT_SW_VERSION,
+        flight_custom_version: v6x_rust_led::build_info::SOURCE_ID.to_le_bytes(),
         vendor_id: 0x1209,
         product_id: 0x0001,
         uid: u64::from_le_bytes(uid[..8].try_into().unwrap()),

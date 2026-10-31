@@ -2,7 +2,9 @@ use core::fmt;
 
 use embassy_stm32::gpio::{Output, OutputOpenDrain};
 
-const MDIO_DELAY_CYCLES: u32 = 300;
+// Preserve the baseline's >=4.6875 us bit phase at the configured CPU clock.
+// Long power-up/retry delays use embassy-time, not CPU cycle guesses.
+const MDIO_DELAY_CYCLES: u32 = (crate::platform::CPU_HZ as u64 * 300 / 64_000_000) as u32;
 
 const BMCR: u8 = 0x00;
 const BMSR: u8 = 0x01;

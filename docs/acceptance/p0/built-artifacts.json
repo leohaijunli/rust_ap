@@ -1,0 +1,18 @@
+{
+  "/tmp/opencode/rust-ap-p0-20261031/builds/cybflight/thumbv7em-none-eabihf/release/cybflight": {
+    "bytes": 14451912,
+    "sha256": "0814d64428dcf7a6d7ef8f40c1da9a6810605490ca9a6fdde2d79959644b9e36"
+  },
+  "/home/dev/rust_ap/target/thumbv7em-none-eabihf/release/v6x-rust-led": {
+    "bytes": 3638464,
+    "sha256": "46d017f6a0f533fafc9f548a6bb4ec57012c60e6a18608298f0a97e44e5a0153"
+  },
+  "/home/dev/rust_ap/target/thumbv7em-none-eabihf/release/v6x-rust-led.px4": {
+    "bytes": 95479,
+    "sha256": "d74b3b80e7c35bf4354ea568c09631f2fad362570caff414516ee0fe48a3c02d"
+  },
+  "/home/dev/rust_ap/target/thumbv7em-none-eabihf/release/v6x-rust-led.bin": {
+    "bytes": 115884,
+    "sha256": "021732ea23c03ef32e773f0b99c831a2fcda38e15f733bfecb78c2a0d40675d5"
+  }
+}

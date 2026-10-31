@@ -1,0 +1,24 @@
+{
+  "pydronecan": {
+    "path": "/tmp/opencode/rust-ap-p0-20261031/pydronecan",
+    "origin": "https://github.com/dronecan/pydronecan.git",
+    "commit": "092d09cb9e6b115e262efe4cb42f7b65e6054f26",
+    "commit_date": "2026-09-18T07:00:21+10:00",
+    "submodules": "",
+    "status": "",
+    "license_files_sha256": {
+      "LICENSE": "5d2fc12a239190160d437c3f21219d6288ca9982c12e3940da4132a8a3927466"
+    }
+  },
+  "dronecan_dsdlc": {
+    "path": "/tmp/opencode/rust-ap-p0-20261031/dronecan_dsdlc",
+    "origin": "https://github.com/dronecan/dronecan_dsdlc.git",
+    "commit": "431170fa4bfe2212b516b8f33bdc796267907f1c",
+    "commit_date": "2026-03-24T08:02:21+11:00",
+    "submodules": "",
+    "status": "",
+    "license_files_sha256": {
+      "COPYING": "b589223f48efaf379aef5136115b85f88a0cf1d3fda7e9a82937bbf5cfdf4711"
+    }
+  }
+}

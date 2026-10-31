@@ -1,0 +1,19 @@
+$ cargo check --lib --no-default-features --target thumbv7em-none-eabihf
+cwd=/tmp/opencode/rust-ap-p0-20261031/dronecan-rust
+RUSTUP_TOOLCHAIN=1.99.1
+
+    Blocking waiting for file lock on package cache
+    Checking nb v1.1.0
+    Checking managed v0.8.0
+    Checking embedded-can v0.4.1
+    Checking dronecan v0.1.0 (/tmp/opencode/rust-ap-p0-20261031/dronecan-rust)
+error[E0599]: no variant, associated function, or constant named `Owned` found for enum `ManagedSlice<'_, _>` in the current scope
+  --> src/transfer.rs:53:30
+   |
+53 |         if let ManagedSlice::Owned(vec) = &mut storage {
+   |                              ^^^^^ variant, associated function, or constant not found in `ManagedSlice<'_, _>`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `dronecan` (lib) due to 1 previous error
+
+exit=101; elapsed_seconds=0.515
