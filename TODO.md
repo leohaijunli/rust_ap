@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-10-31。**P0 完成；P1 待最终普通回装；M1 未开始。**
+更新：2026-10-31。**P0、P1 完成；下一步 P3a；M1 未开始。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md)
 
 ## 执行规则
@@ -8,7 +8,7 @@
 - 只做[必要测试](plan.md#4-仅保留必要测试)，复用已有通过结果；相关实现变化或新失败才补测。
 - `[x]` 有证据；阶段通过后放行依赖阶段。工程师负责实体操作，agent 负责实现和记录。
 - 保持纯 Rust/Embassy、原 PX4 bootloader、`0x08020000` 入口和 QGC 恢复能力。
-- 按工程师最新要求先提交推送当前进度；文档/计划修改只做内容与差异检查。
+- 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
 ## 已确认范围
@@ -26,13 +26,13 @@
 - [x] **P1-02/03**：构建/打包、source/协议、平台和备份域通过；[软件证据](docs/acceptance/p1/20261031-backup-domain.md)。
 - [x] **P1-04 已测**：两组 65 s 时序/CPU/栈、两类重启及 panic/HardFault 保持/清除通过。
 - [x] **独立 QGC 恢复**：USB 重插、Stable 上传/校验和 PX4 v1.17.0 运行已留档。
-- [ ] **P1-01 / H-05 / P1-04 收口**：从当前 PX4 直接回装保存的普通包一次，确认 uploader 校验、source、心跳/disarmed 和无保留测试故障。
+- [x] **P1-01 / H-05 / P1-04 收口**：21:28 UTC 从 PX4 直接回装普通包，CRC/source、disarmed、fault_injection=false、故障 valid=false 全部通过；[最终回装](docs/acceptance/p1/20261031-hil.md#最终普通回装与p1结论)。
 
-只补最后一项即可关闭 P1。P0 中转、额外 PX4 CRC、完整 UI 日志和逐消息截图不再设为必验；Inspector 版本显示问题归 P2。FMU 灯目视项不适用；原参数/校准/FRAM 无备份。
+P1 已关闭，当前板上为普通 Rust `a946a529360eac83`。Inspector 版本显示问题归 P2；FMU 灯目视项不适用，原参数/校准/FRAM 无备份。
 
 ## M1 前置阶段
 
-- [ ] **P3a / P3A-01～04**：FRAM 识别/备份、参数表与原子持久化。依赖 P1。
+- [ ] **下一步 P3a / P3A-01～04**：FRAM 只读识别/备份、参数表与原子持久化。P1 依赖已满足。
 - [ ] **P4b-a / CAN-A01～04**：v0 协议、节点服务、ESC 映射/Status、零命令。依赖 P1、P3a、H-02/03；DNA 仅设备必需时加入。
 - [ ] **PL-a / LOG-A01～05**：ULog、SDMMC2/FAT；独立解析、一次断电恢复和卡故障。依赖 P3a、P4b-a、H-04。
 - [ ] **P4b-g / GNSS-01～03**：H-RTK 身份、Fix2/Auxiliary、有效性与日志。依赖 P4b-a、PL-a、H-10。

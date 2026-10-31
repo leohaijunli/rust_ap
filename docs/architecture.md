@@ -53,7 +53,7 @@ M1 快照至少携带源、序号、本地微秒时间、有效标志和数据�
 
 ## 4. Embassy 资源与调度初值
 
-下表为 M1 分配提案；P1 已实现 TIM2/P1、TIM7/P3 和 USB/P6，其余外设仍待接入。寄存器物理回读/HIL 未完成；PX4 来源见台账，不能将 PX4 DMAMAP 宏当作 Embassy 已分配的 stream。NVIC 数值越小越优先。
+下表为 M1 分配提案；P1 已实现 TIM2/P1、TIM7/P3 和 USB/P6，平台寄存器及周期替身[HIL已通过](acceptance/p1/20261031-hil.md)，其余外设仍待接入。PX4 来源见台账，不能将 PX4 DMAMAP 宏当作 Embassy 已分配的 stream。NVIC 数值越小越优先。
 
 | 路径 | 资源 / 初始优先级 | 要求 |
 | --- | --- | --- |

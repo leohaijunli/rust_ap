@@ -5,9 +5,9 @@
 
 ## 1. 当前进度与执行原则
 
-- P0 软件基线和选型完成。P1 构建、普通版运行、时序、重启及故障保持/清除已有通过证据。
-- 本次 QGC 经独立 USB 入口刷入官方 PX4；20:58 UTC 独立采得 v1.17.0、board_version=53、19 个心跳。**当前板上为 PX4；P1 只待最终回装普通 Rust 包并确认运行。**
-- 工程师最新要求：**只保留必要测试，复用已完成结果，先提交推送当前进度。** P1 完成后才放行依赖它的上板阶段。
+- P0、P1 已完成。P1 构建、普通版运行、时序、重启及故障保持/清除已有通过证据。
+- 本次 QGC 独立 USB 入口刷回 PX4 v1.17.0 后，21:28 UTC 直接回装保存的普通包并确认运行。**P1 已关闭；当前板上为普通 Rust `a946a529360eac83`，下一步 P3a。**
+- 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - 本计划的精简验收取代早期操作单中的重复次数、长时压测和截图齐套要求。历史测试结果及缺失记录仍按实保存。
 - 只实现当前阶段所需功能；清晰命名、小而直接的函数、复用现有工具。遵循 KISS/YAGNI，避免提前抽象、重复实现及无用注释。
 - 已安装项目技能：编写时用 `clean-code`，收尾时用 `code-simplifier` 做一次局部审视；[适配说明](docs/ai-coding-skills.md)。
@@ -77,9 +77,9 @@
 | 完成 | SCUEN/备份域修复、12 Rust / 64 Python、三版构建/布局与既有 ELF 回放，见[软件记录](docs/acceptance/p1/20261031-backup-domain.md) |
 | 完成 | 普通 source=`a946a529360eac83` 的协议、平台/备份域、空载/USB 两组 65 s、两类重启及 panic/HardFault 保持/清除，见[HIL](docs/acceptance/p1/20261031-hil.md) |
 | 完成 | 本次 QGC 独立 USB 入口、Stable 上传/校验、PX4 v1.17.0 运行；早一轮 P0/普通回装结果也已保存 |
-| 待完成 | 从当前 PX4 **直接回装保存的普通包一次**；保存 uploader 校验成功、source、心跳/disarmed、fault_injection=false 和故障 valid=false |
+| 完成 | 21:28 UTC 从 PX4 直接回装普通包一次；CRC=`B9FB636E`、source、3 个 disarmed 心跳、fault_injection=false、故障 valid=false，见[最终回装](docs/acceptance/p1/20261031-hil.md#最终普通回装与p1结论) |
 
-保存的普通包 SHA-256：`7652fa90836be3182becf8f888a052aebc982ecbf67e6ba303dc66719db8fff5`，应用 CRC=`B9FB636E`。回装确认后关闭 P1。
+保存的普通包 SHA-256：`7652fa90836be3182becf8f888a052aebc982ecbf67e6ba303dc66719db8fff5`，应用 CRC=`B9FB636E`。P1 必验项全部通过；下一阶段为 P3a 的 FRAM 只读识别/备份、参数表与持久化。
 
 本次 QGC 使用的包 SHA-256：`3206a5f445d85be730a4f6158d8fdd414b9cfab27fa84bbc05c6a6752deac284`；控制台上传/校验与独立版本采集已足够，不额外要求刷写前 PX4 CRC 读回或再绕经 P0。
 FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版本截图和完整升级 UI 文本作为补充记录。原 PX4 参数/校准/FRAM 无备份，保留此事实。
@@ -91,7 +91,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | 阶段 / 编号 | 实现目标 | 依赖 |
 | --- | --- | --- |
 | P0 / P0-01～10 | 固定来源、硬件资料、A3/M1 基线；已完成 | — |
-| P1 / P1-01～04 | 可恢复 bring-up 与周期基线 | P0 |
+| P1 / P1-01～04 | 可恢复 bring-up 与周期基线；已完成 | P0 |
 | P3a / P3A-01～04 | FRAM 识别/备份、参数注册表、持久化 | P1 |
 | P4b-a / CAN-A01～04 | DroneCAN 节点、ESC 状态和零命令 | P1、P3a、H-02/03 |
 | PL-a / LOG-A01～05 | ULog、缓冲、SDMMC2/FAT | P3a、P4b-a、H-04 |

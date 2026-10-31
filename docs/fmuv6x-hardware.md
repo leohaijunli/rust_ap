@@ -8,7 +8,7 @@
 - 固定版本：tag `v1.17.0`，commit `d6f12ad1c4f70ad3230afd7d86e971421e02fef4`；本次查看的板级/bootloader 文件无本地修改。
 - 下表的 PX4 路径均相对该根目录，引用为 `文件:行`。表中值是**源码配置或源码注释**；尚未逐项完成本板 HIL，不能据此认定所有器件已识别。
 - 本板历史识别记录为 FMUM `0x003`、STM32H7 revision V（[README Hardware](../README.md#hardware)）。这是既有记录，本次审查没有重新探测或刷写。
-- 用户已要求始终保留 **QGroundControl 刷回官方 PX4**。原 bootloader、USB 识别及应用入口必须保留；2026-10-31 已报告刷回 PX4、QGC 连接与 Inspector 消息成功，具体恢复流程和版本按 [P1 用户记录](acceptance/p1/20261031-user-recovery-report.md)补齐。
+- 工程师要求始终保留 **QGroundControl 刷回官方 PX4**。原 bootloader、USB 识别及应用入口保持；2026-10-31 的独立 QGC 往返和最终普通 Rust 回装已通过，见 [P1 HIL](acceptance/p1/20261031-hil.md)。
 
 ## 启动、flash 与 RAM
 
@@ -39,7 +39,7 @@
 | 项 | 值 / 结论 | PX4 来源（文件:行） |
 | --- | --- | --- |
 | HSE | 16 MHz 晶体 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:58-73` |
-| PX4 CPU 配置 | PLL1：HSE /1 ×60 /2，CPU 480 MHz；P1 Rust已使用同一目标主频，但物理测量尚未验收，旧0.1.0为64 MHz | `boards/px4/fmu-v6x/nuttx-config/include/board.h:100-123`；`boards/px4/fmu-v6x/nuttx-config/include/board.h:159-175`；`src/platform.rs` |
+| PX4 CPU 配置 | PLL1：HSE /1 ×60 /2，CPU 480 MHz；P1 Rust同一目标配置的寄存器和65 s TIM2时基检查通过，旧0.1.0为64 MHz | `boards/px4/fmu-v6x/nuttx-config/include/board.h:100-123`；`boards/px4/fmu-v6x/nuttx-config/include/board.h:159-175`；`src/platform.rs` |
 | VOS / overdrive | NuttX 默认 VOS1；SYSCLK >400 MHz 时选择 overdrive，设置 SYSCFG ODEN 并等待 VOSRDY。此组合不能简化为“普通 VOS1 可直接跑 480 MHz” | `platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32h7x3xx_rcc.c:57-61,106-131,900-934` |
 | 供电选择 | 非 SMPS、非外部电源分支请求 LDOEN + SCUEN；CR3 低字节的上电后写入限制与等待 ACTVOSRDY 有明确说明。SCUEN 是更新控制位，不能要求它始终读回1；HAL与实际Dump核对见下节 | `platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32h7x3xx_rcc.c:134-162,881-915` |
 | flash latency | 板宏 BOARD_FLASH_WAITSTATES=2，NuttX 同时配置 WRHIGHFREQ 与 LATENCY；需按实际 AXI/flash 时钟和电压解释，不直接照抄到 Rust | `boards/px4/fmu-v6x/nuttx-config/include/board.h:267-285`；`platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32h7x3xx_rcc.c:937-949` |
@@ -55,7 +55,7 @@
 | 外部 armed 指示 | PE6：未解锁时输入上拉，解锁时输出低 | `boards/px4/fmu-v6x/src/board_config.h:236-244` |
 | 版本识别配置 | ADC3，PH3/PH4 感测，PG0 驱动；V6X_3=FMUM ID 0x3 | `boards/px4/fmu-v6x/src/board_config.h:189-190`；`boards/px4/fmu-v6x/src/board_config.h:203-225` |
 
-P1 已核对固定 HAL 的 LDO/VOS/overdrive/flash 路径；用户 uploader 确认 silicon revision V，实际 Dump 的供电位见下节。修复后普通 P1 的完整寄存器回读、供电/480 MHz物理时基仍待验收。
+P1 已核对固定 HAL 的 LDO/VOS/overdrive/flash 路径；uploader 确认 silicon revision V，实际 Dump 的供电位见下节。修复后普通 P1 的平台寄存器及两组65 s时基检查已通过，测量范围见[HIL](acceptance/p1/20261031-hil.md)。
 
 ### Dump 寄存器解码核对（2026-10-31）
 
@@ -107,7 +107,7 @@ H753实际选用的PAC文件为 `src/peripherals/rcc_h7rm0433.rs`（`src/chips/s
 | LSI处理 | RTC选择LSI时启用；其它情况下HAL不关闭继承的LSI | HAL `rcc/bd.rs:160-168,191-215` |
 | 回放附加MMIO | GPIOA..K=`0x58020000..0x58022800`，EXTI=`0x58000000`，DBGMCU=`0x5c001000` | NuttX `hardware/stm32h7x3xx_memorymap.h:184,201-211,227` |
 
-支持继承RTC关闭/LSE/LSI，以及兼容的LSE停用/振荡/旁路和四种原始驱动位值。HSE作为RTC源、BDRST已置位、RTCSEL/RTCEN不一致、停止LSE却选LSE或旁路的状态，在HAL前拒绝。普通/注入版之后按故障路径处理；Dump的panic保持停机。三版各132场景真实ELF回放通过，范围和限制见[备份域证据](acceptance/p1/20261031-backup-domain.md)。板上BDCR/CSR、保持与RTC走时仍待工程师记录。
+支持继承RTC关闭/LSE/LSI，以及兼容的LSE停用/振荡/旁路和四种原始驱动位值。HSE作为RTC源、BDRST已置位、RTCSEL/RTCEN不一致、停止LSE却选LSE或旁路的状态，在HAL前拒绝。普通/注入版之后按故障路径处理；Dump的panic保持停机。三版各132场景真实ELF回放通过，范围和限制见[备份域证据](acceptance/p1/20261031-backup-domain.md)。板上BDCR/CSR及HAL边界保持已通过[HIL](acceptance/p1/20261031-hil.md)，RTC日历走时未测。
 
 ## Rev 3 传感器与总线
 
@@ -196,28 +196,28 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 
 四电机配置回填表见 [dronecan-notes.md](dronecan-notes.md)。实际 source node ID、ESC_INDEX、位置、旋向和极数须独立记录；不能用 Quad X 名称推导现有接线顺序。
 
-## 当前 Rust P1 对比（本仓库源码，未上板验收）
+## 当前 Rust P1 对比与验收
 
 | 项 | 当前实现 | 来源 |
 | --- | --- | --- |
 | 链接 | 应用0x08020000 +1920 KiB；AXI 447 KiB static、1 KiB故障栈、64 KiB共享栈；sector0不覆盖 | `memory.x`；`tools/build_report.py` |
 | 向量表 | cortex-m-rt 0.7.7 启用 set-vtor/paint-stack；所有非零向量与ELF/bin校验 | `Cargo.toml:14`、`Cargo.lock`；`tools/build_report.py` |
-| 时钟/供电 | HSE16 MHz、PLL1 CPU480/HCLK240/PCLK120 MHz；PLL3Q USB48 MHz；LDO/Scale1+ODEN、flash LATENCY4/WRHIGHFREQ2，I-cache开/D-cache关；物理回读/频率待验 | `src/platform.rs:20-135`；HAL `rcc/h.rs:286-296,402-427`及上述PX4来源 |
+| 时钟/供电 | HSE16 MHz、PLL1 CPU480/HCLK240/PCLK120 MHz；PLL3Q USB48 MHz；LDO/Scale1+ODEN、flash LATENCY4/WRHIGHFREQ2，I-cache开/D-cache关；平台寄存器/时基检查通过 | `src/platform.rs:20-135`；HAL `rcc/h.rs:286-296,402-427`及上述PX4来源 |
 | 时基/调度 | TIM2/P1、PSC239/ARR65535、1 MHz；TIM7/P3仅软件pend；USB/P6；线程raw executor/测量idle | `src/platform.rs`、`src/diagnostics.rs`、`src/main.rs` |
-| LED/加热 | 保留PHY灯；新增PE3红故障/PE4绿1 Hz/PE5蓝启动开漏；PB10加热保持低 | `src/main.rs:46-72,118-147` |
+| LED/加热 | 保留PHY灯；PE3红故障/PE4绿1 Hz/PE5蓝启动开漏；PB10加热保持低；本板FMU灯目视项不适用 | `src/main.rs:46-72,118-147`；[HIL](acceptance/p1/20261031-hil.md#led适用范围) |
 | 软件 reboot/故障 | BKP0=b007b007复位；BKP16..31版本化CRC故障；HardFault先切1 KiB栈；共享wrapper匹配RTC/LSE，HAL后比较全部BKP及BDCR，不再补写BKP | `src/backup_domain.rs`、`src/fault.rs`、`src/fault_record.rs`；[故障审查](acceptance/p1/fault-review.md) |
-| 安装 bootloader 的识别 | README 历史记录 USB VID:PID 3185:0035；用户已报告 PX4 恢复成功，本板版本与完整往返步骤待补 | [USB 刷写](../README.md#flash-over-normal-usb)、[P1 用户记录](acceptance/p1/20261031-user-recovery-report.md) |
-| QGC / Inspector 用户实测 | 用户确认当前 Rust 已连接本机 QGC 5.1.5；已报告 Inspector 心跳/其他消息，并确认重插 USB/复位的独立恢复入口 | [2026-10-31 原始报告](acceptance/p1/20261031-user-recovery-report.md) |
+| 安装 bootloader 的识别 | 实测3185:0035、`PX4 BL FMU v6X.x`、协议v5、board ID=53；构建版本未知；独立QGC往返及普通回装通过 | [HIL](acceptance/p1/20261031-hil.md) |
+| QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION显示归P2 | [QGC记录](qgc-notes.md) |
 
-末两行是旧基线的用户报告，不是新P1验收。最新软件构建/资源/hash见 [P1索引](acceptance/p1/README.md)；测量范围与HIL步骤见 [操作单](acceptance/p1/bring-up.md)。不探测另外两颗IMU、FRAM、CAN或SD。
+P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。FRAM、IMU、CAN和SD按后续阶段验收。
 
-## 待核实与 HIL 待回填
+## 验收与后续待核实
 
 | 项 | 状态 / 归属 |
 | --- | --- |
-| QGC 刷回 PX4、再刷 Rust，含不依赖应用命令的 bootloader 入口 | **功能路径已获用户确认，资料待补**：PX4 恢复、独立重插 USB/复位入口、当前 Rust/QGC 连接；补齐镜像/hash、可取得的版本与具体回装/上传记录 |
+| QGC 刷回 PX4、再刷 Rust，含不依赖应用命令的 bootloader 入口 | **通过**：独立USB重插、Stable上传/校验、PX4 v1.17.0运行、最终普通Rust回装，见[HIL](acceptance/p1/20261031-hil.md) |
 | 原 FRAM 参数、EEPROM 校准/身份的备份与恢复边界 | P3a；先只读识别/备份，保留官方 PX4 恢复资料 |
-| 核心供电/VOS/flash latency、DMA 可达性、cache/MPU、资源冲突 | P0 源码/资料核对，P1/PL/P4 按外设实测 |
+| 核心供电/VOS/flash latency、DMA 可达性、cache/MPU、资源冲突 | P1平台寄存器通过；DMA/cache/MPU与新增外设资源按PL/P4等阶段实测 |
 | 实物传感器型号、数量、地址、方向与 DRDY | P4.0；当前只有源码预期，没有本次实测清单 |
 | CAN 收发器型号、静默或 RX-MUX 控制、终端电阻、插座电源与针序 | 未核实；缺少对应实物/原理图证据，不推断存在或不存在控制 GPIO |
 | ESC 实物固件、参数、node ID/ESC_INDEX、Status 周期、命令超时、旋向/极数 | 已确认 4 个 Vimdrones ESC Nano / Quad X；其余由 H-02、P4b/P5 实测 |
@@ -225,4 +225,4 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | SD 卡槽、卡型号/容量、卡检测和掉电行为 | 工程师提供卡；PL-a 实测，不以 PX4 配置替代 HAL/卡兼容性验证 |
 | TELEM1/直连接收机的线序、电平、流控/反相 | P2/P5b 按本板与所选设备核实 |
 
-本表完成 P0 可取得的源码/资料台账，并已加入用户新报告的 PX4 恢复/QGC 结果；上述待测项按归属移交。完整 P1/M1 仍待验收，P0/G0 的放行见 [验收状态](acceptance/p0/README.md)。
+P0、P1已完成，上述待测项按归属移交；下一步P3a，M1尚未验收。阶段状态见[TODO](../TODO.md)。

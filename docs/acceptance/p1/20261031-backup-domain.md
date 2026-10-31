@@ -1,6 +1,6 @@
 # P1 备份域互操作修复与软件验收
 
-日期：2026-10-31。执行者：agent（源码、构建、host回放、已有文件核对）。**软件修复通过；工程师上板验收待完成，P1未关闭。** 本轮设备操作记录为空；原PX4 bootloader、应用入口`0x08020000`和P0恢复包保持原约定。
+日期：2026-10-31。执行者：agent（源码、构建、host回放、已有文件核对）。**本页软件修复通过；后续上板验收及QGC往返已完成，P1已关闭，见[HIL](20261031-hil.md)。** 本页记录的软件阶段未操作设备；原PX4 bootloader、应用入口`0x08020000`和P0恢复包保持原约定。
 
 ## 1. 问题与修复
 
@@ -122,6 +122,8 @@ export PYTHONPATH=/tmp/opencode/v6x-platform-replay-deps
 本机完整归档：`target/p1-backup-domain-20261031/`（git忽略），含`normal/`、`dump/`、`injection/`的ELF/bin/PX4/map/sections/disassembly；`pre-drive-fix/`保存中档缺陷版本及匹配源码，`before-sources.tar.gz`保存开工前快照，`sources.tar.gz`保存本轮源码/工具/文档。目录内`SHA256SUMS`用于校验；交接二进制时一并复制。
 
 ## 5. 工程师待验与关闭条件
+
+以下保留当时交接条件；现行必验范围以[精简计划](../../../plan.md#4-仅保留必要测试)为准，已全部通过，结果见[HIL](20261031-hil.md)。
 
 按[上板操作单](bring-up.md)及[恢复模板](recovery-template.md)执行，记录实际执行者、日期、供电、包路径/hash和完整输出：
 

@@ -55,7 +55,7 @@
 | `src/fault.rs`、`src/fault_record.rs` | 本项目BKP线格式/IEEE CRC32/故障路径与host测试；裸入口是Rust内联架构汇编，帧布局参考固定NuttX `arm_exception.S:118-137`，未链接NuttX处理器 |
 | `src/diagnostics.rs`、`src/metrics.rs` | 本项目绝对周期统计、masked-WFE CPU/共享栈测量；参考Embassy执行器唤醒与TIM2时基API、cortex-m-rt paint-stack约定 |
 | `build.rs`、`tools/build_report.py`、`tools/p1_capture.py`及测试 | 本项目source/feature ID、ELF/布局/资源/hash检查、USB混合流/时基不确定性分析；host使用已有pyserial3.5/pymavlink2.4.49，不引入板上C/C++协议运行库 |
-| `.github/workflows/p1.yml`、`docs/acceptance/p1/` | 本项目软件检查与工程师操作/证据；CI未远程执行，HIL尚待工程师回填 |
+| `.github/workflows/p1.yml`、`docs/acceptance/p1/` | 本项目软件检查及工程师授权的HIL/恢复证据；P1必验项通过，远程CI状态未查询 |
 | `.opencode/skills/`、`AGENTS.md` | 工程师要求安装并应用的 clean-code / code-simplifier 项目适配；固定来源、改动与许可见[技能说明](ai-coding-skills.md) |
 
 主工程目前没有拷入候选算法/协议实现，也未引入 C/C++ FFI。Python、参考 C 生成器只在 host 使用；原 PX4 bootloader 按恢复要求保留，外接 ESC/H-RTK 的厂商固件不属于本项目飞控应用。

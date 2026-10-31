@@ -31,9 +31,10 @@
 - LED最终反馈“i dont have fmu led”；仅可观察I/O/ETH，FMU PE3/PE4/PE5目视项不适用。
 - 本次新Inspector截图仅确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION重连后仍未出现。早期“四条均可见”不覆盖该缺口。
 - 本次QGC实际使用Stable包，上传/校验和独立USB枚举已记录。工程师确认“日志页已关闭，QGC已关”，完整升级UI文本未保存。
-- 20:58 UTC独立采得PX4 v1.17.0、board_version=53、19个心跳。当前板上为官方PX4，本次最终普通回装尚未执行。
+- 20:58 UTC独立采得PX4 v1.17.0、board_version=53、19个心跳，当时板上为官方PX4。
+- 工程师随后授权“go ahead”；21:28 UTC直接普通回装通过，CRC=`B9FB636E`、source=`a946a529360eac83`，disarmed、fault_injection=false、故障valid=false。P1已关闭，当前板上为普通Rust。
 
 ## 最新执行决定
 
 工程师要求“push to repo”“similify the verification”“only keep the essential tests”，并要求安装clean-code/code-simplifier应用到当前计划。
-按[精简计划](../../../plan.md)，已有结果直接复用，当前进度先提交推送；P1只补直接回装普通包并确认身份/运行/无测试故障。额外P0中转、PX4 CRC、齐套UI日志/截图和ETH观察不再设为必验；Inspector版本显示归P2。
+按[精简计划](../../../plan.md)，已有结果直接复用；进度先以`c962e87`提交推送，随后完成最终普通回装。额外P0中转、PX4 CRC、齐套UI日志/截图和ETH观察不再设为必验；Inspector版本显示归P2，下一步为P3a。

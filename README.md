@@ -12,15 +12,12 @@ Development now follows the selected **A3 hybrid** approach. The first integrati
 goal is IMU/AHRS, DroneCAN, ULog, USB/TELEM1, and upstream QGroundControl message
 inspection and parameter read/set. See the [M1 verification plan](docs/m1-verification.md)
 and [P0 evidence](docs/acceptance/p0/README.md). These capabilities are planned;
-version **0.2.0** adds P1 platform/timing/fault diagnostics. A real retained panic
-identified a startup clock assertion failure; the incorrect SCUEN requirement is
-now fixed and offline checks pass. **Normal Rust CDC/MAVLink operation and QGC
-connection have been restored.** On-device source confirmation and full P1
-timing/recovery checks remain pending. See the [connection retest](docs/acceptance/p1/20261031-qgc-retest.md)
-and [diagnosis](docs/acceptance/p1/20261031-startup-assertion.md).
-The subsequent RTC/backup-domain fix passes offline checks for all three images;
-current normal source is **`a946a529360eac83`**, awaiting on-board acceptance.
-See the [backup-domain evidence](docs/acceptance/p1/20261031-backup-domain.md).
+version **0.2.0** adds P1 platform/timing/fault diagnostics. **P1 is complete:**
+software, on-board timing, restart/fault recovery, and the independent QGC round
+trip passed. The final normal Rust restore completed at 21:28 UTC on 2026-10-31,
+with source **`a946a529360eac83`**, disarmed, fault injection disabled, and no valid
+retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
+[essential-check plan](plan.md). Next is P3a: FRAM identification/backup and parameters.
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
 
@@ -39,7 +36,7 @@ STM32H7 silicon revision V during identification.
 | Application flash partition | 1920 KiB |
 | USB bootloader board ID | 53 |
 | Data/stack memory | AXI SRAM: 447 KiB static allocation, 1 KiB fault stack, 64 KiB shared stack |
-| Core clock | P1: HSE/PLL1 480 MHz; HCLK 240 MHz; PCLK 120 MHz (hardware measurement pending) |
+| Core clock | P1: HSE/PLL1 480 MHz; HCLK 240 MHz; PCLK 120 MHz; register and TIM2 timebase checks passed |
 | Monotonic timer | TIM2, 1 MHz; HAL uses a 16-bit counter with half-overflow interrupts |
 | USB clock | 48 MHz from PLL3Q: 16 MHz HSE / 4 × 48 / 4 |
 | USB data pins | PA11 (DM), PA12 (DP), OTG FS |
@@ -117,9 +114,9 @@ six host tests; the current Python suite has 64 tests. See the
 [upload discovery record](docs/acceptance/p1/20261031-upload-discovery.md).
 Ordinary `upload` rebuilds and flashes the current P1; `upload --dry-run` checks
 prerequisites and the package without rebooting or flashing. The corrected P1
-source ID is `a946a529360eac83`, including the backup-domain fix. Earlier basic
-Rust/MAVLink/QGC connectivity has recovered; this new image's on-device source
-confirmation and full P1 checks remain pending.
+source ID is `a946a529360eac83`, including the backup-domain fix. Its on-device
+source, protocol, platform, timing, and recovery checks passed; exact results are
+in the [HIL record](docs/acceptance/p1/20261031-hil.md).
 
 The provided udev rules grant the active local desktop user access to both
 USB identities. Install once from an interactive terminal:
@@ -413,17 +410,25 @@ H-RTK GNSS data. CAN firmware updates are outside that goal. See
 
 ## Verification status
 
-The hardware results below include historical baseline records and the dated
-user report. The full P1 recovery record and M1 hardware acceptance remain open.
+P1 passed the [current essential checks](plan.md#4-仅保留必要测试).
+M1 hardware acceptance has not started.
 
 **P1 software checks:** fmt, normal/injection/Dump target Clippy, host Clippy,
 12 Rust tests, 64 Python tests, and normal/Dump/injection release builds and
 package/layout checks pass. Each image passes 132 compiled backup-domain cases
 (396 total), and the current normal image passes 14 clock-predicate cases.
 Exact artifacts and logs are in the
-[P1 evidence index](docs/acceptance/p1/README.md). CI has not run remotely.
+[P1 evidence index](docs/acceptance/p1/README.md). Remote CI status has not been checked.
 
-**Backup-domain fix (2026-10-31; on-board acceptance pending):** both HAL low-speed
+**P1 hardware:** source/protocol and platform/backup-domain checks, two 65-second
+idle/USB-pressure captures, text/MAVLink reboots, and panic/HardFault retention
+and clearing passed. QGC restored official PX4 v1.17.0 through an independent
+USB entry; the final direct normal Rust restore verified CRC **`B9FB636E`**,
+three disarmed heartbeats, `fault_injection=false`, and fault `valid=false`.
+See the [HIL record and measurement limits](docs/acceptance/p1/20261031-hil.md).
+QGC Inspector's missing AUTOPILOT_VERSION display is tracked in P2.
+
+**Backup-domain fix (2026-10-31; on-board acceptance passed):** both HAL low-speed
 configuration and the generated RTC clock mux now match inherited state. The LSE
 drive mapping follows the selected H753 PAC variants, preserving raw bits.
 The wrapper checks BDCR configuration and all 32 BKP words instead of writing
@@ -445,18 +450,16 @@ source: **`4cba95aa54cd899a`**, `.px4` SHA-256:
 `51fdd8a4189f519c014d3e78554f8eb422813656332a4f4b751626cebcb9739a`.
 See the [raw evidence, fix and engineer retest steps](docs/acceptance/p1/20261031-startup-assertion.md).
 
-The user subsequently confirmed QGC connection. Saved logs show the original
+The engineer subsequently confirmed QGC connection. Saved logs show the original
 bootloader at 16:14 UTC and successful normal Rust CDC/MAVLink monitoring at
-16:15 UTC. The monitor log does not record an actual firmware source ID; the
-source-specific protocol check remains pending. See the [retest evidence](docs/acceptance/p1/20261031-qgc-retest.md).
+16:15 UTC. That historical monitor log does not record a firmware source ID;
+the later HIL record binds the accepted image. See the [retest evidence](docs/acceptance/p1/20261031-qgc-retest.md).
 
-The earlier 134208-byte upload remains unidentified by path/hash. The user
+The earlier 134208-byte upload remains unidentified by path/hash. The engineer
 cleared the separate `/tmp` quota/serial-lock problem and reports restoring PX4;
-the complete official recovery record remains outstanding. See the
+the subsequent QGC round trip and final Rust restore are recorded in the HIL evidence. See the
 [incident history](docs/acceptance/p1/20261031-startup-regression.md) and
 [host lock investigation](docs/acceptance/p1/20261031-qgc-lock.md).
-Full P1 source/protocol, backup-domain hardware preservation, physical timing/CPU/stack
-and recovery acceptance remain open.
 
 **Historical 0.1.0 baseline, not new P1 hardware evidence:** the release build, `cargo fmt --check`, and
 `cargo clippy --release --locked -- -D warnings` pass. The generated ELF was
@@ -478,8 +481,8 @@ On 2026-10-31, the user reported that the current version can restore PX4,
 connect to QGroundControl, and show HEARTBEAT and other messages in MAVLink
 Inspector. The user then confirmed that the current Rust firmware connects to
 the locally installed QGC 5.1.5, and that recovery used USB reconnection/reset
-without a Rust reboot command. Exact recovery images and operation logs remain
-to be recorded. See the
+without a Rust reboot command. Those early reports lacked exact image/log bindings;
+the subsequent HIL evidence records the current round trip. See the
 [user recovery report](docs/acceptance/p1/20261031-user-recovery-report.md)
 and [local QGC installation notes](docs/qgc-notes.md).
 
