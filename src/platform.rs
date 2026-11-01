@@ -74,12 +74,16 @@ pub fn init() -> Peripherals {
         divr: Some(PllDiv::DIV2),
     });
     config.rcc.mux.usbsel = mux::Usbsel::PLL3_Q;
+    config.rcc.mux.fdcansel = mux::Fdcansel::HSE;
     config.rcc.mux.spi45sel = mux::Spi45sel::PCLK2;
     let p = crate::backup_domain::init(config);
     assert!(crate::backup_domain::preserved());
 
     embassy_stm32::interrupt::TIM2.set_priority(Priority::P1);
     embassy_stm32::interrupt::TIM7.set_priority(Priority::P3);
+    embassy_stm32::interrupt::TIM6_DAC.set_priority(Priority::P4);
+    embassy_stm32::interrupt::FDCAN1_IT0.set_priority(Priority::P2);
+    embassy_stm32::interrupt::FDCAN1_IT1.set_priority(Priority::P2);
     embassy_stm32::interrupt::OTG_FS.set_priority(Priority::P6);
     embassy_stm32::interrupt::DMA2_STREAM0.set_priority(Priority::P7);
     embassy_stm32::interrupt::DMA2_STREAM1.set_priority(Priority::P7);

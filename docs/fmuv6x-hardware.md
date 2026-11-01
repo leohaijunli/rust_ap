@@ -206,6 +206,7 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | 时基/调度 | TIM2/P1、PSC239/ARR65535、1 MHz；TIM7/P3仅软件pend；USB/P6；线程raw executor/测量idle | `src/platform.rs`、`src/diagnostics.rs`、`src/main.rs` |
 | LED/加热 | 保留PHY灯；PE3红故障/PE4绿1 Hz/PE5蓝启动开漏；PB10加热保持低；本板FMU灯目视项不适用 | `src/main.rs:46-72,118-147`；[HIL](acceptance/p1/20261031-hil.md#led适用范围) |
 | 软件 reboot/故障 | BKP0=b007b007复位；BKP16..31版本化CRC故障；HardFault先切1 KiB栈；共享wrapper匹配RTC/LSE，HAL后比较全部BKP及BDCR，不再补写BKP | `src/backup_domain.rs`、`src/fault.rs`、`src/fault_record.rs`；[故障审查](acceptance/p1/fault-review.md) |
+| FDCAN1 软件配置 | PD0/PD1，HSE 16 MHz，1 Mbit/s，采样点 87.5%；IT0/1=P2，TIM6_DAC I/O executor=P4；FIFO、单次发送、自动重传关闭 | `src/dronecan_can.rs`、`src/platform.rs`；[P4b-a 软件记录](acceptance/p4b-a/README.md)，电气/HIL 待 H-02/03 |
 | 安装 bootloader 的识别 | 实测3185:0035、`PX4 BL FMU v6X.x`、协议v5、board ID=53；构建版本未知；独立QGC往返及普通回装通过 | [HIL](acceptance/p1/20261031-hil.md) |
 | QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION显示归P2 | [QGC记录](qgc-notes.md) |
 
@@ -225,4 +226,4 @@ P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptanc
 | SD 卡槽、卡型号/容量、卡检测和掉电行为 | 工程师提供卡；PL-a 实测，不以 PX4 配置替代 HAL/卡兼容性验证 |
 | TELEM1/直连接收机的线序、电平、流控/反相 | P2/P5b 按本板与所选设备核实 |
 
-P0、P1已完成，上述待测项按归属移交；下一步P3a，M1尚未验收。阶段状态见[TODO](../TODO.md)。
+P0、P1、P3a已完成；P4b-a 软件门通过、实物待 H-02/03，M1尚未验收。阶段状态见[TODO](../TODO.md)。

@@ -57,9 +57,11 @@
 | `build.rs`、`tools/build_report.py`、`tools/p1_capture.py`及测试 | 本项目source/feature ID、ELF/布局/资源/hash检查、USB混合流/时基不确定性分析；host使用已有pyserial3.5/pymavlink2.4.49，不引入板上C/C++协议运行库 |
 | `.github/workflows/p1.yml`、`docs/acceptance/p1/` | 本项目软件检查及工程师授权的HIL/恢复证据；P1必验项通过，远程CI状态未查询 |
 | `src/fram.rs`、`src/parameters.rs`、`src/parameter_store.rs`、`src/parameter_manager.rs`、`tools/fram_backup.py`、`tools/p3a_parameters.py` | 本项目 P3a 实现：按 FM25V02A 厂商规格（`001-90865 Rev. *I`）和固定 PX4 `ramtron.c` 的 8 位/MODE3/两字节地址约定独立编写，未拷入驱动代码 |
+| `src/dronecan/`、`src/dronecan_can.rs` | 本项目 P4b-a 独立实现；协议字段/签名对照固定 MIT DSDL、P0 pydronecan 向量及 MIT libcanard 状态机，未复制候选 Rust 栈；板级适配使用现有 Embassy MIT/Apache-2.0 API |
+| `tools/enter_bootloader.py`、`tools/test_enter_bootloader.py`、`tools/firmware.sh` | 本项目 host 上传入口；复用应用既有 `!bootloader` 协议和原 PX4 uploader，不修改或替换 bootloader |
 | `.opencode/skills/`、`AGENTS.md` | 工程师要求安装并应用的 clean-code / code-simplifier 项目适配；固定来源、改动与许可见[技能说明](ai-coding-skills.md) |
 
-主工程目前没有拷入候选算法/协议实现，也未引入 C/C++ FFI。Python、参考 C 生成器只在 host 使用；原 PX4 bootloader 按恢复要求保留，外接 ESC/H-RTK 的厂商固件不属于本项目飞控应用。
+主工程没有拷入候选协议实现或引入 C/C++ FFI；P4b-a 为依据固定公开协议和参考向量编写的纯 Rust 实现。Python、参考 C 生成器只在 host 使用；原 PX4 bootloader 按恢复要求保留，外接 ESC/H-RTK 的厂商固件不属于本项目飞控应用。
 
 启动回放的Unicorn通过PyPI安装到 `/tmp/opencode/v6x-platform-replay-deps/`，使用时显式设置 `PYTHONPATH`；普通固件构建/检查不依赖它。版本固定为 `unicorn==2.1.4`；PyPI公布的Linux x86-64 wheel为 `unicorn-2.1.4-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`，16436886 B，SHA-256=`9d6e6dea140560de4ebd8446661f7ef84a357d428c14a3ef09dacd306ec8c239`。该hash是发行元数据，不是已归档wheel的本地校验结果；本项目不打包分发该wheel。固定版本来源：[PyPI元数据](https://pypi.org/pypi/unicorn/2.1.4/json)、[核心许可](https://github.com/unicorn-engine/unicorn/blob/8028ec436f2d9376525352dd38ed9ed6b9f6be10/COPYING)。
 

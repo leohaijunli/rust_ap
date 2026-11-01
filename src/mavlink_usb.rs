@@ -13,22 +13,15 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, Receiver, Sender};
 use embassy_usb::driver::{Driver, EndpointError};
 use mavlink::common::*;
 use mavlink::{MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion, Message};
-use v6x_rust_led::parameter_store::OutputState;
 use v6x_rust_led::parameters::{Id, COUNT, REGISTRY};
 
+use crate::dronecan_can;
 use crate::eth_led::Lan8742;
 use crate::parameter_manager::ParameterManager;
 use crate::usb_console::{self, Command, CommandLine, Response};
 
 const SYSTEM_ID: u8 = Id::MavSysId.definition().default as u8;
 const COMPONENT_ID: u8 = 1;
-// P3a has no arming command or output path. Heartbeat and save permission use
-// the same state; P5a will supply it from the output arbiter.
-const OUTPUT_STATE: OutputState = OutputState {
-    armed: false,
-    outputs_enabled: false,
-};
-
 // Fixed-size buffers are intentional: this no_std firmware has no allocator.
 #[allow(clippy::large_enum_variant)]
 enum Outbound {
@@ -89,6 +82,7 @@ pub async fn run<'d, D: Driver<'d>>(
     eth_power: &Output<'_>,
     session: &UsbSession,
     parameters: &ParameterManager<'_>,
+    dronecan: &dronecan_can::State,
 ) -> ! {
     let (mut sender, mut receiver) = class.split();
     let replies = Replies::new();
@@ -108,7 +102,14 @@ pub async fn run<'d, D: Driver<'d>>(
             loop {
                 select(
                     rx_reset.changed(),
-                    receive(&mut receiver, &replies, phy, eth_power, parameters),
+                    receive(
+                        &mut receiver,
+                        &replies,
+                        phy,
+                        eth_power,
+                        parameters,
+                        dronecan,
+                    ),
                 )
                 .await;
             }
@@ -225,6 +226,7 @@ async fn receive<'d, D: Driver<'d>>(
     phy: &RefCell<Lan8742<'_>>,
     eth_power: &Output<'_>,
     parameters: &ParameterManager<'_>,
+    dronecan: &dronecan_can::State,
 ) -> ! {
     let mut packet = [0u8; 64];
     loop {
@@ -267,9 +269,12 @@ async fn receive<'d, D: Driver<'d>>(
                             | Command::ParamSave
                             | Command::ParamLoad),
                         ) => {
-                            let response =
-                                usb_console::parameter_report(command, parameters, OUTPUT_STATE)
-                                    .await;
+                            let response = usb_console::parameter_report(
+                                command,
+                                parameters,
+                                crate::OUTPUT_STATE,
+                            )
+                            .await;
                             replies.send(Outbound::Console(response)).await;
                         }
                         #[cfg(feature = "fault-injection")]
@@ -282,7 +287,7 @@ async fn receive<'d, D: Driver<'d>>(
                         }
                         Some(command) => {
                             replies
-                                .send(Outbound::Console(usb_console::report(command)))
+                                .send(Outbound::Console(usb_console::report(command, dronecan)))
                                 .await
                         }
                         None => {}
@@ -372,7 +377,7 @@ async fn handle_message(
         }
         MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_PREFLIGHT_STORAGE => {
             let result = if data.param1 == 1.0 {
-                parameters.save(OUTPUT_STATE).await.map(|_| ())
+                parameters.save(crate::OUTPUT_STATE).await.map(|_| ())
             } else if data.param1 == 0.0 {
                 parameters.load().await.map(|_| ())
             } else {
@@ -449,7 +454,7 @@ fn heartbeat() -> MavMessage {
         custom_mode: 0,
         mavtype: MavType::MAV_TYPE_GENERIC,
         autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
-        base_mode: if OUTPUT_STATE.armed {
+        base_mode: if crate::OUTPUT_STATE.armed {
             MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED
         } else {
             MavModeFlag::empty()

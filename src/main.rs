@@ -8,6 +8,8 @@ mod backup_domain;
 #[cfg(not(feature = "fault-dump"))]
 mod diagnostics;
 #[cfg(not(feature = "fault-dump"))]
+mod dronecan_can;
+#[cfg(not(feature = "fault-dump"))]
 mod eth_led;
 #[cfg(not(feature = "fault-dump"))]
 mod fault;
@@ -30,7 +32,7 @@ use embassy_stm32::usb::InterruptHandler;
 #[cfg(not(feature = "fault-dump"))]
 use core::cell::RefCell;
 #[cfg(not(feature = "fault-dump"))]
-use embassy_executor::raw::Executor;
+use embassy_executor::{raw::Executor, InterruptExecutor};
 #[cfg(not(feature = "fault-dump"))]
 use embassy_futures::join::join;
 #[cfg(not(feature = "fault-dump"))]
@@ -56,11 +58,29 @@ use static_cell::StaticCell;
 use eth_led::Lan8742;
 
 #[cfg(not(feature = "fault-dump"))]
+use v6x_rust_led::parameter_store::OutputState;
+#[cfg(not(feature = "fault-dump"))]
 use v6x_rust_led::parameters::Id;
+
+#[cfg(not(feature = "fault-dump"))]
+pub(crate) const OUTPUT_STATE: OutputState = OutputState {
+    armed: false,
+    outputs_enabled: false,
+};
 
 bind_interrupts!(struct UsbIrqs {
     OTG_FS => InterruptHandler<embassy_stm32::peripherals::USB_OTG_FS>;
 });
+
+#[cfg(not(feature = "fault-dump"))]
+static CAN_EXECUTOR: InterruptExecutor = InterruptExecutor::new();
+
+#[cfg(not(feature = "fault-dump"))]
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+unsafe extern "C" fn TIM6_DAC() {
+    unsafe { CAN_EXECUTOR.on_interrupt() }
+}
 
 #[cortex_m_rt::entry]
 fn main() -> ! {
@@ -141,6 +161,11 @@ async fn application(p: Peripherals) {
     // PHY startup has already exceeded the FRAM power-up access delay.
     // Load failures remain visible in !params while USB recovery stays available.
     let _ = parameters.load().await;
+    let dronecan = dronecan_can::State::new();
+    let can_spawner = CAN_EXECUTOR.start(embassy_stm32::interrupt::TIM6_DAC);
+    can_spawner
+        .spawn(dronecan_can::io_task(p.FDCAN1, p.PD0, p.PD1))
+        .unwrap();
 
     // USB CDC ACM on the FS OTG peripheral (PA11/PA12), clocked from PLL3Q.
     let mut ep_out_buffer = [0u8; 256];
@@ -184,35 +209,38 @@ async fn application(p: Peripherals) {
     join(
         usb.run(),
         join(
-            mavlink_usb::run(class, &phy, &eth_power, &session, &parameters),
+            mavlink_usb::run(class, &phy, &eth_power, &session, &parameters, &dronecan),
             join(
-                async {
-                    loop {
-                        let half_period_us = (500_000.0 / parameters.get(Id::LinkLedHz)) as u64;
-                        // All MDIO transactions finish before yielding to the USB task.
-                        {
-                            let mut phy = phy.borrow_mut();
-                            if !phy.found() {
-                                phy.init();
+                dronecan_can::run(&parameters, &dronecan),
+                join(
+                    async {
+                        loop {
+                            let half_period_us = (500_000.0 / parameters.get(Id::LinkLedHz)) as u64;
+                            // All MDIO transactions finish before yielding to the USB task.
+                            {
+                                let mut phy = phy.borrow_mut();
+                                if !phy.found() {
+                                    phy.init();
+                                }
+                                if phy.found() && !phy.led_control_ready() {
+                                    phy.configure_leds();
+                                }
+                                let on =
+                                    (Instant::now().as_micros() / half_period_us).is_multiple_of(2);
+                                phy.set_link_led(on);
+                                green.set_level(if on { Level::Low } else { Level::High });
+                                red.set_level(if fault::present() {
+                                    Level::Low
+                                } else {
+                                    Level::High
+                                });
                             }
-                            if phy.found() && !phy.led_control_ready() {
-                                phy.configure_leds();
-                            }
-                            let on =
-                                (Instant::now().as_micros() / half_period_us).is_multiple_of(2);
-                            phy.set_link_led(on);
-                            green.set_level(if on { Level::Low } else { Level::High });
-                            red.set_level(if fault::present() {
-                                Level::Low
-                            } else {
-                                Level::High
-                            });
-                        }
 
-                        Timer::after_micros(half_period_us).await;
-                    }
-                },
-                diagnostics::stack_monitor(),
+                            Timer::after_micros(half_period_us).await;
+                        }
+                    },
+                    diagnostics::stack_monitor(),
+                ),
             ),
         ),
     )

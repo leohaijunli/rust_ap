@@ -20,7 +20,10 @@ retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
 [essential-check plan](plan.md). **P3a is complete:** FRAM backup, parameter API,
 atomic save and power-cycle readback passed. The board now runs source
 **`1d3d08e3dd64f3ac`**, with `LINK_LED_HZ=2.0` saved; see
-[P3a evidence](docs/acceptance/p3a/README.md). Next is DroneCAN zero-output bring-up.
+[P3a evidence](docs/acceptance/p3a/README.md). **P4b-a software is ready:** the
+bounded DroneCAN v0 core, node services, FDCAN1 adapter, and zero-only periodic
+output passed host/build checks; hardware mapping remains blocked by H-02/03.
+The package has not been uploaded; see [P4b-a evidence](docs/acceptance/p4b-a/README.md).
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
 
@@ -72,7 +75,7 @@ appear in the toolbar's run selector; select one and press **Shift+F10**:
 | Configuration | Action |
 | --- | --- |
 | **Build firmware** | Compile the release image and create the validated `.px4` package |
-| **Upload firmware (USB)** | Build, reboot the connected Rust application into its PX4 bootloader, upload, verify CRC, and restart |
+| **Upload firmware (USB)** | Build, enter the original PX4 bootloader without a physical replug, upload, verify CRC, and restart |
 | **Monitor MAVLink** | Decode telemetry for 10 seconds |
 | **Check firmware** | Formatting, normal/injection/Dump Clippy, host tests, normal/Dump build and package/layout/hash reports |
 
@@ -112,14 +115,20 @@ CDC, the official Auterion PX4 FMUv6X application, and the PX4 bootloader. Custo
 patterns must include the application and bootloader identities when starting
 from an application, so discovery continues after its reboot.
 
+For a normal Rust CDC, `upload` calls `tools/enter_bootloader.py`, sends the
+complete `!bootloader` command, and waits up to 15 seconds for the original PX4
+bootloader before invoking the uploader. An existing bootloader is accepted
+without another reset. An official PX4 application is left to the uploader's
+MAVLink reboot path. Physical unplug/replug is a recovery path, not part of the
+normal upload action.
+
 The post-PX4-restore `found []` preflight regression is fixed and covered by
-six host tests; the current Python suite has 64 tests. See the
+six host tests; the P1 acceptance run had 64 Python tests. See the
 [upload discovery record](docs/acceptance/p1/20261031-upload-discovery.md).
-Ordinary `upload` rebuilds and flashes the current P1; `upload --dry-run` checks
-prerequisites and the package without rebooting or flashing. The corrected P1
-source ID is `a946a529360eac83`, including the backup-domain fix. Its on-device
-source, protocol, platform, timing, and recovery checks passed; exact results are
-in the [HIL record](docs/acceptance/p1/20261031-hil.md).
+Ordinary `upload` rebuilds and flashes the current working tree; `upload --dry-run`
+checks prerequisites and the package without rebooting or flashing. The board
+currently runs the accepted P3a source `1d3d08e3dd64f3ac`; the P4b-a package has
+not been uploaded.
 
 The provided udev rules grant the active local desktop user access to both
 USB identities. Install once from an interactive terminal:
@@ -205,8 +214,14 @@ If the PX4 USB port is streaming MAVLink, send
 verified on the connected board. The bootloader enumerates as `3185:0035`,
 product `PX4 BL FMU v6X.x`; its tty number may change after the reboot.
 
-For subsequent uploads from this Rust application, send the complete line
-`!bootloader` to the Rust CDC port:
+For subsequent uploads from this Rust application, the normal command performs
+the application-to-bootloader transition automatically:
+
+```sh
+./tools/firmware.sh upload
+```
+
+The equivalent manual recovery command is:
 
 ```sh
 python3 - <<'PY'
@@ -232,10 +247,11 @@ including an entry method that does not depend on the Rust application respondin
 
 ### VMware USB connection
 
-Connect both identities to the Linux VM: `3185:0035` for the PX4 bootloader and
-`1209:0001` for the Rust application. If the device disappears from guest Linux
-after a firmware reboot, reconnect the newly enumerated device through
-VMware's removable-device menu.
+Configure VMware USB auto-connect rules for both identities: `1209:0001` for
+the Rust application and `3185:0035` for the PX4 application/bootloader. Both
+must attach to the same Linux VM after re-enumeration. If policy prevents
+auto-connect, reconnect the new identity through VMware's removable-device menu;
+physically unplugging the board is not required.
 
 `lsusb` may label `1209:0001` as **Generic pid.codes Test PID** from its local
 USB ID database. The actual device product string is **V6X Rust CDC** and its
@@ -410,6 +426,8 @@ Open the Rust CDC port with a serial terminal or `pyserial`:
 - `!metrics`: cumulative 1 kHz release/body/IRQ statistics, last 1 s CPU window,
   shared-stack watermark; `!metrics-reset` asynchronously starts a new statistics epoch.
 - `!fault`: CRC-validated retained record; `!fault-clear` explicitly clears it.
+- `!dronecan`: FDCAN register/error counters, bounded transport counters, node
+  discovery, and trusted/candidate ESC status.
 - `!panic` / `!hardfault`: **only** in `fault-injection` builds, never in the normal package.
 
 Engineer-run captures (close QGC and all other readers first):
@@ -443,8 +461,9 @@ H-RTK GNSS data. CAN firmware updates are outside that goal. See
 
 ## Verification status
 
-P1 passed the [current essential checks](plan.md#4-仅保留必要测试).
-M1 hardware acceptance has not started.
+P1 and P3a passed the [current essential checks](plan.md#4-仅保留必要测试).
+P4b-a software checks pass; CAN hardware acceptance has not started because
+H-02/03 are still missing. M1 hardware acceptance has not started.
 
 **P1 software checks:** fmt, normal/injection/Dump target Clippy, host Clippy,
 12 Rust tests, 64 Python tests, and normal/Dump/injection release builds and
@@ -465,7 +484,7 @@ QGC Inspector's missing AUTOPILOT_VERSION display is tracked in P2.
 configuration and the generated RTC clock mux now match inherited state. The LSE
 drive mapping follows the selected H753 PAC variants, preserving raw bits.
 The wrapper checks BDCR configuration and all 32 BKP words instead of writing
-them back after a reset. Current normal source: **`a946a529360eac83`**, `.px4` SHA-256:
+them back after a reset. P1 acceptance source: **`a946a529360eac83`**, `.px4` SHA-256:
 `7652fa90836be3182becf8f888a052aebc982ecbf67e6ba303dc66719db8fff5`.
 The replay executes compiled startup/HAL code with synthetic MMIO; it does not
 measure board behavior or RTC timekeeping. See the [fix and evidence](docs/acceptance/p1/20261031-backup-domain.md).

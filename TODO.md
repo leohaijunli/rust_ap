@@ -1,7 +1,7 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-10-31。**P0、P1、P3a 完成；下一步 P4b-a；M1 未开始。**
-规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md)
+更新：2026-10-31。**P0、P1、P3a 完成；P4b-a 软件门通过、实物待 H-02/03；M1 未开始。**
+规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md)
 
 ## 执行规则
 
@@ -33,7 +33,7 @@ P1 最终普通回装为 `a946a529360eac83`；当前板上为 P3a 普通 Rust `1
 ## M1 前置阶段
 
 - [x] **P3a / P3A-01～04**：FM25V02A 全量备份、统一参数 API、双槽原子持久化、一次保存/掉电读回通过；[证据](docs/acceptance/p3a/README.md)。
-- [ ] **下一步 P4b-a / CAN-A01～04**：v0 协议、节点服务、ESC 映射/Status、零命令。P1/P3a 依赖已满足，待 H-02/03；DNA 仅设备必需时加入。
+- [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
 - [ ] **PL-a / LOG-A01～05**：ULog、SDMMC2/FAT；独立解析、一次断电恢复和卡故障。依赖 P3a、P4b-a、H-04。
 - [ ] **P4b-g / GNSS-01～03**：H-RTK 身份、Fix2/Auxiliary、有效性与日志。依赖 P4b-a、PL-a、H-10。
 - [ ] **P2 / MAV-01～03**：USB/TELEM1、QGC 连接/重连及版本显示。依赖 P1、P3a。

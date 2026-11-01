@@ -19,6 +19,7 @@ embassy-stm32 = { version = "0.5.0", features = ["stm32h753ii", "time-driver-tim
 embassy-sync = "0.7.2"
 embassy-time = { version = "0.5.0", features = ["tick-hz-1_000_000"] }
 embassy-usb = { version = "0.5.1", default-features = false }
+embedded-can = "0.4.1"
 mavlink = { version = "0.17.1", default-features = false, features = ["common", "embedded", "emit-extensions"] }
 static_cell = "2.1.1"
 

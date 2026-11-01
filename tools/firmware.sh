@@ -97,9 +97,9 @@ PY
         echo "Upload prerequisites and firmware package checked; dry run complete."
         exit 0
     fi
-    # The uploader sends MAVLink reboot-to-bootloader (parameter 1 = 3),
-    # rescans Rust/PX4 application and bootloader identities, uploads,
-    # verifies the CRC, and reboots.
+    "$python" -u "$root/tools/enter_bootloader.py"
+    # Official PX4 applications remain on the uploader's MAVLink reboot path.
+    # The uploader rescans all configured identities, uploads, verifies, and reboots.
     exec "$python" -u "$uploader" --port "$ports" --baud-flightstack 115200 \
         --verbose --noninteractive "$release/v6x-rust-led.px4"
 }

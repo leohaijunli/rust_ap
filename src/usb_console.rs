@@ -1,6 +1,7 @@
 use core::cell::RefCell;
 use core::fmt::{self, Write};
 
+use crate::dronecan_can;
 use crate::eth_led::Lan8742;
 use crate::fram;
 use crate::parameter_manager::ParameterManager;
@@ -27,7 +28,7 @@ pub(crate) fn status(phy: &RefCell<Lan8742<'_>>, eth_power: &Output<'_>) -> Resp
     response
 }
 
-pub(crate) fn report(command: Command) -> Response {
+pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Response {
     let mut response = Response::new();
     let _ = match command {
         Command::Platform => crate::platform::write_diagnostics(&mut response),
@@ -38,6 +39,7 @@ pub(crate) fn report(command: Command) -> Response {
         }
         Command::Fault => crate::fault::write_diagnostics(&mut response),
         Command::FaultClear => writeln!(response, "FAULT_CLEAR ok={}", crate::fault::clear()),
+        Command::DroneCan => dronecan.write_diagnostics(&mut response),
         _ => writeln!(response, "ERR unsupported-report"),
     };
     response.finish();
@@ -154,6 +156,7 @@ pub(crate) enum Command {
     Parameters,
     ParamSave,
     ParamLoad,
+    DroneCan,
     #[cfg(feature = "fault-injection")]
     Panic,
     #[cfg(feature = "fault-injection")]
@@ -194,6 +197,7 @@ impl CommandLine {
                     b"!params" => Some(Command::Parameters),
                     b"!param-save" => Some(Command::ParamSave),
                     b"!param-load" => Some(Command::ParamLoad),
+                    b"!dronecan" => Some(Command::DroneCan),
                     #[cfg(feature = "fault-injection")]
                     b"!panic" => Some(Command::Panic),
                     #[cfg(feature = "fault-injection")]

@@ -22,7 +22,7 @@ invalid_initial_toggle_accepted=true
 service_node_zero_accepted=true
 ```
 
-见 [probe-results.json](acceptance/p0/probe-results.json) 和 [dronecan-malformed-probe.txt](acceptance/p0/dronecan-malformed-probe.txt)。exit=0 仅表示诊断完成。修复无堆编译并不能消除协议缺陷；CAN-A01 仍须实现/修复有界纯 Rust v0 层并独立验收。
+见 [probe-results.json](acceptance/p0/probe-results.json) 和 [dronecan-malformed-probe.txt](acceptance/p0/dronecan-malformed-probe.txt)。exit=0 仅表示诊断完成。P4b-a 已在 `src/dronecan/` 独立实现有界、无堆 v0 层并通过软件门；实物结果见 [P4b-a 记录](acceptance/p4b-a/README.md)。
 
 ## 2. M1 最小消息集
 
@@ -31,7 +31,7 @@ service_node_zero_accepted=true
 | `uavcan.protocol.NodeStatus` | 341 | 本节点 1 Hz，监视外部节点 |
 | `uavcan.protocol.GetNodeInfo` | 1，服务 | 身份/版本发现 |
 | `uavcan.protocol.param.GetSet` / `ExecuteOpcode` | 11 / 10，服务 | 共用参数注册表；保存状态如实返回 |
-| `uavcan.protocol.RestartNode` | 5，服务 | 受状态限制的重启 |
+| `uavcan.protocol.RestartNode` | 5，服务 | 当前安全拒绝；有界 TX 取消完成后再放行重启 |
 | `uavcan.equipment.esc.RawCommand` | 1030 | M1 固定四槽全零 |
 | `uavcan.equipment.esc.Status` | 1034 | 四个 ESC 的状态 |
 | `uavcan.equipment.safety.ArmingStatus` | 1100 | M1 固定 DISARMED=0 |
@@ -54,25 +54,27 @@ service_node_zero_accepted=true
 
 这是 Python 参考生成器自身的回读，不是 Rust 对拍、会话去重或 HIL 通过。CAN-A01 另测 TID 31→0、重复/超时/乱序、源/目标节点、服务关联、帧间混入、缺帧、超长、容量耗尽与安全拒绝。ArmingStatus 的保留值 1 是可编码的字节，不是有效解锁许可。
 
-## 3. 接收/发送边界与初始容量
+## 3. 接收/发送边界与实现容量
 
-HAL 使用 `embassy-stm32` FDCAN；拟先 CAN1（PD0/PD1），实际端口、电气/供电与终端由 H-03 确认。1 Mbit/s 为设备参考值；若使用 HSE 16 MHz，合法候选为 prescaler=1、TSEG1=13、TSEG2=2、SJW=2（采样点 87.5%），须通过 HAL 配置、寄存器和总线实测。AM32 的 90% 采样点是 ESC 端配置，不要求两端寄存器相同。
+HAL 使用 `embassy-stm32` FDCAN1（PD0/PD1），内核时钟 HSE 16 MHz；已配置 prescaler=1、TSEG1=13、TSEG2=2、SJW=2，即 1 Mbit/s、采样点 87.5%。寄存器谓词已进固件，电气/供电/终端和总线波形仍由 H-03 实测。AM32 的 90% 采样点是 ESC 端配置，不要求两端寄存器相同。
 
-以下是首轮可测初值，不是已实现分配：
+当前软件分配：
 
 | 资源 | 初值 / 行为 |
 | --- | --- |
 | HAL 硬件消息 RAM | 0.5.0 固定每 RX FIFO 3 帧、TX 3 帧；不能拿软件队列容量冒充硬件深度 |
-| 软件 RX | ESC/状态快速队列 64 帧，GNSS/服务队列 128 帧；IRQ 只取帧/时间戳/计数 |
-| 重组 | 12 槽，每槽最多 512 B payload + 有界元数据；ESC/GNSS 保留槽不被服务洪泛挤占 |
-| 会话 / 节点 | 64 个有界会话、16 个节点；4 个 ESC 身份槽 + 单 GNSS 源显式配置 |
+| 软件 RX | P2 FDCAN IRQ 唤醒 TIM6_DAC/P4 I/O 任务，立即转入 64 帧有界队列；满时计数并丢弃 |
+| 重组 | 12 槽，每槽最多 512 B payload；前 4 槽只供消息，服务洪泛不能占用 |
+| 会话 / 节点 | 64 个会话且前 16 项只供消息；16 个节点可回收 offline 项；4 个 ESC 槽要求显式 source 映射 |
 | 服务响应 | 最多 8 个 pending 响应；限速，满时计数并拒绝新增，不占满周期输出 |
 | 周期 TX | RawCommand 与 ArmingStatus 各一个最新值；M1 始终零/0，丢弃过期发送而不追赶积压 |
-| CAN 软件 RAM | 上述结构整体预算 ≤32 KiB，实际 `size_of`/map 验证 |
+| CAN 软件 RAM | 核心结构 `size_of` 门 ≤32 KiB；P4b-a 相对 P3a 的整机 static RAM 增量约 20 KiB |
 
 512 B 槽不仅覆盖 Fix2 最大 221 B，也覆盖 GetNodeInfo/GetSet 的约 377/371 B 最大响应。TID 按源/类型/请求或响应/目的节点建会话；多帧使用 DSDL 签名参与 CRC。初值：会话重同步 timeout 2 s，GNSS 整笔重组 100 ms、服务整笔 1 s、帧间 100 ms；兼容性须与固定独立实现对拍。
 
-FDCAN IRQ 起始延迟目标 ≤25 us，单次取帧处理目标 ≤20 us；协议层每次 poll 有界并优先排空 ESC 队列。软件队列溢出丢弃受影响传输、记录计数；不得把半笔传输发布为有效数据。HAL `src/can/fd/peripheral.rs:170-195` 的 abort 有忙循环，CAN-A02 须测量或改为有界平台适配。
+FDCAN I/O 与 400 Hz RawCommand、10 Hz ArmingStatus、1 Hz NodeStatus 运行在 P4 中断执行器，线程侧 USB/MDIO/FRAM 不能阻塞硬件 FIFO。HAL `src/can/fd/peripheral.rs:170-195` 的 abort 有无界忙循环，因此固定 TX FIFO、关闭硬件自动重传，并以 `TXBRP/TXBTO` 有界确认单次发送；失败帧不追赶。此取舍须在 HIL 核对无 ACK、仲裁和 bus-off 行为，P5 非零输出前仍需重新审查取消策略。
+
+本节点暂用静态 ID 42，上板前核对冲突。GetNodeInfo、GetSet 和 ExecuteOpcode/SAVE 已接唯一参数 API；RestartNode 当前返回 `ok=false`，避免出现“成功响应迟发但实际未重启”。`!dronecan` 输出寄存器、队列/协议计数、节点及 ESC candidate/trusted 状态。
 
 M1 新鲜度初值：ESC Status 年龄 >100 ms 为 stale，NodeStatus >3 s 为 offline，GNSS Fix2 >600 ms 为 stale。标志更新目标 ≤10 ms；这些是数据显示/记录阈值，非飞行故障动作。总线错误/重连不改变零输出约束。
 

@@ -2,6 +2,10 @@
 
 //! Hardware-independent accounting, diagnostics and parameter state.
 
+#[cfg(test)]
+extern crate std;
+
+pub mod dronecan;
 pub mod fault_record;
 pub mod metrics;
 pub mod parameter_store;

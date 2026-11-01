@@ -60,9 +60,9 @@ M1 快照至少携带源、序号、本地微秒时间、有效标志和数据�
 | DRDY | EXTI15_10，P0 | 尽早时间戳/唤醒；共享向量统一处理 |
 | SPI2 DMA | DMA1 两个独占 stream，P1 | 具体 DMAMUX/stream 在 BSP 编译时核对；不与 UART 共用 |
 | 时间驱动 | P1 已显式 TIM2，P1 | tick 1 MHz，PSC=239、ARR=65535；HAL 半溢出/溢出 IRQ 扩展时间 |
-| FDCAN1 | IT0/IT1，P2 | 只取帧/打点/计数，及时排空实际 3 帧 FIFO |
+| FDCAN1 | IT0/IT1，P2；TIM6_DAC I/O executor，P4 | P4b-a 已实现：IRQ 唤醒 P4 任务，转入 64 帧有界队列并独立调度周期安全帧 |
 | IMU/AHRS | TIM7 软件 pend 的 InterruptExecutor，P3 | P1 当前仅固定32次整数替身，非 IMU/AHRS；外设 TIM7 不运行 |
-| CAN 协议 | 拟 TIM6_DAC InterruptExecutor，P4 | 分片/服务处理有界，避免 SD 忙等待挤压 RX |
+| CAN 协议 | 线程 executor | P4 只做 I/O/周期帧；重组、节点与参数服务走有界跨执行器通道，不持有高优先级锁 |
 | USB / UART7 | OTG_FS、UART7 与独占 DMA，P6 | USB/TELEM1 双链路互不等待 |
 | SD | SDMMC2 与其实际 DMA/IDMA，P7 | DMA 路径须按 HAL/芯片核对；FAT/写卡任务在低优先级 |
 | 日志/参数/低速遥测 | 线程 executor | 有界 poll；任何等待都不持有高优先级路径需要的锁 |
@@ -74,11 +74,11 @@ Embassy 在同一个 executor 内是协作调度；同步忙循环会阻塞该 e
 | 区域 | M1 提案 | 验证 |
 | --- | --- | --- |
 | AXI SRAM 512 KiB | 普通/事件日志 136 KiB；任务 futures ≤64 KiB；AHRS/快照 ≤8 KiB；参数/文件系统/通信 ≤32 KiB；其他 ≤16 KiB；共享 CPU 栈 64 KiB | 合计上限 320 KiB，保留 ≥192 KiB；以 map/实际 ABI 核对 |
-| D2 SRAM 288 KiB | DMA pool 64 KiB（SD staging 32 KiB、SPI/UART 与余量）；CAN 软件结构 ≤32 KiB | 具体 DMA 可达性先核对；剩余容量不自动视为可通用分配 |
+| D2 SRAM 288 KiB | DMA pool 64 KiB（SD staging 32 KiB、SPI/UART 与余量）；CAN 软件结构 ≤32 KiB | CAN 当前仍在普通 AXI 静态区；FDCAN 使用专用消息 RAM，后续 DMA 布局仍待实现 |
 | DTCM / SRAM4 / backup | M1 暂无必需分配 | 不把 DMA 数组默认移入 DTCM；RTC bootloader 签名按原约定处理 |
 | flash | 应用仍为 0x08020000、1920 KiB 上限；M1 镜像目标 ≤1536 KiB | 含向量、代码、只读数据和 `.data` load image，打包器同步检查 |
 
-DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 `memory.x` 只使用 AXI，表中 D2 布局尚未实现；P1/对应外设阶段必须检查 map 和实际 DMA 路径。
+DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 `memory.x` 只使用 AXI，表中 D2 布局尚未实现；P4b-a release static RAM 为 38648 B，CAN 核心结构门保持 ≤32 KiB，FDCAN 专用消息 RAM 不计入 AXI `.bss`。
 
 Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌套和函数临时量都计入共享 CPU 栈。64 KiB 栈初值要求实测至少剩余 32 KiB，并通过水位/保护区检查；不能从 `.bss` 大小推断栈安全。P1 的 AXI 实际布局为447 KiB static allocation、独立1 KiB HardFault栈、64 KiB共享栈；当前 static 使用/空余以 [P1报告](acceptance/p1/README.md)为准，并非表中M1资源已分配。
 
