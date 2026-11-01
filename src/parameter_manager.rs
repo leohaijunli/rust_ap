@@ -71,7 +71,17 @@ impl<'d> ParameterManager<'d> {
     }
 
     pub fn set(&self, id: Id, value: f32) -> Result<bool, parameters::Error> {
-        self.values.borrow_mut().set(id, value)
+        let changed = self.values.borrow_mut().set(id, value)?;
+        if changed {
+            crate::sd_logger::record_parameter(
+                embassy_time::Instant::now().as_micros(),
+                id as u16,
+                id.definition().kind,
+                self.get(id),
+                self.is_dirty(),
+            );
+        }
+        Ok(changed)
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -90,6 +100,9 @@ impl<'d> ParameterManager<'d> {
             status.load = LoadState::Unavailable;
             status.last_error = Some(error);
             self.status.set(status);
+        }
+        if result.is_ok() {
+            self.log_all();
         }
         result
     }
@@ -128,6 +141,9 @@ impl<'d> ParameterManager<'d> {
         let mut status = self.status.get();
         status.last_error = result.as_ref().err().copied();
         self.status.set(status);
+        if result.is_ok() {
+            self.log_all();
+        }
         result
     }
 
@@ -179,6 +195,20 @@ impl<'d> ParameterManager<'d> {
 
     pub async fn read_fram(&self, address: u16, bytes: &mut [u8]) -> Result<(), fram::Error> {
         self.fram.lock().await.read(address, bytes).await
+    }
+
+    fn log_all(&self) {
+        let timestamp = embassy_time::Instant::now().as_micros();
+        let dirty = self.is_dirty();
+        for definition in parameters::REGISTRY {
+            crate::sd_logger::record_parameter(
+                timestamp,
+                definition.id as u16,
+                definition.kind,
+                self.get(definition.id),
+                dirty,
+            );
+        }
     }
 }
 

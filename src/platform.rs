@@ -52,7 +52,7 @@ pub fn init() -> Peripherals {
         prediv: PllPreDiv::DIV1,
         mul: PllMul::MUL60,
         divp: Some(PllDiv::DIV2),
-        divq: None,
+        divq: Some(PllDiv::DIV20),
         divr: None,
     });
     config.rcc.sys = Sysclk::PLL1_P;
@@ -75,6 +75,7 @@ pub fn init() -> Peripherals {
     });
     config.rcc.mux.usbsel = mux::Usbsel::PLL3_Q;
     config.rcc.mux.fdcansel = mux::Fdcansel::HSE;
+    config.rcc.mux.sdmmcsel = mux::Sdmmcsel::PLL1_Q;
     config.rcc.mux.spi45sel = mux::Spi45sel::PCLK2;
     let p = crate::backup_domain::init(config);
     assert!(crate::backup_domain::preserved());
@@ -84,6 +85,7 @@ pub fn init() -> Peripherals {
     embassy_stm32::interrupt::TIM6_DAC.set_priority(Priority::P4);
     embassy_stm32::interrupt::FDCAN1_IT0.set_priority(Priority::P2);
     embassy_stm32::interrupt::FDCAN1_IT1.set_priority(Priority::P2);
+    embassy_stm32::interrupt::SDMMC2.set_priority(Priority::P7);
     embassy_stm32::interrupt::OTG_FS.set_priority(Priority::P6);
     embassy_stm32::interrupt::DMA2_STREAM0.set_priority(Priority::P7);
     embassy_stm32::interrupt::DMA2_STREAM1.set_priority(Priority::P7);
@@ -107,13 +109,16 @@ pub fn clock_registers_ok() -> bool {
         && pll_source.divm(2) == PllPreDiv::DIV4
         && pll1.plln() == PllMul::MUL60
         && pll1.pllp() == PllDiv::DIV2
+        && pll1.pllq() == PllDiv::DIV20
         && pll3.plln() == PllMul::MUL48
         && pll3.pllq() == PllDiv::DIV4
         && pll_config.divpen(0)
+        && pll_config.divqen(0)
         && pll_config.divqen(2)
         && !pll_config.pllfracen(0)
         && !pll_config.pllfracen(2)
         && RCC.d2ccip2r().read().usbsel() == mux::Usbsel::PLL3_Q
+        && RCC.d1ccipr().read().sdmmcsel() == mux::Sdmmcsel::PLL1_Q
         && RCC.d1cfgr().read().d1cpre() == AHBPrescaler::DIV1
         && RCC.d1cfgr().read().hpre() == AHBPrescaler::DIV2
         && RCC.d1cfgr().read().d1ppre() == APBPrescaler::DIV2

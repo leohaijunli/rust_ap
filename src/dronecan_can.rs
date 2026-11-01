@@ -396,7 +396,10 @@ pub async fn run(parameters: &ParameterManager<'_>, state: &State) -> ! {
     let services = ServiceChannel::new();
     join(
         receive_loop(parameters, state, &OUTGOING, &services),
-        service_loop(parameters, state, &OUTGOING, &services),
+        join(
+            service_loop(parameters, state, &OUTGOING, &services),
+            freshness_loop(state),
+        ),
     )
     .await;
     unreachable!()
@@ -471,6 +474,12 @@ fn handle_transfer(
                 if needs_info {
                     state.queue_node_info(metadata.source, outgoing);
                 }
+                crate::sd_logger::record_node_status(
+                    now_us,
+                    metadata.source,
+                    status,
+                    status.mode != 7,
+                );
             }
             Err(_) => codec_error(state),
         },
@@ -478,10 +487,20 @@ fn handle_transfer(
             data_type_id: dsdl::ESC_STATUS_ID,
         } => match dsdl::decode_esc_status(payload.as_slice()) {
             Ok(status) => {
-                state
+                let observation = state
                     .esc
                     .borrow_mut()
                     .observe(metadata.source, status, now_us);
+                crate::sd_logger::record_esc_status(
+                    now_us,
+                    metadata.source,
+                    status,
+                    matches!(
+                        observation,
+                        v6x_rust_led::dronecan::node::EscObservation::Trusted
+                    ),
+                    false,
+                );
             }
             Err(_) => codec_error(state),
         },
@@ -717,6 +736,45 @@ async fn service_loop(
     }
 }
 
+async fn freshness_loop(state: &State) -> ! {
+    let mut ticks = 0_u8;
+    let mut stale = [None; ESC_COUNT];
+    loop {
+        Timer::after_millis(100).await;
+        let now_us = Instant::now().as_micros();
+        {
+            let esc = state.esc.borrow();
+            for (index, previous) in stale.iter_mut().enumerate() {
+                let Some(slot) = esc.slot(index) else {
+                    continue;
+                };
+                let current = !slot.fresh(now_us);
+                if *previous != Some(current) || ticks == 0 {
+                    crate::sd_logger::record_esc_status(
+                        now_us,
+                        slot.source,
+                        slot.status,
+                        true,
+                        current,
+                    );
+                    *previous = Some(current);
+                }
+            }
+        }
+        if ticks == 0 {
+            for node in state.nodes.borrow().entries() {
+                crate::sd_logger::record_node_status(
+                    now_us,
+                    node.node_id,
+                    node.status,
+                    node.online(now_us),
+                );
+            }
+        }
+        ticks = (ticks + 1) % 10;
+    }
+}
+
 fn queue_response(
     context: ResponseContext,
     payload: Payload,
@@ -788,6 +846,7 @@ async fn io_transmit_loop(mut tx: CanTx<'_>) -> ! {
 }
 
 fn periodic_raw_command(transfer_id: u8, now: Instant) -> Outgoing {
+    crate::sd_logger::record_motor_command(now.as_micros());
     let mut payload = Payload::new();
     let len =
         dsdl::encode_zero_raw_command(payload.capacity_mut()).expect("four zero commands fit");
@@ -802,6 +861,7 @@ fn periodic_raw_command(transfer_id: u8, now: Instant) -> Outgoing {
 }
 
 fn periodic_arming_status(transfer_id: u8, now: Instant) -> Outgoing {
+    crate::sd_logger::record_arming_status(now.as_micros());
     let mut payload = Payload::new();
     let len = dsdl::encode_disarmed(payload.capacity_mut()).expect("DISARMED fits");
     payload.set_len(len).expect("DISARMED fits");
@@ -942,6 +1002,21 @@ async fn io_bus_monitor_loop(properties: Properties) -> ! {
             .tx_errors
             .store(properties.tx_error_count(), Ordering::Relaxed);
         IO_STATE.mode.store(mode, Ordering::Relaxed);
+        crate::sd_logger::record_can_stats(
+            Instant::now().as_micros(),
+            [
+                IO_STATE.rx_frames.load(Ordering::Relaxed),
+                IO_STATE.rx_bus_errors.load(Ordering::Relaxed),
+                IO_STATE.rx_queue_drops.load(Ordering::Relaxed),
+                IO_STATE.tx_frames.load(Ordering::Relaxed),
+                IO_STATE.tx_transfers.load(Ordering::Relaxed),
+                IO_STATE.tx_timeouts.load(Ordering::Relaxed),
+                u32::from(properties.rx_error_count()),
+                u32::from(properties.tx_error_count()),
+                u32::from(mode),
+                0,
+            ],
+        );
         Timer::after_millis(100).await;
     }
 }

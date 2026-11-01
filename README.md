@@ -23,7 +23,10 @@ atomic save and power-cycle readback passed. The board now runs source
 [P3a evidence](docs/acceptance/p3a/README.md). **P4b-a software is ready:** the
 bounded DroneCAN v0 core, node services, FDCAN1 adapter, and zero-only periodic
 output passed host/build checks; hardware mapping remains blocked by H-02/03.
-The package has not been uploaded; see [P4b-a evidence](docs/acceptance/p4b-a/README.md).
+**PL-a software is also ready:** pure Rust ULog, bounded queues and the explicit-start
+SDMMC2/FAT path pass software checks; H-04 remains. Neither package has been
+uploaded; see [P4b-a](docs/acceptance/p4b-a/README.md) and
+[PL-a](docs/acceptance/pl-a/README.md) evidence.
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
 
@@ -428,6 +431,9 @@ Open the Rust CDC port with a serial terminal or `pyserial`:
 - `!fault`: CRC-validated retained record; `!fault-clear` explicitly clears it.
 - `!dronecan`: FDCAN register/error counters, bounded transport counters, node
   discovery, and trusted/candidate ESC status.
+- `!logger`: ULog queue, SD/FAT state, bytes, flushes, errors and high-water mark.
+- `!logger-start`: explicitly power PC13 and start one SD mount/log session. The
+  default firmware leaves SD power off so a missing or abnormal card cannot affect boot.
 - `!panic` / `!hardfault`: **only** in `fault-injection` builds, never in the normal package.
 
 Engineer-run captures (close QGC and all other readers first):
@@ -462,8 +468,8 @@ H-RTK GNSS data. CAN firmware updates are outside that goal. See
 ## Verification status
 
 P1 and P3a passed the [current essential checks](plan.md#4-仅保留必要测试).
-P4b-a software checks pass; CAN hardware acceptance has not started because
-H-02/03 are still missing. M1 hardware acceptance has not started.
+P4b-a and PL-a software checks pass; concentrated CAN/SD hardware acceptance has
+not started because H-02/03/04 are still missing. M1 hardware acceptance has not started.
 
 **P1 software checks:** fmt, normal/injection/Dump target Clippy, host Clippy,
 12 Rust tests, 64 Python tests, and normal/Dump/injection release builds and

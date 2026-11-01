@@ -23,6 +23,7 @@ PWRCR = 0x5800042C
 RCC_CR = 0x58024400
 CFGR = 0x58024410
 USBSEL = 0x58024454
+SDMMCSEL = 0x5802444C
 FLASH_ACR = 0x52002000
 TIM2_PSC = 0x40000028
 TIM2_ARR = 0x4000002C
@@ -38,9 +39,10 @@ def p1_registers(cr3):
         0x5802441C: 0x00000440,   # APB1 /2, APB2 /2
         0x58024420: 0x00000040,   # APB4 /2
         0x58024428: 0x00400012,   # HSE, DIVM1=1, DIVM3=4
-        0x5802442C: 0x01C10A0C,   # PLL1P and PLL3P/Q/R, integer mode
-        0x58024430: 0x0101023B,   # PLL1 N=60, P=2
+        0x5802442C: 0x01C30A0C,   # PLL1P/Q and PLL3P/Q/R, integer mode
+        0x58024430: 0x0113023B,   # PLL1 N=60, P=2, Q=20
         0x58024440: 0x0103022F,   # PLL3 N=48, P=2, Q=4, R=2
+        SDMMCSEL: 0x00000000,     # PLL1Q
         USBSEL: 0x00200000,       # PLL3Q
         CR3: cr3,
         D3CR: 0x0000E000,         # VOS1, VOSRDY (Scale0 with ODEN)
@@ -121,7 +123,10 @@ def main():
         ('wrong_sysclk', base | {CFGR: 0}, False),
         ('pll1_unlocked', base | {RCC_CR: base[RCC_CR] & ~(1 << 25)}, False),
         ('pll3_unlocked', base | {RCC_CR: base[RCC_CR] & ~(1 << 29)}, False),
+        ('pll1_q_disabled', base | {0x5802442C: base[0x5802442C] & ~(1 << 17)}, False),
+        ('wrong_pll1_q_divider', base | {0x58024430: base[0x58024430] ^ (1 << 16)}, False),
         ('wrong_usb_clock', base | {USBSEL: 1 << 20}, False),
+        ('wrong_sdmmc_clock', base | {SDMMCSEL: 1 << 16}, False),
         ('insufficient_flash_latency', base | {FLASH_ACR: 0x22}, False),
         ('wrong_tick_prescaler', base | {TIM2_PSC: 63}, False),
         ('wrong_timer_period', base | {TIM2_ARR: 0xFFFFFFFF}, False),

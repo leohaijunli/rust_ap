@@ -26,7 +26,8 @@
 | [dronecan_dsdlc](https://github.com/dronecan/dronecan_dsdlc) | `431170fa4bfe2212b516b8f33bdc796267907f1c` | LGPLv3 工具、MIT 生成输出例外；C host 对拍候选，尚未运行 |
 | PX4 内置 pydronecan / DSDL | `19fdf2e5b383243ccdb1094edae0603cf11469e8` / `993be80a62ec957c01fb41115b83663959a49f46` | 旧 MIT 参考；不与本轮生成输入混用 |
 | [AM32](https://github.com/am32-firmware/AM32) | `86cf1e55e56c7e7e622d01ba6855905504f15105` | GPLv3；外接 ESC 行为参考，未构建/刷写 ESC |
-| [embedded-fatfs](https://github.com/MabezDev/embedded-fatfs) | `518528cc111fcf65c48abbdeb80735a38eada112` | MIT；Cybflight lock 中 FAT/块设备组合，M1 适配候选 |
+| [embedded-fatfs](https://github.com/MabezDev/embedded-fatfs) | `518528cc111fcf65c48abbdeb80735a38eada112` | MIT；PL-a 板上 FAT、块适配与 MBR/superfloppy，lock 与根 patch 固定 |
+| [pyulog](https://github.com/PX4/pyulog) | 1.3.0 | BSD-3-Clause；host 独立解析完整/截断 ULog，不进入板上应用 |
 
 许可文件 hash、origin、入口工作树和子模块清单分别见：
 
@@ -58,6 +59,7 @@
 | `.github/workflows/p1.yml`、`docs/acceptance/p1/` | 本项目软件检查及工程师授权的HIL/恢复证据；P1必验项通过，远程CI状态未查询 |
 | `src/fram.rs`、`src/parameters.rs`、`src/parameter_store.rs`、`src/parameter_manager.rs`、`tools/fram_backup.py`、`tools/p3a_parameters.py` | 本项目 P3a 实现：按 FM25V02A 厂商规格（`001-90865 Rev. *I`）和固定 PX4 `ramtron.c` 的 8 位/MODE3/两字节地址约定独立编写，未拷入驱动代码 |
 | `src/dronecan/`、`src/dronecan_can.rs` | 本项目 P4b-a 独立实现；协议字段/签名对照固定 MIT DSDL、P0 pydronecan 向量及 MIT libcanard 状态机，未复制候选 Rust 栈；板级适配使用现有 Embassy MIT/Apache-2.0 API |
+| `src/ulog.rs`、`src/log_queue.rs`、`src/sd_logger.rs`、`examples/ulog_fixture.rs`、`tools/check_ulog.py` | 本项目 PL-a 实现；ULog 线格式对照固定 PX4 v1.17 文档，FAT 使用上述固定 MIT 栈，pyulog 只作 host 互操作检查 |
 | `tools/enter_bootloader.py`、`tools/test_enter_bootloader.py`、`tools/firmware.sh` | 本项目 host 上传入口；复用应用既有 `!bootloader` 协议和原 PX4 uploader，不修改或替换 bootloader |
 | `.opencode/skills/`、`AGENTS.md` | 工程师要求安装并应用的 clean-code / code-simplifier 项目适配；固定来源、改动与许可见[技能说明](ai-coding-skills.md) |
 

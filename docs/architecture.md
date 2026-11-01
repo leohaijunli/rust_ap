@@ -53,7 +53,7 @@ M1 快照至少携带源、序号、本地微秒时间、有效标志和数据�
 
 ## 4. Embassy 资源与调度初值
 
-下表为 M1 分配提案；P1 已实现 TIM2/P1、TIM7/P3 和 USB/P6，平台寄存器及周期替身[HIL已通过](acceptance/p1/20261031-hil.md)，其余外设仍待接入。PX4 来源见台账，不能将 PX4 DMAMAP 宏当作 Embassy 已分配的 stream。NVIC 数值越小越优先。
+下表为 M1 分配提案；P1 时基/USB、P4b-a FDCAN 与 PL-a SDMMC2 已接入软件，IMU/UART 等仍待后续阶段。PX4 来源见台账，不能将 PX4 DMAMAP 宏当作 Embassy 已分配的 stream。NVIC 数值越小越优先。
 
 | 路径 | 资源 / 初始优先级 | 要求 |
 | --- | --- | --- |
@@ -64,7 +64,7 @@ M1 快照至少携带源、序号、本地微秒时间、有效标志和数据�
 | IMU/AHRS | TIM7 软件 pend 的 InterruptExecutor，P3 | P1 当前仅固定32次整数替身，非 IMU/AHRS；外设 TIM7 不运行 |
 | CAN 协议 | 线程 executor | P4 只做 I/O/周期帧；重组、节点与参数服务走有界跨执行器通道，不持有高优先级锁 |
 | USB / UART7 | OTG_FS、UART7 与独占 DMA，P6 | USB/TELEM1 双链路互不等待 |
-| SD | SDMMC2 与其实际 DMA/IDMA，P7 | DMA 路径须按 HAL/芯片核对；FAT/写卡任务在低优先级 |
+| SD | SDMMC2/P7、内部 IDMA；线程存储任务 | PL-a 已构建：PC13 默认低、显式启动、32 KiB staging、FAT 单写者；同步 HAL 等待仍待 H-04 量化 |
 | 日志/参数/低速遥测 | 线程 executor | 有界 poll；任何等待都不持有高优先级路径需要的锁 |
 
 Embassy 在同一个 executor 内是协作调度；同步忙循环会阻塞该 executor。高优先级采样使用独立 InterruptExecutor，仍须限制 PRIMASK 临界区。HAL 的 SD 命令/取消与 CAN abort 忙等须测量/有界化，不能靠外层 async timeout 假装抢占。
@@ -74,11 +74,11 @@ Embassy 在同一个 executor 内是协作调度；同步忙循环会阻塞该 e
 | 区域 | M1 提案 | 验证 |
 | --- | --- | --- |
 | AXI SRAM 512 KiB | 普通/事件日志 136 KiB；任务 futures ≤64 KiB；AHRS/快照 ≤8 KiB；参数/文件系统/通信 ≤32 KiB；其他 ≤16 KiB；共享 CPU 栈 64 KiB | 合计上限 320 KiB，保留 ≥192 KiB；以 map/实际 ABI 核对 |
-| D2 SRAM 288 KiB | DMA pool 64 KiB（SD staging 32 KiB、SPI/UART 与余量）；CAN 软件结构 ≤32 KiB | CAN 当前仍在普通 AXI 静态区；FDCAN 使用专用消息 RAM，后续 DMA 布局仍待实现 |
+| D2 SRAM 288 KiB | DMA pool 64 KiB（SD staging 32 KiB、SPI/UART 与余量）；CAN 软件结构 ≤32 KiB | 当前 CAN 队列和 SD staging 均在 AXI；FDCAN 使用专用消息 RAM，D2/MPU 仍待后续验证 |
 | DTCM / SRAM4 / backup | M1 暂无必需分配 | 不把 DMA 数组默认移入 DTCM；RTC bootloader 签名按原约定处理 |
 | flash | 应用仍为 0x08020000、1920 KiB 上限；M1 镜像目标 ≤1536 KiB | 含向量、代码、只读数据和 `.data` load image，打包器同步检查 |
 
-DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 `memory.x` 只使用 AXI，表中 D2 布局尚未实现；P4b-a release static RAM 为 38648 B，CAN 核心结构门保持 ≤32 KiB，FDCAN 专用消息 RAM 不计入 AXI `.bss`。
+DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 D-cache 关闭；PL-a 软件包 static RAM 为 215560 B、空余 242168 B，仍保留 M1 初始 192 KiB 余量目标，实物 IDMA 可达性待验。
 
 Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌套和函数临时量都计入共享 CPU 栈。64 KiB 栈初值要求实测至少剩余 32 KiB，并通过水位/保护区检查；不能从 `.bss` 大小推断栈安全。P1 的 AXI 实际布局为447 KiB static allocation、独立1 KiB HardFault栈、64 KiB共享栈；当前 static 使用/空余以 [P1报告](acceptance/p1/README.md)为准，并非表中M1资源已分配。
 
@@ -101,7 +101,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | AHRS | 每新样本更新；单次 IMU/AHRS 快路径 ≤300 us，快照年龄 ≤2 ms；正常段无 NaN/无效四元数 |
 | 共享临界区 / logger producer | 每次全局屏蔽中断 ≤2 us；`try_record` ≤5 us；原目标不变，P1 masked-WFE等待未满足此项证明，进入采样前需调整idle并按原阈值实测，pending→服务延迟另记 |
 | CAN | M1 预算 33.028%；60% 持续压力下正常段无 RX 溢出；零命令年龄/间隔目标 ≤5 ms |
-| 日志 | 111062 B/s，含余量 138828 B/s；30 分钟正常段零 dropout，SD 指标见日志文档 |
+| 日志 | 111062 B/s，含余量 138828 B/s；M1 5 分钟正常段零 dropout，SD 指标见日志文档 |
 | CPU / 栈 | 联合负载 CPU <50%；共享栈余量 ≥32 KiB，记录所有队列高水位 |
 
 用 DWT cycles/微秒时钟记录分布、最大值、样本数、deadline miss；USB 输出低频汇总，原始统计进入 ULog。报告“观测最大值”，不称为已经证明的 WCET。过载/断线注入单列时间段，验证计数和恢复；不可混进正常统计以掩盖丢样。

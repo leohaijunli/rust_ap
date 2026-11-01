@@ -1,11 +1,11 @@
 # Pixhawk 6X Rust 飞控实施计划
 
 更新：2026-10-31。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
-状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md)。
+状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [PL-a](docs/acceptance/pl-a/README.md)。
 
 ## 1. 当前进度与执行原则
 
-- P0、P1、P3a 已完成。P4b-a 的 v0 协议、节点服务、FDCAN1 和零输出软件门已通过，实物 CAN-A04 待 H-02/03。
+- P0、P1、P3a 已完成。P4b-a 与 PL-a 软件门已通过；按工程师要求先开发，CAN-A04/LOG-A05 集中留待 H-02/03/04，但依赖阶段仍未放行。
 - P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**当前板上仍为 P3a 普通 Rust `1d3d08e3dd64f3ac`；本轮 P4b-a 包未烧录，下一步由工程师补 H-02/03 后做零输出实测。**
 - 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - 本计划的精简验收取代早期操作单中的重复次数、长时压测和截图齐套要求。历史测试结果及缺失记录仍按实保存。
@@ -94,7 +94,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P1 / P1-01～04 | 可恢复 bring-up 与周期基线；已完成 | P0 |
 | P3a / P3A-01～04 | FRAM 识别/备份、参数注册表、持久化；已完成 | P1 |
 | P4b-a / CAN-A01～04 | DroneCAN 节点、ESC 状态和零命令；软件门通过，实物待验 | P1、P3a、H-02/03 |
-| PL-a / LOG-A01～05 | ULog、缓冲、SDMMC2/FAT | P3a、P4b-a、H-04 |
+| PL-a / LOG-A01～05 | ULog、缓冲、SDMMC2/FAT；软件门通过，实物待验 | P3a、P4b-a、H-04 |
 | P4b-g / GNSS-01～03 | H-RTK 接收、有效性和日志 | P4b-a、PL-a、H-10 |
 | P2 / MAV-01～03 | USB/TELEM1 双链路、消息/命令和重连 | P1、P3a |
 | P3 / PARAM-01～02 | QGC 标准参数读设 | P3a、P2 |
@@ -121,7 +121,15 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 1. **CAN-A01**：有界无堆 v0 传输、固定 DSDL 编解码、CRC/TID/重组及失败路径已通过 host 测试。
 2. **CAN-A02**：FDCAN1/HSE 1 Mbit/s、P2 IRQ + P4 I/O 执行器、FIFO 与单次发送完成检查已构建；关闭自动重传以避开 HAL 无界 abort。
 3. **CAN-A03**：NodeStatus/GetNodeInfo、参数 GetSet/保存、节点目录、四槽零 RawCommand 与 DISARMED 已接入；RestartNode 当前安全返回失败。
-4. **CAN-A04 待验**：H-02/03 提供后，由工程师核对四个 ESC 身份/index、零输出、Status 和一次断线失效/恢复。当前不自动信任 candidate，不放行 PL-a。
+4. **CAN-A04 待验**：H-02/03 提供后，由工程师核对四个 ESC 身份/index、零输出、Status 和一次断线失效/恢复。当前不自动信任 candidate，不关闭 P4b-a；PL-a 仅先行软件开发。
+
+### PL-a 当前结果
+
+1. **LOG-A01/02**：固定 ULog schema、pyulog 1.3.0 独立解析、136 KiB 有界 MPSC 队列、事件保留和 dropout 已通过软件测试。
+2. **LOG-A03/04**：SDMMC2/PLL1Q、PC13 显式启动、固定 FAT 栈、MBR/superfloppy、新文件与 32 KiB 对齐写入已构建。
+3. **LOG-A05 待验**：H-04 提供后做实物取卡解析、受控断电和缺卡/拔卡故障；当前不把软件构建冒充存储可靠性。
+
+详情和精确产物见 [PL-a 记录](docs/acceptance/pl-a/README.md)。
 
 ## 7. M1 后续
 

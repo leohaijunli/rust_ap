@@ -7,9 +7,11 @@ extern crate std;
 
 pub mod dronecan;
 pub mod fault_record;
+pub mod log_queue;
 pub mod metrics;
 pub mod parameter_store;
 pub mod parameters;
+pub mod ulog;
 
 pub mod build_info {
     include!(concat!(env!("OUT_DIR"), "/build_info.rs"));

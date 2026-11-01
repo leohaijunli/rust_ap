@@ -1,14 +1,14 @@
 # M1 ULog 与 SD 初始预算
 
-日期：2026-10-31。用户首目标中的 `ulogger` 按 **纯 Rust ULog 写入器**落实设计。M1 先验证设备/AHRS/CAN/参数在 SD 上可记录、可独立解析；下载和长期记录策略在更多硬件结果后细化。
+日期：2026-10-31。用户首目标中的 `ulogger` 按 **纯 Rust ULog 写入器**落实设计。LOG-A01～04 软件门已通过，实物 LOG-A05 待 H-04；结果见 [PL-a 记录](acceptance/pl-a/README.md)。
 
 ## 1. 格式与存储选择
 
 | 方案 | 本轮结论 |
 | --- | --- |
-| 最小 ULog | M1 方向；标准线格式、独立 pyulog 验证，便于取卡检查 |
+| 最小 ULog | 已实现；固定 pyulog 1.3.0，完整/尾部截断 fixture 解析通过 |
 | Cybflight MCAP + CBOR | 已有编码与 recorder 可参考，但不直接满足 ULog 要求；避免首轮双格式成本 |
-| SDMMC2 + FAT | 目标介质；板级 PC13 电源/引脚已有 PX4 来源，实际卡/HAL/时延待验证 |
+| SDMMC2 + FAT | 已构建；默认断电，`!logger-start` 显式启动；实际卡/HAL/时延待验证 |
 | 仅主机串口记录 | 用于早期诊断，不能算板载 ULog 已完成 |
 
 ULog 使用显式小端编码：16 B 文件头、格式/订阅/版本信息、参数快照、DATA 和 dropout/event 记录。DATA 开销为 3 B 消息头 + 2 B msg_id，即 **payload + 5 B**。字段类型/顺序/长度须定义清楚，不能转储 Rust struct 或其 padding。格式规范参考 [ULog file format](https://docs.px4.io/main/en/dev_log/ulog_file_format.html)；LOG-A01 固定实际解析器版本，验证完整/截断/损坏样本。
@@ -51,18 +51,18 @@ python3 tools/p0/budgets.py --profile m1
 
 ## 3. 缓冲、调度与 SD 能力边界
 
-- 普通记录环 **128 KiB** + 事件保留区 **8 KiB**，采样/估计/协议生产者只做有界 `try_record`。日志有独立 fan-out，不能消费掉 AHRS 的样本。
+- 当前为单一 **136 KiB** MPSC 固定槽队列，普通记录准入上限严格保留至少 **8 KiB** 事件容量；运行时最大记录 124 B。生产者只做有界 `try_record`，不调用 SD/FAT。
 - 普通记录入口目标 ≤5 us；关全局中断区每次 ≤2 us。大块编码/复制/SD 等待均在临界区外；错误计数更新不会递归产生日志。
-- 写入 staging **32 KiB**，512 B 扇区对齐、32 B cache line 对齐，放在已验证 DMA 可访问区域；由低优先级任务合并块写。
+- 写入 staging **32 KiB**，32 B 对齐；定义区与每次 sync 用兼容未知消息补齐到 512 B，保持块地址/长度对齐。当前位于 AXI、D-cache 关闭，IDMA 可达性仍须实测。
 - 初始流量上限 **256000 B/s**；128 KiB 环可吸收约 **512 ms** 完全无写进展。按当前含余量流量约可缓冲 944 ms；这不是无限慢卡保证。
-- 初始卡资格目标：持续有效吞吐 ≥512000 B/s，32 KiB 写入 p99 ≤50 ms、观测最大 ≤250 ms，正常 30 分钟零 dropout。超出时报告实测并调整卡/批量/预算，不用平均速度掩盖尖峰。
+- 当前 M1 验收复用 5 分钟联合运行并要求正常段零 dropout；卡资格仍可另做 30 分钟观察。持续有效吞吐目标 ≥512000 B/s，32 KiB 写入 p99 ≤50 ms、观测最大 ≤250 ms。
 - 记录环高水位 75% 报警并停用可选 trace；满时丢记录、计数与记录缺口，采样任务继续。事件区也有上限，重复错误合并计数；磁盘写失败保留 USB/遥测诊断。
 
 Cybflight `crates/drivers/src/blackbox_storage.rs` 的 `BlockStore` 是异步 512 B 单块接口；实际应用 `blackbox/sdmmc_block.rs` 另有 CMD25 合并和 32 KiB static 缓冲。其上游注释中的 64 KiB/8 kHz 启动问题、吞吐与停顿记录均不是本板实测。
 
-FAT 候选为固定 `embedded-fatfs` commit `518528cc111fcf65c48abbdeb80735a38eada112`，配套 `block-device-adapters`、`embedded-partitions` 与根 `[patch.crates-io] block-device-driver`。这样才能统一 registry/git 的同名 trait 及 embedded-io-async 0.7；仅拷贝依赖名称不保证兼容。首轮验证 FAT32/实际分区布局，文件系统参数跟随卡实测。
+FAT 已固定为 `embedded-fatfs` commit `518528cc111fcf65c48abbdeb80735a38eada112`，配套 `block-device-adapters`、`embedded-partitions` 与根 `[patch.crates-io] block-device-driver`，支持 MBR FAT 与 superfloppy。文件名固定 8.3 且只创建新文件，不启用 LFN/alloc/std。
 
-HAL `embassy-stm32 0.5.0/src/sdmmc/mod.rs:1043-1142` 存在同步命令/取消等待。LOG-A03 必须量化单次 poll/临界区；普通 async timeout 无法抢占忙循环。SD 卡忙、挂载、预分配、sync 与失败重试均须在低优先级，不能持有采样需要的锁。卡检测 GPIO 尚未核实，移除通过 I/O 错误处理，不假设有可靠热插拔通知。
+HAL `embassy-stm32 0.5.0/src/sdmmc/mod.rs:1043-1142` 存在同步命令/取消等待。为避免默认无卡影响，PC13 保持低且存储任务等待显式 `!logger-start`；启动后的异常卡仍可能阻塞线程执行器，必须在 H-04 量化。普通 async timeout 不能抢占该忙循环。
 
 ## 4. 首轮策略与留后事项
 

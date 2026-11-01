@@ -40,6 +40,12 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::Fault => crate::fault::write_diagnostics(&mut response),
         Command::FaultClear => writeln!(response, "FAULT_CLEAR ok={}", crate::fault::clear()),
         Command::DroneCan => dronecan.write_diagnostics(&mut response),
+        Command::Logger => crate::sd_logger::write_diagnostics(&mut response),
+        Command::LoggerStart => writeln!(
+            response,
+            "LOGGER_START accepted={}",
+            crate::sd_logger::request_start()
+        ),
         _ => writeln!(response, "ERR unsupported-report"),
     };
     response.finish();
@@ -157,6 +163,8 @@ pub(crate) enum Command {
     ParamSave,
     ParamLoad,
     DroneCan,
+    Logger,
+    LoggerStart,
     #[cfg(feature = "fault-injection")]
     Panic,
     #[cfg(feature = "fault-injection")]
@@ -198,6 +206,8 @@ impl CommandLine {
                     b"!param-save" => Some(Command::ParamSave),
                     b"!param-load" => Some(Command::ParamLoad),
                     b"!dronecan" => Some(Command::DroneCan),
+                    b"!logger" => Some(Command::Logger),
+                    b"!logger-start" => Some(Command::LoggerStart),
                     #[cfg(feature = "fault-injection")]
                     b"!panic" => Some(Command::Panic),
                     #[cfg(feature = "fault-injection")]
