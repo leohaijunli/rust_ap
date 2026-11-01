@@ -315,6 +315,10 @@ impl Payload {
         self.push(&value.to_le_bytes())
     }
 
+    pub fn push_u64(&mut self, value: u64) -> Result<(), Error> {
+        self.push(&value.to_le_bytes())
+    }
+
     pub fn push_f32(&mut self, value: f32) -> Result<(), Error> {
         self.push(&value.to_bits().to_le_bytes())
     }

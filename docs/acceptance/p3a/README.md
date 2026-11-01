@@ -23,7 +23,7 @@
 
 ## API、边界与升级
 
-`src/parameters.rs` 的唯一注册表生成 `Id`、名称/索引查找及表顺序；新增参数只需登记并接入功能侧读取。共享 `ParameterManager` 提供 `get/set/is_dirty/status` 和异步 `load/save`；核心快照与校验不依赖 HAL，MAVLink 和控制侧共用 RAM 真源。使用和格式见[架构](../../architecture.md#p3a-参数-api-与存储契约)。
+`src/core/parameters.rs` 的唯一注册表生成 `Id`、名称/索引查找及表顺序；新增参数只需登记并接入功能侧读取。共享 `ParameterManager` 提供 `get/set/is_dirty/status` 和异步 `load/save`；核心快照与校验不依赖 HAL，MAVLink 和控制侧共用 RAM 真源。使用和格式见[架构](../../architecture.md#p3a-参数-api-与存储契约)。
 
 - Rust 只写末尾 2 KiB：槽 A=`0x7800–0x7BFF`、槽 B=`0x7C00–0x7FFF`。本次仅槽 A 的 32 字节记录发生变化。
 - 先使目标槽失效，再写/读回正文，最后提交单字节并最终读回。逐字节中断、CRC 损坏及生成号回绕在 host 验证；实物只做一次保存后完全掉电，不声称做了真实写入中断电或耐久性验证。

@@ -1,6 +1,6 @@
 # 来源与复用台账
 
-日期：2026-10-31。用户允许公开发布与 GPL 来源复用；最终板上飞控应用为纯 Rust + Embassy。下面区分实际工程依赖、评估候选和 host 参考，固定版本不等于已接入固件。
+日期：2026-11-01。用户允许公开发布与 GPL 来源复用；最终板上飞控应用为纯 Rust + Embassy。下面区分实际工程依赖、评估候选和 host 参考，固定版本不等于已接入固件。
 
 ## 1. 固定版本与许可证据
 
@@ -53,13 +53,15 @@
 | `src/backup_domain.rs`、`src/platform.rs`、`src/fault_dump.rs` | 本项目共享初始化边界；对照固定HAL与H753实际PAC匹配RTC/LSE及生成mux，比较BDCR/BKP并提供schema-2诊断；未修改HAL/PAC或拷入C代码 |
 | `tools/replay_backup_domain.py` | 本项目Unicorn host工具；执行真实startup/wrapper/HAL及保持谓词，合成MMIO和RTC/BKP哨兵用于发现复位/驱动编码回归；不作硬件或RTC走时证据 |
 | `tools/backup_domain.py`、转储解码/采集门及测试 | 本项目schema-2保持证据解码；旧报告保持状态为未知，缺失/失败不能通过采集门；新增5项host回归 |
-| `src/fault.rs`、`src/fault_record.rs` | 本项目BKP线格式/IEEE CRC32/故障路径与host测试；裸入口是Rust内联架构汇编，帧布局参考固定NuttX `arm_exception.S:118-137`，未链接NuttX处理器 |
-| `src/diagnostics.rs`、`src/metrics.rs` | 本项目绝对周期统计、masked-WFE CPU/共享栈测量；参考Embassy执行器唤醒与TIM2时基API、cortex-m-rt paint-stack约定 |
+| `src/fault.rs`、`src/core/fault_record.rs` | 本项目BKP线格式/IEEE CRC32/故障路径与host测试；裸入口是Rust内联架构汇编，帧布局参考固定NuttX `arm_exception.S:118-137`，未链接NuttX处理器 |
+| `src/diagnostics.rs`、`src/core/metrics.rs` | 本项目绝对周期统计、masked-WFE CPU/共享栈测量；参考Embassy执行器唤醒与TIM2时基API、cortex-m-rt paint-stack约定 |
 | `build.rs`、`tools/build_report.py`、`tools/p1_capture.py`及测试 | 本项目source/feature ID、ELF/布局/资源/hash检查、USB混合流/时基不确定性分析；host使用已有pyserial3.5/pymavlink2.4.49，不引入板上C/C++协议运行库 |
 | `.github/workflows/p1.yml`、`docs/acceptance/p1/` | 本项目软件检查及工程师授权的HIL/恢复证据；P1必验项通过，远程CI状态未查询 |
-| `src/fram.rs`、`src/parameters.rs`、`src/parameter_store.rs`、`src/parameter_manager.rs`、`tools/fram_backup.py`、`tools/p3a_parameters.py` | 本项目 P3a 实现：按 FM25V02A 厂商规格（`001-90865 Rev. *I`）和固定 PX4 `ramtron.c` 的 8 位/MODE3/两字节地址约定独立编写，未拷入驱动代码 |
-| `src/dronecan/`、`src/dronecan_can.rs` | 本项目 P4b-a 独立实现；协议字段/签名对照固定 MIT DSDL、P0 pydronecan 向量及 MIT libcanard 状态机，未复制候选 Rust 栈；板级适配使用现有 Embassy MIT/Apache-2.0 API |
-| `src/ulog.rs`、`src/log_queue.rs`、`src/sd_logger.rs`、`examples/ulog_fixture.rs`、`tools/check_ulog.py` | 本项目 PL-a 实现；ULog 线格式对照固定 PX4 v1.17 文档，FAT 使用上述固定 MIT 栈，pyulog 只作 host 互操作检查 |
+| `src/storage/fram.rs`、`src/core/parameters.rs`、`src/core/parameter_store.rs`、`src/storage/parameter_manager.rs`、`tools/fram_backup.py`、`tools/p3a_parameters.py` | 本项目 P3a 实现：按 FM25V02A 厂商规格（`001-90865 Rev. *I`）和固定 PX4 `ramtron.c` 的 8 位/MODE3/两字节地址约定独立编写，未拷入驱动代码 |
+| `src/core/dronecan/`、`src/drivers/dronecan_can.rs` | 本项目 P4b-a 独立实现；协议字段/签名对照固定 MIT DSDL、P0 pydronecan 向量及 MIT libcanard 状态机，未复制候选 Rust 栈；板级适配使用现有 Embassy MIT/Apache-2.0 API |
+| `src/core/ulog.rs`、`src/core/log_queue.rs`、`src/storage/sd_logger.rs`、`examples/ulog_fixture.rs`、`tools/check_ulog.py` | 本项目 PL-a 实现；ULog 线格式对照固定 PX4 v1.17 文档，FAT 使用上述固定 MIT 栈，pyulog 只作 host 互操作检查 |
+| `src/core/logger.rs`、`src/comms/usb_console.rs`、`src/comms/mavlink_core.rs` | 本项目 LoggerControl 与 MAVLink Console；使用 common.xml `SERIAL_CONTROL`/`MAV_CMD_LOGGING_START/STOP`，通过固定 rust-mavlink 生成类型接入，不实现任意 shell 或引入 OS/FFI |
+| `src/core/icm42688.rs`、`src/core/config.rs`、`src/drivers/imu.rs` | 本项目 P4 纯 Rust/Embassy 实现；寄存器地址、20 B high-resolution FIFO、复位/配置/水位/周期回读流程对照固定 PX4 `d6f12ad…` 的 `src/drivers/imu/invensense/icm42688p/{InvenSense_ICM42688P_registers.hpp,ICM42688P.cpp,ICM42688P.hpp}`（BSD-3-Clause）。本项目采用 8 kHz ODR、YAW270/FLU、独立 fan-out 与 Embassy API，未链接或拷入 C++ 驱动 |
 | `tools/enter_bootloader.py`、`tools/test_enter_bootloader.py`、`tools/firmware.sh` | 本项目 host 上传入口；复用应用既有 `!bootloader` 协议和原 PX4 uploader，不修改或替换 bootloader |
 | `.opencode/skills/`、`AGENTS.md` | 工程师要求安装并应用的 clean-code / code-simplifier 项目适配；固定来源、改动与许可见[技能说明](ai-coding-skills.md) |
 

@@ -117,6 +117,7 @@ pub async fn run<'d, D: Driver<'d>>(
 }
 
 async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Replies) -> ! {
+    const IMU_PERIOD: Duration = Duration::from_millis(50);
     let mut sequence = 0u8;
     'connection: loop {
         sender.wait_connection().await;
@@ -131,31 +132,46 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
             }
         }
         let mut next_heartbeat = Instant::now() + Duration::from_secs(1);
+        let mut next_imu = Instant::now() + IMU_PERIOD;
 
         loop {
-            let result = match select(Timer::at(next_heartbeat), replies.receive()).await {
+            let next_wakeup = if next_imu < next_heartbeat {
+                next_imu
+            } else {
+                next_heartbeat
+            };
+            let result = match select(Timer::at(next_wakeup), replies.receive()).await {
                 Either::First(()) => {
-                    ticks = ticks.wrapping_add(1);
-                    let mut result =
-                        send_message(sender, &mut sequence, &mavlink_core::heartbeat()).await;
-                    if result.is_ok() {
-                        result =
-                            send_message(sender, &mut sequence, &mavlink_core::system_status())
-                                .await;
+                    let now = Instant::now();
+                    let mut result = Ok(());
+                    if now >= next_imu {
+                        if let Some(message) = mavlink_core::highres_imu() {
+                            result = send_message(sender, &mut sequence, &message).await;
+                        }
+                        next_imu = now + IMU_PERIOD;
                     }
-                    if result.is_ok() {
-                        // Generate boot time after earlier USB writes complete,
-                        // so opening the port cannot release an old timestamp.
+                    if result.is_ok() && now >= next_heartbeat {
+                        ticks = ticks.wrapping_add(1);
                         result =
-                            send_message(sender, &mut sequence, &mavlink_core::system_time()).await;
+                            send_message(sender, &mut sequence, &mavlink_core::heartbeat()).await;
+                        if result.is_ok() {
+                            result =
+                                send_message(sender, &mut sequence, &mavlink_core::system_status())
+                                    .await;
+                        }
+                        if result.is_ok() {
+                            // Generate boot time after earlier USB writes complete.
+                            result =
+                                send_message(sender, &mut sequence, &mavlink_core::system_time())
+                                    .await;
+                        }
+                        if result.is_ok() && ticks.is_multiple_of(5) {
+                            result =
+                                send_message(sender, &mut sequence, &mavlink_core::status_text())
+                                    .await;
+                        }
+                        next_heartbeat = now + Duration::from_secs(1);
                     }
-                    if result.is_ok() && ticks.is_multiple_of(5) {
-                        result =
-                            send_message(sender, &mut sequence, &mavlink_core::status_text()).await;
-                    }
-                    // USB writes can wait while the host's serial port is closed.
-                    // Skip missed periods rather than bursting old heartbeats.
-                    next_heartbeat = Instant::now() + Duration::from_secs(1);
                     result
                 }
                 Either::Second(Outbound::Message(message)) => {
@@ -233,6 +249,7 @@ async fn receive<'d, D: Driver<'d>>(
         receiver.wait_connection().await;
         let mut parser = FrameParser::new();
         let mut command_line = CommandLine::new();
+        let mut mavlink_command_line = CommandLine::new();
         let mut last_byte = Instant::now();
         while let Ok(n) = receiver.read_packet(&mut packet).await {
             let now = Instant::now();
@@ -246,7 +263,14 @@ async fn receive<'d, D: Driver<'d>>(
                 if parser.receiving() || matches!(byte, 0xfe | 0xfd) {
                     command_line = CommandLine::new();
                     if let Some(decoded) = parser.push(byte) {
-                        handle_message(decoded, replies, parameters).await;
+                        handle_message(
+                            decoded,
+                            replies,
+                            parameters,
+                            dronecan,
+                            &mut mavlink_command_line,
+                        )
+                        .await;
                     }
                 } else {
                     match command_line.push(byte) {
@@ -304,15 +328,85 @@ async fn handle_message(
     decoded: mavlink_core::Decoded,
     replies: &Replies,
     parameters: &ParameterManager<'_>,
+    dronecan: &dronecan_can::State,
+    command_line: &mut CommandLine,
 ) {
-    let mut reply = mavlink_core::Reply::EMPTY;
-    mavlink_core::handle(decoded.header, decoded.message, parameters, &mut reply).await;
-    for message in reply.drain() {
-        replies.send(Outbound::Message(message)).await;
+    if let Some(request) = mavlink_core::log_request(&decoded.message) {
+        handle_log_request(request, replies).await;
+        return;
     }
-    if reply.reboot {
+    match decoded.message {
+        MavMessage::SERIAL_CONTROL(data) => {
+            if data.device == SerialControlDev::SERIAL_CONTROL_DEV_SHELL
+                && matches!(data.target_system, 0 | mavlink_core::SYSTEM_ID)
+                && matches!(data.target_component, 0 | mavlink_core::COMPONENT_ID)
+            {
+                for &byte in &data.data[..usize::from(data.count.min(70))] {
+                    if let Some(command) = command_line.push(byte) {
+                        let response =
+                            usb_console::mavlink_report(command, parameters, dronecan).await;
+                        let chunks = response.as_bytes().chunks(70);
+                        let count = chunks.len();
+                        for (index, chunk) in chunks.enumerate() {
+                            replies
+                                .send(Outbound::Message(mavlink_core::serial_control_reply(
+                                    decoded.header,
+                                    chunk,
+                                    index + 1 < count,
+                                )))
+                                .await;
+                        }
+                    }
+                }
+            }
+        }
+        message => {
+            let mut reply = mavlink_core::Reply::EMPTY;
+            mavlink_core::handle(decoded.header, message, parameters, &mut reply).await;
+            for message in reply.drain() {
+                replies.send(Outbound::Message(message)).await;
+            }
+            if reply.reboot {
+                replies
+                    .send(Outbound::Bootloader { console_ack: false })
+                    .await;
+            }
+        }
+    }
+}
+
+async fn handle_log_request(request: v6x_rust_led::logger::LogRequest, replies: &Replies) {
+    use v6x_rust_led::logger::{Link, LogError, LogRequest, LogResponse};
+
+    if crate::sd_logger::request_logs(Link::Usb, request).is_err() {
+        if matches!(request, LogRequest::List { .. }) {
+            let empty = LogResponse::Entry {
+                id: 0,
+                num_logs: 0,
+                last_log_num: 0,
+                size: 0,
+                time_utc: 0,
+            };
+            replies
+                .send(Outbound::Message(
+                    mavlink_core::log_response(empty).unwrap(),
+                ))
+                .await;
+        }
         replies
-            .send(Outbound::Bootloader { console_ack: false })
+            .send(Outbound::Message(
+                mavlink_core::log_response(LogResponse::Error(LogError::Busy)).unwrap(),
+            ))
             .await;
+        return;
+    }
+    loop {
+        let response = crate::sd_logger::next_log_response(Link::Usb).await;
+        if response == LogResponse::Done {
+            break;
+        }
+        if let Some(message) = mavlink_core::log_response(response) {
+            replies.send(Outbound::Message(message)).await;
+        }
     }
 }

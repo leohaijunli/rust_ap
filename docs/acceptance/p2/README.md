@@ -6,8 +6,8 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| 共享核心 | `mavlink_core.rs`：消息构建（heartbeat/status/system/autopilot_version/parameter/ack/warning）、`FrameParser`、入站 `handle` 均传输无关，USB 与 TELEM1 共用 |
-| USB MAVLink | 原 `mavlink_usb.rs` 改为只含 CDC 传输、会话重启与诊断行控制台；消息/参数/命令逻辑委托共享核心，行为与 P1/P3a 一致 |
+| 共享核心 | `src/comms/mavlink_core.rs`：消息构建（heartbeat/status/system/autopilot_version/parameter/ack/warning）、`FrameParser`、入站 `handle` 均传输无关，USB 与 TELEM1 共用 |
+| USB MAVLink | `src/comms/mavlink_usb.rs` 只含 CDC 传输、会话重启与诊断行控制台；消息/参数/命令逻辑委托共享核心，行为与 P1/P3a 一致 |
 | TELEM1 | UART7（RX PF6、TX PE8），115200 8N1，DMA1_CH0/CH1，Async 传输；独立序列号、解析器、发送队列与 1 s 心跳节拍 |
 | 独立运行 | 双链路各自维护 MAVLink 序列、RX 解析、发送队列与 stream rate；互不等待，慢/缺接收端不阻塞采样或另一链路 |
 | 版本显示 | AUTOPILOT_VERSION 由共享核心构建，两端连接时与请求时均发送；`check_mavlink.py` 对飞行版本/source/UID 断言保持通过 |

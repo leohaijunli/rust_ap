@@ -8,28 +8,40 @@ mod backup_domain;
 #[cfg(not(feature = "fault-dump"))]
 mod diagnostics;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/dronecan_can.rs"]
 mod dronecan_can;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/eth_led.rs"]
 mod eth_led;
 #[cfg(not(feature = "fault-dump"))]
 mod fault;
 #[cfg(feature = "fault-dump")]
 mod fault_dump;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "storage/fram.rs"]
 mod fram;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/imu.rs"]
+mod imu;
+#[cfg(not(feature = "fault-dump"))]
+#[path = "comms/mavlink_core.rs"]
 mod mavlink_core;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "comms/mavlink_uart7.rs"]
 mod mavlink_uart7;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "comms/mavlink_usb.rs"]
 mod mavlink_usb;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "storage/parameter_manager.rs"]
 mod parameter_manager;
 #[cfg(not(feature = "fault-dump"))]
 mod platform;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "storage/sd_logger.rs"]
 mod sd_logger;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "comms/usb_console.rs"]
 mod usb_console;
 
 use embassy_stm32::bind_interrupts;
@@ -133,7 +145,7 @@ async fn application(p: Peripherals) {
     let mut blue = OutputOpenDrain::new(p.PE5, Level::Low, Speed::Low);
     let _heater = Output::new(p.PB10, Level::Low, Speed::Low);
     let _not_armed = Input::new(p.PE6, Pull::Up);
-    diagnostics::start(p.TIM7);
+    let fast_spawner = diagnostics::start(p.TIM7);
 
     let fram_cs = Output::new(p.PG7, Level::High, Speed::Medium);
     let mut fram_config = SpiConfig::default();
@@ -178,6 +190,11 @@ async fn application(p: Peripherals) {
     // Load failures remain visible in !params while USB recovery stays available.
     let _ = parameters.load().await;
     assert!(sd_logger::initialize());
+    fast_spawner
+        .spawn(imu::task(
+            p.SPI2, p.PI1, p.PI3, p.PI2, p.DMA1_CH2, p.DMA1_CH3, p.PH5, p.PF4, p.PA10, p.EXTI10,
+        ))
+        .unwrap();
     let dronecan = dronecan_can::State::new();
     let can_spawner = CAN_EXECUTOR.start(embassy_stm32::interrupt::TIM6_DAC);
     can_spawner
@@ -257,7 +274,7 @@ async fn application(p: Peripherals) {
         join(
             mavlink_usb::run(class, &phy, &eth_power, &session, &parameters, &dronecan),
             join(
-                mavlink_uart7::run(uart7, &parameters),
+                mavlink_uart7::run(uart7, &parameters, &dronecan),
                 join(
                     dronecan_can::run(&parameters, &dronecan),
                     join(

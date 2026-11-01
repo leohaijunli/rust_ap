@@ -1,6 +1,6 @@
 # PL-a ULog / SD 软件验收
 
-日期：2026-10-31。**LOG-A01～04 软件开发通过；LOG-A05 与实物 SD 验收待 H-04，PL-a 尚未关闭。P4b-a 依赖也仍未放行。**
+日期：2026-11-01。**LOG-A01～04 与 LoggerControl/MAVLink Console 软件开发通过；LOG-A05 与实物 SD 验收待 H-04，PL-a 尚未关闭。P4b-a 依赖也仍未放行。**
 
 ## 已通过
 
@@ -13,17 +13,19 @@
 | SDMMC2 | PC13 默认低且不访问卡；工程师显式 `!logger-start` 后供电。PLL1Q=48 MHz，SDMMC2 4-bit/P7，目标卡时钟 25 MHz（实际候选 24 MHz） |
 | FAT/文件 | 固定 `embedded-fatfs` commit `518528cc…`；支持 MBR FAT 与 superfloppy；只创建新 `NNNNNNNN.ULG`，不覆盖/删除旧文件 |
 | 写入/sync | 32 KiB、32 B 对齐 staging；定义区和每次 1 s sync 用兼容未知消息补齐 512 B，保持多块写条件；显式 file/fs flush |
+| 控制 API | no_std `start/stop/sync/status/apply_config`；stop 阻止新记录、清队列并 flush 后断电，可重新 start；sync 周期 100–10000 ms |
+| MAVLink Console | `SERIAL_CONTROL_DEV_SHELL` 支持 `logger status/start/stop/sync/config`；标准 `MAV_CMD_LOGGING_START/STOP` 共用状态机；板上 status/config 与无效 stop ACK 已验证 |
 | 数据源 | 零电机命令、DISARMED、CAN/ESC/节点状态与 stale/offline、参数 dirty/persisted、runtime health 已接入；未知 CPU/栈/调度值带有效性 |
 | 软件检查 | fmt、普通/注入/Dump target Clippy、host Clippy、42 项 Rust 测试；pyulog 完整/截断检查；17 项编译时钟谓词 |
 | release/打包 | Linux Rust 1.99.1；source=`4c18e2081a0874b5`；raw/padded=`335368/335392 B`；static RAM=`215560 B`、空余 `242168 B`；布局/向量/ELF/bin/PX4 一致 |
 
-普通 `.px4` SHA-256：`02c3c74a1a7fd1c54de939c8bbeb724b8dfac8ca6be34b1f7e2333b8eb7a849c`。本轮没有烧录、访问 SD 卡或改变当前板载 P3a 固件。
+原 PL-a 普通 `.px4` SHA-256：`02c3c74a1a7fd1c54de939c8bbeb724b8dfac8ca6be34b1f7e2333b8eb7a849c`。当前板载 P4 开发包已包含更新后的 logger API，但本轮仍未 start logger 或访问 SD 卡；最终产物以 P4/后续验收记录为准。
 
 ## 集中硬件测试
 
 - H-04：工程师提供卡型号、容量、MBR/FAT32 或 superfloppy 布局、cluster/空闲空间，并确认 1 s sync 与允许丢失窗口。
 - LOG-A03/04：确认 PC13 供电、SDMMC2 4-bit、实际时钟/IDMA 可达内存、CMD25、多块写吞吐和 32 KiB p99/最大时延。
-- LOG-A05：一份实物日志由 pyulog 独立解析；一次受控写入断电后恢复完整前缀；一次缺卡/卡忙/写入中拔卡，确认 CAN/P1 快路径继续并量化 USB/线程停顿。
+- LOG-A05：正常 start→sync→stop→再次 start；一份实物日志由 pyulog 独立解析；一次受控写入断电后恢复完整前缀；一次缺卡/卡忙/写入中拔卡，确认 CAN/P1 快路径继续并量化 USB/线程停顿。
 - HAL 0.5.0 的 ACMD41、wait-idle 和取消路径含同步循环。默认不启动避免无卡影响；显式测试后仍须以实测判定，不能用 async timeout 声称可抢占。
 
 日志在线列表/下载/删除仍归 PL-b；真实 IMU/AHRS/GNSS topic 随对应数据源阶段接入。当前结果仅允许继续软件开发，不放行依赖 PL-a 的硬件阶段。

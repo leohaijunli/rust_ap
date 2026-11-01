@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use cortex_m::interrupt::{free, Mutex};
 use cortex_m::peripheral::DWT;
-use embassy_executor::InterruptExecutor;
+use embassy_executor::{InterruptExecutor, SendSpawner};
 use embassy_stm32::{interrupt, peripherals, Peri};
 use embassy_time::{Instant, Timer};
 use v6x_rust_led::metrics::{CpuWindow, PeriodStats, PERIOD_US};
@@ -75,12 +75,11 @@ unsafe extern "C" {
     static __fault_stack_bottom: u32;
 }
 
-pub fn start(timer: Peri<'static, peripherals::TIM7>) {
+pub fn start(timer: Peri<'static, peripherals::TIM7>) -> SendSpawner {
     // TIM7 is a reserved software-pend vector; the timer peripheral is not run.
-    FAST_EXECUTOR
-        .start(interrupt::TIM7)
-        .spawn(periodic(timer))
-        .unwrap();
+    let spawner = FAST_EXECUTOR.start(interrupt::TIM7);
+    spawner.spawn(periodic(timer)).unwrap();
+    spawner
 }
 
 #[interrupt]

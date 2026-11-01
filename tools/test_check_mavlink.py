@@ -6,9 +6,16 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from check_mavlink import PortNotReady, expected_source_id, find_port, main, wait_for_port
+from check_mavlink import (
+    PortNotReady,
+    console_command,
+    expected_source_id,
+    find_port,
+    main,
+    wait_for_port,
+)
 from test_decode_fault_dump import report, valid_words
 
 
@@ -22,6 +29,16 @@ class MavlinkIdentityTests(unittest.TestCase):
         for source in ("bad", "x" * 16, "1" * 17):
             with self.subTest(source=source), self.assertRaises(ValueError):
                 expected_source_id("0.2.0", source, Path("unused.json"))
+
+    def test_mavlink_console_reassembles_multi_reply(self):
+        link = SimpleNamespace(mav=SimpleNamespace(serial_control_send=Mock()))
+        link.recv_match = Mock(side_effect=[
+            SimpleNamespace(device=10, count=5, data=b"LOGGE" + bytes(65), flags=16),
+            SimpleNamespace(device=10, count=2, data=b"R\n" + bytes(68), flags=1),
+        ])
+        self.assertEqual(console_command(link, "logger status"), "LOGGER\n")
+        args = link.mav.serial_control_send.call_args.args
+        self.assertEqual(args[:5], (10, 2, 0, 0, len(b"logger status\n")))
 
 
 def usb_port(mode, device="/dev/ttyACM_TEST0"):

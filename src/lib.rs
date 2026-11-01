@@ -5,12 +5,25 @@
 #[cfg(test)]
 extern crate std;
 
+#[path = "core/config.rs"]
+pub mod config;
+#[path = "core/dronecan/mod.rs"]
 pub mod dronecan;
+#[path = "core/fault_record.rs"]
 pub mod fault_record;
+#[path = "core/icm42688.rs"]
+pub mod icm42688;
+#[path = "core/log_queue.rs"]
 pub mod log_queue;
+#[path = "core/logger.rs"]
+pub mod logger;
+#[path = "core/metrics.rs"]
 pub mod metrics;
+#[path = "core/parameter_store.rs"]
 pub mod parameter_store;
+#[path = "core/parameters.rs"]
 pub mod parameters;
+#[path = "core/ulog.rs"]
 pub mod ulog;
 
 pub mod build_info {

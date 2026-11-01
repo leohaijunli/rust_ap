@@ -1,6 +1,6 @@
 # A3：M1 数据链架构
 
-日期：2026-10-31。基础 **A3 已由用户选定**。本轮只规定 IMU/AHRS、DroneCAN、ULog、USB/TELEM1、QGroundControl 消息与参数读/设所需边界；控制/INDI/NMPC/任务细节待更多硬件测试。所有数字是首轮测试提案，观测结果回填 [M1 验收单](m1-verification.md)。
+日期：2026-11-01。基础 **A3 已由用户选定**。本轮只规定 IMU/AHRS、DroneCAN、ULog、USB/TELEM1、QGroundControl 消息与参数读/设所需边界；控制/INDI/NMPC/任务细节待更多硬件测试。所有数字是首轮测试提案，观测结果回填 [M1 验收单](m1-verification.md)。
 
 ## 1. 纯 Rust + Embassy
 
@@ -8,13 +8,14 @@
 | --- | --- |
 | FMUv6X 平台 | `embassy-stm32` 管理时钟、电源、GPIO、EXTI、SPI DMA、UART DMA、FDCAN、SDMMC2、USB；板级映射统一维护 |
 | 设备 | 仅 SPI2 ICM-42688-P；寄存器协议使用 embedded-hal/embedded-hal-async 边界，保留 host mock 能力 |
+| 调参/SDK 层 | `v6x_rust_led::config`：校验 IMU ODR/日志率/FSR/旋转与算法选择，输出驱动与 AHRS 可用的配置；无 I/O、host 可测，参数注册表映射待 P3/P4 实物结果后接入 |
 | AHRS | 固定 `cybflight-core::mahony::Mahony<f32>` 的适配器；无 I/O，显式输入时间步长/数据/参数 |
 | DroneCAN | 有界 no_std Rust v0 编解码、重组和节点服务；由平台转换为经典 CAN 帧 |
 | 参数 | 一个静态注册表提供类型/范围/默认值/生效时机；USB、MAVLink、DroneCAN 与持久层共用 |
-| 日志 | 纯 Rust ULog 编码、有界非阻塞入口、独立存储任务 |
-| 通信 | 复用 rust-mavlink；USB CDC 和 TELEM1 共用消息/参数逻辑，各自有队列与速率预算 |
+| 日志 | 纯 Rust ULog 编码、有界非阻塞入口、独立存储任务；LoggerControl 统一 start/stop/sync/status/config |
+| 通信 | 复用 rust-mavlink；USB CDC 和 TELEM1 共用消息/参数/`SERIAL_CONTROL` shell 逻辑，各自有队列与速率预算 |
 
-任务和时间采用 `embassy-executor` / `embassy-time`，tick 固定 **1 MHz**。板上应用无 C/C++ 运行库或 FFI；原 PX4 bootloader 为保留的恢复边界。具体 crate 拆分随实现需要进行，不为目录重排延迟硬件验证。
+任务和时间采用 `embassy-executor` / `embassy-time`，tick 固定 **1 MHz**。板上应用无 C/C++ 运行库或 FFI；原 PX4 bootloader 为保留的恢复边界。`src/core` 放 no_std/host 核心，`src/drivers` 放硬件所有者，`src/comms` 放链路，`src/storage` 放 FRAM/参数/日志；启动、平台、诊断和故障入口留在 `src/` 根目录。
 
 ## 2. 采样与 fan-out
 
@@ -27,12 +28,24 @@ FDCAN → 有界帧队列 → DroneCAN → ESC/GNSS 快照 → ULog、USB、TELE
 USB / TELEM1 / DroneCAN 参数请求 → 单一注册表 → 实际值回显 / 变更事件
 ```
 
-- IMU 先以 **1 kHz ODR/处理率**为目标；SPI 起始时钟与上电/复位等待按器件 datasheet 和 SENS-01 实测确定。唯一 DRDY 为 PA10/EXTI15_10，CS PH5、供电 PF4，详见 [硬件台账](fmuv6x-hardware.md)。
-- 时间戳尽量在 DRDY 入口取得；若 HAL 默认仅唤醒任务，BSP 需补时间戳 hook，分别记录 IRQ/任务/DMA 完成时刻，不能把任务开始时间当作已测 DRDY 边沿。
+- IMU 使用 **8 kHz gyro/accel ODR** 与 20 B 高分辨率 FIFO 包；水位为 8 包，约 1 kHz 唤醒并批量解码。AHRS 可消费全部 8 kHz，ULog 初始抽取 1 kHz，MAVLink 读取最新快照 20 Hz；不能用低速链路反压采样。
+- 唯一 DRDY 为 PA10/EXTI15_10、CS PH5、供电 PF4。EXTI P0 handler 先保存单调时钟低 32 位，再唤醒 TIM7/P3 的 IMU task；任务按当前时间重建跨回绕时间戳，仍须用外部边沿测量真实 IRQ 延迟。
 - FIFO 按包序号/器件时间还原每样本时间，检测缺包、溢出和重复。AHRS 使用测得的 dt，不能只因任务被唤醒就假定得到一个新样本。
 - AHRS 输入有界队列初值 16 个样本；满时显式记录丢样/重同步，不追赶陈旧样本造成长时间占用。日志不与 AHRS 争抢同一个消费型 Channel。
 - AHRS 输入先校验有限值、加速度范数与 dt；超期/异常保持可诊断的无效状态。内部误差恢复和参数更改通过明确的 reset/apply 边界完成。
 - 遥测读最新快照，慢 USB 主机或 UART 发送不能阻塞 SPI/AHRS；每个消费者看到的样本序号、年龄和丢弃统计可观测。
+
+### 调参/SDK 层（`config`）
+
+为了让设置、调参和换算法不经改驱动/改 HAL，lib 已提供单一 `v6x_rust_led::config`。它是 no_std、无 I/O、host 可测的纯逻辑层：**校验配置并输出驱动与算法可直接使用的值**，不自己持存储或外设。当前运行配置为 8 kHz ODR、1 kHz ULog、±16 g、±2000 dps、YAW270 和 Mahony；运行时参数映射待保存格式与实物结果确认后加入。
+
+- 职责边界：只做"参数值 → 驱动/算法配置"的映射与校验。SPI/DRDY/EXTI 等平台细节不在本层；寄存器协议仍在设备层（embedded-hal 边界）。
+- 接口形态：`Config::imu()` 返回 `ImuConfig { odr_hz, log_rate_hz, accel_fsr_g, gyro_fsr_dps, rotation, stale_after_us }`；`Config::algorithm()` 返回 `Algorithm::Mahony`，供后续 AHRS 适配器读取。
+- 生效时机：与参数注册表 `Access` 一致——`ReadOnly`（如 `MAV_SYS_ID`）只读；`NextCycle`（如 IMU/AHRS 调参项）在显式 `apply` 边界生效，避免运行中直接改系数造成不连续。
+- 范围校验：当前 API 只接受已实现的 1/8 kHz ODR、整除 ODR 的日志率、±16 g 和 ±2000 dps；非法配置不能跨过 `Config::new`。接入参数注册表后继续复用其 min/max/有限值校验。
+- 算法可替换：`Algorithm` 枚举把"当前算法选择"显式化，AHRS 只依赖该选择而非硬编码调用；新算法经配置层接入，不动驱动与遥测。
+- host 可测：config 无 HAL 依赖，可单测默认值、参数映射、越界回退与 `Algorithm` 选择，作为 P4"关键单位/坐标和陈旧数据处理用例"的 host 部分。
+- KISS/YAGNI：本层只暴露 P4 当前真实需要的字段，不为 AHRS/控制/任务预留空表；后续阶段按实际需求扩展。
 
 ## 3. 坐标、时间与有效性
 
@@ -53,17 +66,17 @@ M1 快照至少携带源、序号、本地微秒时间、有效标志和数据�
 
 ## 4. Embassy 资源与调度初值
 
-下表为 M1 分配提案；P1 时基/USB、P4b-a FDCAN 与 PL-a SDMMC2 已接入软件，IMU/UART 等仍待后续阶段。PX4 来源见台账，不能将 PX4 DMAMAP 宏当作 Embassy 已分配的 stream。NVIC 数值越小越优先。
+下表为 M1 分配提案；P1 时基/USB、P4b-a FDCAN、PL-a SDMMC2、P2 UART7 与 P4 IMU 已接入软件。PX4 来源见台账，不能将 PX4 DMAMAP 宏当作 Embassy 已分配的 stream。NVIC 数值越小越优先。
 
 | 路径 | 资源 / 初始优先级 | 要求 |
 | --- | --- | --- |
 | DRDY | EXTI15_10，P0 | 尽早时间戳/唤醒；共享向量统一处理 |
-| SPI2 DMA | DMA1 两个独占 stream，P1 | 具体 DMAMUX/stream 在 BSP 编译时核对；不与 UART 共用 |
+| SPI2 DMA | DMA1_CH2/CH3（STREAM2/3），P1 | Embassy trait 编译核对；24 MHz 请求值，实际配置由 `!imu` 输出，实物待验；不与 UART 共用 |
 | 时间驱动 | P1 已显式 TIM2，P1 | tick 1 MHz，PSC=239、ARR=65535；HAL 半溢出/溢出 IRQ 扩展时间 |
 | FDCAN1 | IT0/IT1，P2；TIM6_DAC I/O executor，P4 | P4b-a 已实现：IRQ 唤醒 P4 任务，转入 64 帧有界队列并独立调度周期安全帧 |
-| IMU/AHRS | TIM7 软件 pend 的 InterruptExecutor，P3 | P1 当前仅固定32次整数替身，非 IMU/AHRS；外设 TIM7 不运行 |
+| IMU/AHRS | TIM7 软件 pend 的 InterruptExecutor，P3 | IMU task 与既有周期诊断同 executor；AHRS 尚未接入。16 槽队列只在 AHRS 首次等待后启用，满时清积压、计数并从最新样本重同步 |
 | CAN 协议 | 线程 executor | P4 只做 I/O/周期帧；重组、节点与参数服务走有界跨执行器通道，不持有高优先级锁 |
-| USB / UART7 | OTG_FS、UART7 与独占 DMA，P6 | USB/TELEM1 双链路互不等待 |
+| USB / UART7 | OTG_FS；UART7 DMA1_CH0/CH1，P6 | USB/TELEM1 双链路互不等待；各自 20 Hz 读取同一 IMU 最新快照 |
 | SD | SDMMC2/P7、内部 IDMA；线程存储任务 | PL-a 已构建：PC13 默认低、显式启动、32 KiB staging、FAT 单写者；同步 HAL 等待仍待 H-04 量化 |
 | 日志/参数/低速遥测 | 线程 executor | 有界 poll；任何等待都不持有高优先级路径需要的锁 |
 
@@ -78,7 +91,7 @@ Embassy 在同一个 executor 内是协作调度；同步忙循环会阻塞该 e
 | DTCM / SRAM4 / backup | M1 暂无必需分配 | 不把 DMA 数组默认移入 DTCM；RTC bootloader 签名按原约定处理 |
 | flash | 应用仍为 0x08020000、1920 KiB 上限；M1 镜像目标 ≤1536 KiB | 含向量、代码、只读数据和 `.data` load image，打包器同步检查 |
 
-DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 D-cache 关闭；PL-a 软件包 static RAM 为 215560 B、空余 242168 B，仍保留 M1 初始 192 KiB 余量目标，实物 IDMA 可达性待验。
+DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 D-cache 关闭；最终软件包 static RAM 为 231672 B、空余 226056 B，仍保留 M1 初始 192 KiB 余量目标，实物 SPI DMA/IDMA 可达性待验。
 
 Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌套和函数临时量都计入共享 CPU 栈。64 KiB 栈初值要求实测至少剩余 32 KiB，并通过水位/保护区检查；不能从 `.bss` 大小推断栈安全。P1 的 AXI 实际布局为447 KiB static allocation、独立1 KiB HardFault栈、64 KiB共享栈；当前 static 使用/空余以 [P1报告](acceptance/p1/README.md)为准，并非表中M1资源已分配。
 
@@ -95,7 +108,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | 指标 | 初始目标 / 记录方式 |
 | --- | --- |
 | 板上单调时基 | 对比 host/仪器至少 60 s，漂移目标 ≤0.1%；记录观测窗口和测量误差 |
-| IMU ODR | 1 kHz 起步；记录 1 s/全程样本率，偏差目标 ≤1%，实际器件时钟误差单列 |
+| IMU ODR | 8 kHz 采集、8 包 FIFO 批、约 1 kHz 任务唤醒；分别记录采集/批次/1 kHz 日志率，偏差目标 ≤1% |
 | DRDY 打点抖动 | <10 us，需外部边沿/输入捕获对照；纯任务时间戳只能给内部延迟证据 |
 | DRDY→样本发布 | 观测最大 ≤500 us；正常段零 FIFO 溢出/丢样/倒退时间戳 |
 | AHRS | 每新样本更新；单次 IMU/AHRS 快路径 ≤300 us，快照年龄 ≤2 ms；正常段无 NaN/无效四元数 |
@@ -121,8 +134,11 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | ESC_STATUS / ESC_INFO | 10 Hz / 1 Hz；四个真实 ESC 状态，正确处理 K→消息单位及未知值 |
 | GPS_RAW_INT | 按收到的 GNSS，目标 5 Hz；GPS 无定位也如实表示 |
 | AUTOPILOT_VERSION、PARAM_VALUE、STATUSTEXT | 请求/变化触发；队列/发送速率受限 |
+| SERIAL_CONTROL（SHELL） | QGC MAVLink Console；有界行缓冲与分片响应，logger/诊断命令，不提供任意内存或 OS shell |
 
 USB 与 TELEM1 分别维护 MAVLink 序列号、RX 解析器、发送队列和 stream rate。首轮 TELEM1 候选 115200、8N1：线速上限 11520 B/s，发送总额先限 70%（8064 B/s），常规遥测目标 ≤6000 B/s，余量供参数回复；USB 常规限 32000 B/s。超过请求预算返回明确结果，不积压旧遥测。更高波特率根据实际接线/USB-UART 设备测试后采用。
+
+MAVLink Console 使用 `SERIAL_CONTROL_DEV_SHELL`，只解析固定命令（`help/status/platform/metrics/fault/fram/params/dronecan/imu/logger`）；输入上限 32 B，输出按 70 B MAVLink payload 分片。`logger start/stop/sync/config` 和标准 `MAV_CMD_LOGGING_START/STOP` 共用 `src/core/logger.rs` 状态契约与 `src/storage/sd_logger.rs` 单一所有者，不允许控制面绕过 flush/断电顺序。
 
 参数契约：
 
@@ -134,14 +150,14 @@ USB 与 TELEM1 分别维护 MAVLink 序列号、RX 解析器、发送队列和 s
 
 ### P3a 参数 API 与存储契约
 
-参数只有一份静态注册表 `src/parameters.rs`：每条包含名称、类型、默认值、范围、只读/生效时机。`MAV_SYS_ID` 为只读整数，`LINK_LED_HZ` 为 0.1–10 Hz 实数、下一个灯周期生效。
+参数只有一份静态注册表 `src/core/parameters.rs`：每条包含名称、类型、默认值、范围、只读/生效时机。`MAV_SYS_ID` 为只读整数，`LINK_LED_HZ` 为 0.1–10 Hz 实数、下一个灯周期生效。
 
 | 层 | 位置 | 职责 |
 | --- | --- | --- |
-| 注册表与 RAM 状态 | `src/parameters.rs`（no_std、host 可测） | `Id` 类型键、名称/索引查找、范围与整数校验、`Parameters::{get,set,snapshot,restore,is_dirty}` |
-| 存储格式与提交 | `src/parameter_store.rs`（无 HAL） | 双槽记录编码/解码、schema 标签、CRC、生成号选择、写入计划 |
-| 设备服务 | `src/parameter_manager.rs` | 唯一持有 FRAM；`get/set/is_dirty/status` 与异步 `load/save`，保存后按“已校验快照”确认 |
-| 传输 | `src/mavlink_usb.rs`、`src/usb_console.rs` | MAVLink 读设/保存与 `!params`、`!param-save`、`!param-load` |
+| 注册表与 RAM 状态 | `src/core/parameters.rs`（no_std、host 可测） | `Id` 类型键、名称/索引查找、范围与整数校验、`Parameters::{get,set,snapshot,restore,is_dirty}` |
+| 存储格式与提交 | `src/core/parameter_store.rs`（无 HAL） | 双槽记录编码/解码、schema 标签、CRC、生成号选择、写入计划 |
+| 设备服务 | `src/storage/parameter_manager.rs` | 唯一持有 FRAM；`get/set/is_dirty/status` 与异步 `load/save`，保存后按“已校验快照”确认 |
+| 传输 | `src/comms/mavlink_core.rs`、`src/comms/usb_console.rs` | MAVLink 读设/保存与 `!params`、`!param-save`、`!param-load` |
 
 **新增参数**：在 `parameter_table!` 加一条，功能侧用 `Id::新名称` 读取即可；MAVLink 全表/按名/按索引、FRAM 记录和诊断输出自动跟随。名称 ≤16 个 ASCII 大写/数字/下划线且唯一，默认值必须在范围内；只读项写 `ReadOnly`。
 

@@ -120,6 +120,30 @@ def request(link, message_id):
     )
 
 
+def console_command(link, command, timeout=3):
+    payload = (command + "\n").encode()
+    if len(payload) > 70:
+        raise ValueError("MAVLink console command exceeds 70 bytes")
+    link.mav.serial_control_send(
+        mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL,
+        mavutil.mavlink.SERIAL_CONTROL_FLAG_RESPOND,
+        0,
+        0,
+        len(payload),
+        payload + bytes(70 - len(payload)),
+    )
+    output = bytearray()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        message = link.recv_match(type="SERIAL_CONTROL", blocking=True, timeout=0.2)
+        if message is None or message.device != mavutil.mavlink.SERIAL_CONTROL_DEV_SHELL:
+            continue
+        output.extend(bytes(message.data[:message.count]))
+        if not message.flags & mavutil.mavlink.SERIAL_CONTROL_FLAG_MULTI:
+            return output.decode("utf-8")
+    raise TimeoutError("No complete MAVLink console response received")
+
+
 def expected_source_id(expected_version, source_id, report):
     if source_id is not None:
         if len(source_id) != 16 or any(c not in "0123456789abcdefABCDEF" for c in source_id):
@@ -237,6 +261,24 @@ def check(link, expected_version, source_id=None):
     second = receive(link, "SYSTEM_TIME")
     assert second.time_boot_ms > first.time_boot_ms
     print(f"MCU boot time advances: {first.time_boot_ms} -> {second.time_boot_ms} ms")
+
+    request(link, 105)
+    imu = receive(link, "HIGHRES_IMU")
+    required = 0x103F  # accel XYZ, gyro XYZ and temperature
+    assert imu.fields_updated & required == required
+    assert imu.id == 0
+    values = (imu.xacc, imu.yacc, imu.zacc, imu.xgyro, imu.ygyro, imu.zgyro, imu.temperature)
+    assert all(math.isfinite(value) for value in values)
+    assert imu.time_usec > 0
+    print(
+        "HIGHRES_IMU: "
+        f"accel=({imu.xacc:.3f},{imu.yacc:.3f},{imu.zacc:.3f})m/s^2 "
+        f"gyro=({imu.xgyro:.4f},{imu.ygyro:.4f},{imu.zgyro:.4f})rad/s "
+        f"temperature={imu.temperature:.2f}C"
+    )
+    logger = console_command(link, "logger status")
+    assert "LOGGER schema=2" in logger and "sync_period_ms=1000" in logger, logger
+    print("MAVLink console logger status: PASS")
     print("MAVLink wire checks: PASS")
 
 
@@ -247,7 +289,7 @@ def monitor(link, seconds):
     received = 0
     while time.monotonic() < deadline:
         message = link.recv_match(
-            type=["HEARTBEAT", "STATUSTEXT", "SYSTEM_TIME", "COMMAND_ACK"],
+            type=["HEARTBEAT", "STATUSTEXT", "SYSTEM_TIME", "HIGHRES_IMU", "COMMAND_ACK"],
             blocking=True, timeout=0.2,
         )
         if message is not None:

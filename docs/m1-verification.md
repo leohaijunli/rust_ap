@@ -1,10 +1,10 @@
 # M1：首个集成目标与验收单
 
-日期：2026-10-31。**A3 已选定；P4b-a、PL-a 软件门通过，本板集中 HIL 尚未开始。** M1 是一次真实设备数据链验证，随后依据硬件结果细化其他功能。
+日期：2026-11-01。**A3 已选定；P4b-a、PL-a、P2、P4 软件门通过，本板集中 HIL 尚未开始。** M1 是一次真实设备数据链验证，随后依据硬件结果细化其他功能。
 
 ## 1. 用户确定的目标
 
-1. `embassy-stm32` 驱动唯一 **SPI2 ICM-42688-P**，以 1 kHz 为起点验证稳定读取。
+1. `embassy-stm32` 驱动唯一 **SPI2 ICM-42688-P**，验证 8 kHz ODR、8 包 FIFO 批处理和 1 kHz 日志抽取。
 2. 纯 Rust AHRS，优先固定 Cybflight Mahony 的 gyro/accel 模式；姿态方向/新鲜度可验证，yaw 明确为相对值。
 3. DroneCAN 节点服务、4 个 Vimdrones Nano 的状态和全零命令、H-RTK Rover DroneCAN GNSS。
 4. 纯 Rust **ULog 板载 SD 记录**，包含 IMU/AHRS、CAN/ESC/GNSS、参数与系统事件。
@@ -47,10 +47,10 @@
 
 | 验证 | 操作与通过证据 |
 | --- | --- |
-| IMU | 记录至少 5 分钟静止和六面/转动数据；1 kHz 计数、DRDY/读出延迟、FIFO/丢样与单位方向符合阈值 |
+| IMU | 记录至少 5 分钟静止和六面/转动数据；分别核对 8 kHz 样本、约 1 kHz FIFO 批次与 1 kHz ULog，DRDY/读出延迟、FIFO/丢样、SI 单位和 YAW270 方向符合阈值 |
 | AHRS | 转动板子并比较 QGC 与 ULog；静止倾角/收敛/四元数范数正确，过期/异常数据显式无效 |
 | DroneCAN | 独立 GUI/pydronecan 对拍节点/ESC/GNSS；确认只有零命令/DISARMED，测负载/时间/丢帧 |
-| QGC USB | 实际上游 QGC 建立连接；Inspector 查看心跳/状态、IMU、姿态、ESC、GPS 的值和更新率 |
+| QGC USB | 实际上游 QGC 建立连接；Inspector 查看心跳/状态、`HIGHRES_IMU`、姿态、ESC、GPS 的值和更新率 |
 | QGC TELEM1 | 通过实际串口链路重复检查；重新连接能恢复，源数据和单位与 USB 一致 |
 | 参数页与脚本 | 完整读表、名称/索引/count；对选定非危险参数做受控读/设/回显，非法值拒绝；另一链路读到相同当前值，记录实际保存/重启行为 |
 | 双链路负载 | 两个独立客户端同时运行；QGC 可每次验证一种连接，另一条由脚本监测，避免同一串口被抢占 |

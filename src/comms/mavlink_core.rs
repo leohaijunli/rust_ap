@@ -6,6 +6,7 @@ use mavlink::{MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersio
 use v6x_rust_led::parameters::{Id, COUNT, REGISTRY};
 
 use crate::parameter_manager::ParameterManager;
+use v6x_rust_led::logger::{LogError, LogRequest, LogResponse};
 
 pub const SYSTEM_ID: u8 = Id::MavSysId.definition().default as u8;
 pub const COMPONENT_ID: u8 = 1;
@@ -134,6 +135,20 @@ pub async fn handle(
                 reply.push(parameter_warning("Parameter storage failed; see !params"));
             }
         }
+        MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_LOGGING_START => {
+            reply.push(command_ack(
+                &header,
+                data.command,
+                logger_result(crate::sd_logger::request_start()),
+            ));
+        }
+        MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_LOGGING_STOP => {
+            reply.push(command_ack(
+                &header,
+                data.command,
+                logger_result(crate::sd_logger::request_stop()),
+            ));
+        }
         MavMessage::COMMAND_LONG(data) => {
             let mut reboot = false;
             let response = match data.command {
@@ -141,6 +156,7 @@ pub async fn handle(
                     0 => Some(heartbeat()),
                     1 => Some(system_status()),
                     2 => Some(system_time()),
+                    105 => highres_imu(),
                     148 => Some(autopilot_version()),
                     253 => Some(status_text()),
                     _ => None,
@@ -220,6 +236,36 @@ pub fn system_time() -> MavMessage {
     })
 }
 
+pub fn highres_imu() -> Option<MavMessage> {
+    let sample = crate::imu::latest()?;
+    let now = embassy_time::Instant::now().as_micros();
+    if sample.is_stale(now, v6x_rust_led::icm42688::Config::DEFAULT) {
+        return None;
+    }
+    let accel_frd = sample.accel_frd();
+    let gyro_frd = sample.gyro_frd();
+    let fields_updated = HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_XACC
+        | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_YACC
+        | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_ZACC
+        | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_XGYRO
+        | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_YGYRO
+        | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_ZGYRO
+        | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_TEMPERATURE;
+    Some(MavMessage::HIGHRES_IMU(HIGHRES_IMU_DATA {
+        time_usec: sample.sample_timestamp_us,
+        xacc: accel_frd[0],
+        yacc: accel_frd[1],
+        zacc: accel_frd[2],
+        xgyro: gyro_frd[0],
+        ygyro: gyro_frd[1],
+        zgyro: gyro_frd[2],
+        temperature: sample.temperature_c,
+        fields_updated,
+        id: v6x_rust_led::icm42688::SOURCE_ID,
+        ..Default::default()
+    }))
+}
+
 pub fn autopilot_version() -> MavMessage {
     let uid = embassy_stm32::uid::uid();
     let mut uid2 = [0u8; 18];
@@ -263,6 +309,112 @@ pub fn command_ack(header: &MavHeader, command: MavCmd, result: MavResult) -> Ma
         target_component: header.component_id,
         ..Default::default()
     })
+}
+
+fn logger_result(result: Result<(), v6x_rust_led::logger::ControlError>) -> MavResult {
+    match result {
+        Ok(()) => MavResult::MAV_RESULT_ACCEPTED,
+        Err(v6x_rust_led::logger::ControlError::InvalidState) => {
+            MavResult::MAV_RESULT_TEMPORARILY_REJECTED
+        }
+        Err(_) => MavResult::MAV_RESULT_FAILED,
+    }
+}
+
+pub fn serial_control_reply(header: MavHeader, bytes: &[u8], more: bool) -> MavMessage {
+    let mut data = [0u8; 70];
+    data[..bytes.len()].copy_from_slice(bytes);
+    let mut flags = SerialControlFlag::SERIAL_CONTROL_FLAG_REPLY;
+    if more {
+        flags |= SerialControlFlag::SERIAL_CONTROL_FLAG_MULTI;
+    }
+    MavMessage::SERIAL_CONTROL(SERIAL_CONTROL_DATA {
+        device: SerialControlDev::SERIAL_CONTROL_DEV_SHELL,
+        flags,
+        count: bytes.len() as u8,
+        data,
+        target_system: header.system_id,
+        target_component: header.component_id,
+        ..Default::default()
+    })
+}
+
+pub fn log_request(message: &MavMessage) -> Option<LogRequest> {
+    match message {
+        MavMessage::LOG_REQUEST_LIST(data)
+            if targeted(data.target_system, data.target_component) =>
+        {
+            Some(LogRequest::List {
+                start: data.start,
+                end: data.end,
+            })
+        }
+        MavMessage::LOG_REQUEST_DATA(data)
+            if targeted(data.target_system, data.target_component) =>
+        {
+            Some(LogRequest::Data {
+                id: data.id,
+                offset: data.ofs,
+                count: data.count,
+            })
+        }
+        MavMessage::LOG_REQUEST_END(data)
+            if targeted(data.target_system, data.target_component) =>
+        {
+            Some(LogRequest::End)
+        }
+        MavMessage::LOG_ERASE(data) if targeted(data.target_system, data.target_component) => {
+            Some(LogRequest::Erase)
+        }
+        _ => None,
+    }
+}
+
+fn targeted(system: u8, component: u8) -> bool {
+    matches!(system, 0 | SYSTEM_ID) && matches!(component, 0 | COMPONENT_ID)
+}
+
+pub fn log_response(response: LogResponse) -> Option<MavMessage> {
+    match response {
+        LogResponse::Entry {
+            id,
+            num_logs,
+            last_log_num,
+            size,
+            time_utc,
+        } => Some(MavMessage::LOG_ENTRY(LOG_ENTRY_DATA {
+            time_utc,
+            size,
+            id,
+            num_logs,
+            last_log_num,
+        })),
+        LogResponse::Data {
+            id,
+            offset,
+            count,
+            data,
+        } => Some(MavMessage::LOG_DATA(LOG_DATA_DATA {
+            ofs: offset,
+            id,
+            count,
+            data,
+        })),
+        LogResponse::Error(error) => Some(parameter_warning(log_error_text(error))),
+        LogResponse::Done => None,
+    }
+}
+
+fn log_error_text(error: LogError) -> &'static str {
+    match error {
+        LogError::Busy => "Log service busy",
+        LogError::Mount => "Log SD mount failed",
+        LogError::Directory => "Log directory read failed",
+        LogError::NotFound => "Log id not found",
+        LogError::Range => "Log offset out of range",
+        LogError::Read => "Log data read failed",
+        LogError::EraseDisabled => "Log erase disabled",
+    }
 }
 
 /// Encode a message into a complete MAVLink v2 frame, advancing the sequence.

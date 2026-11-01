@@ -31,6 +31,10 @@ pub(crate) fn status(phy: &RefCell<Lan8742<'_>>, eth_power: &Output<'_>) -> Resp
 pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Response {
     let mut response = Response::new();
     let _ = match command {
+        Command::Help => writeln!(
+            response,
+            "COMMANDS help status platform metrics fault fram params dronecan imu logger logger start logger stop logger sync logger config <100..10000>"
+        ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
         Command::Metrics => crate::diagnostics::write_diagnostics(&mut response),
         Command::MetricsReset => {
@@ -40,16 +44,77 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::Fault => crate::fault::write_diagnostics(&mut response),
         Command::FaultClear => writeln!(response, "FAULT_CLEAR ok={}", crate::fault::clear()),
         Command::DroneCan => dronecan.write_diagnostics(&mut response),
+        Command::Imu => crate::imu::write_diagnostics(&mut response),
         Command::Logger => crate::sd_logger::write_diagnostics(&mut response),
-        Command::LoggerStart => writeln!(
-            response,
-            "LOGGER_START accepted={}",
-            crate::sd_logger::request_start()
+        Command::LoggerStart => {
+            logger_result(&mut response, "start", crate::sd_logger::request_start())
+        }
+        Command::LoggerStop => {
+            logger_result(&mut response, "stop", crate::sd_logger::request_stop())
+        }
+        Command::LoggerSync => {
+            logger_result(&mut response, "sync", crate::sd_logger::request_sync())
+        }
+        Command::LoggerConfig(sync_period_ms) => logger_result(
+            &mut response,
+            "config",
+            crate::sd_logger::apply_config(v6x_rust_led::logger::Config { sync_period_ms }),
         ),
         _ => writeln!(response, "ERR unsupported-report"),
     };
     response.finish();
     response
+}
+
+pub(crate) async fn mavlink_report(
+    command: Command,
+    parameters: &ParameterManager<'_>,
+    dronecan: &dronecan_can::State,
+) -> Response {
+    match command {
+        Command::Fram | Command::FramRead(_) => fram_report(command, parameters).await,
+        Command::Parameters | Command::ParamSave | Command::ParamLoad => {
+            parameter_report(command, parameters, crate::OUTPUT_STATE).await
+        }
+        Command::Status => {
+            let mut response = Response::new();
+            let _ = crate::platform::write_diagnostics(&mut response);
+            let _ = crate::imu::write_diagnostics(&mut response);
+            let _ = crate::sd_logger::write_diagnostics(&mut response);
+            response.finish();
+            response
+        }
+        Command::Bootloader => {
+            let mut response = Response::new();
+            let _ = writeln!(response, "ERR use MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN");
+            response.finish();
+            response
+        }
+        #[cfg(feature = "fault-injection")]
+        Command::Panic | Command::HardFault => {
+            let mut response = Response::new();
+            let _ = writeln!(
+                response,
+                "ERR fault injection unavailable via MAVLink console"
+            );
+            response.finish();
+            response
+        }
+        _ => report(command, dronecan),
+    }
+}
+
+fn logger_result(
+    response: &mut Response,
+    operation: &str,
+    result: Result<(), v6x_rust_led::logger::ControlError>,
+) -> fmt::Result {
+    writeln!(
+        response,
+        "LOGGER_CONTROL operation={operation} accepted={} error={:?}",
+        result.is_ok(),
+        result.err()
+    )
 }
 
 pub(crate) async fn fram_report(command: Command, parameters: &ParameterManager<'_>) -> Response {
@@ -150,6 +215,7 @@ pub(crate) async fn parameter_report(
 }
 
 pub(crate) enum Command {
+    Help,
     Status,
     Bootloader,
     Platform,
@@ -163,8 +229,12 @@ pub(crate) enum Command {
     ParamSave,
     ParamLoad,
     DroneCan,
+    Imu,
     Logger,
     LoggerStart,
+    LoggerStop,
+    LoggerSync,
+    LoggerConfig(u32),
     #[cfg(feature = "fault-injection")]
     Panic,
     #[cfg(feature = "fault-injection")]
@@ -172,7 +242,7 @@ pub(crate) enum Command {
 }
 
 pub(crate) struct CommandLine {
-    bytes: [u8; 16],
+    bytes: [u8; 32],
     len: usize,
     overflow: bool,
 }
@@ -180,34 +250,38 @@ pub(crate) struct CommandLine {
 impl CommandLine {
     pub(crate) fn new() -> Self {
         Self {
-            bytes: [0; 16],
+            bytes: [0; 32],
             len: 0,
             overflow: false,
         }
     }
 
     pub(crate) fn push(&mut self, byte: u8) -> Option<Command> {
-        if byte == b'\n' {
+        if matches!(byte, 0x08 | 0x7f) {
+            self.len = self.len.saturating_sub(1);
+            self.overflow = false;
+            return None;
+        }
+        if matches!(byte, b'\n' | b'\r') {
             let line = &self.bytes[..self.len];
-            let line = line.strip_suffix(b"\r").unwrap_or(line);
             let command = if self.overflow {
                 None
             } else {
                 match line {
-                    b"!status" => Some(Command::Status),
+                    b"help" | b"?" => Some(Command::Help),
+                    b"!status" | b"status" => Some(Command::Status),
                     b"!bootloader" => Some(Command::Bootloader),
-                    b"!platform" => Some(Command::Platform),
-                    b"!metrics" => Some(Command::Metrics),
+                    b"!platform" | b"platform" => Some(Command::Platform),
+                    b"!metrics" | b"metrics" => Some(Command::Metrics),
                     b"!metrics-reset" => Some(Command::MetricsReset),
-                    b"!fault" => Some(Command::Fault),
+                    b"!fault" | b"fault" => Some(Command::Fault),
                     b"!fault-clear" => Some(Command::FaultClear),
-                    b"!fram" => Some(Command::Fram),
-                    b"!params" => Some(Command::Parameters),
+                    b"!fram" | b"fram" => Some(Command::Fram),
+                    b"!params" | b"params" => Some(Command::Parameters),
                     b"!param-save" => Some(Command::ParamSave),
                     b"!param-load" => Some(Command::ParamLoad),
-                    b"!dronecan" => Some(Command::DroneCan),
-                    b"!logger" => Some(Command::Logger),
-                    b"!logger-start" => Some(Command::LoggerStart),
+                    b"!dronecan" | b"dronecan" => Some(Command::DroneCan),
+                    b"!imu" | b"imu" => Some(Command::Imu),
                     #[cfg(feature = "fault-injection")]
                     b"!panic" => Some(Command::Panic),
                     #[cfg(feature = "fault-injection")]
@@ -217,7 +291,18 @@ impl CommandLine {
                         .filter(|address| address.len() == 4)
                         .and_then(|address| core::str::from_utf8(address).ok())
                         .and_then(|address| u16::from_str_radix(address, 16).ok())
-                        .map(Command::FramRead),
+                        .map(Command::FramRead)
+                        .or_else(|| match v6x_rust_led::logger::parse_console(line)? {
+                            v6x_rust_led::logger::ConsoleCommand::Status => Some(Command::Logger),
+                            v6x_rust_led::logger::ConsoleCommand::Start => {
+                                Some(Command::LoggerStart)
+                            }
+                            v6x_rust_led::logger::ConsoleCommand::Stop => Some(Command::LoggerStop),
+                            v6x_rust_led::logger::ConsoleCommand::Sync => Some(Command::LoggerSync),
+                            v6x_rust_led::logger::ConsoleCommand::Config(config) => {
+                                Some(Command::LoggerConfig(config.sync_period_ms))
+                            }
+                        }),
                 }
             };
             self.len = 0;

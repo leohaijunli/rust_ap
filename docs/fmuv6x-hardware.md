@@ -45,7 +45,7 @@
 | flash latency | 板宏 BOARD_FLASH_WAITSTATES=2，NuttX 同时配置 WRHIGHFREQ 与 LATENCY；需按实际 AXI/flash 时钟和电压解释，不直接照抄到 Rust | `boards/px4/fmu-v6x/nuttx-config/include/board.h:267-285`；`platforms/nuttx/NuttX/nuttx/arch/arm/src/stm32h7/stm32h7x3xx_rcc.c:937-949` |
 | USB 时钟 | PLL3Q：HSE /4 ×48 /4 = 48 MHz；USB 选择 PLL3 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:143-157`；`boards/px4/fmu-v6x/nuttx-config/include/board.h:245-247` |
 | FDCAN 时钟 | PX4 选择 HSE，STM32_FDCANCLK=STM32_HSE_FREQUENCY | `boards/px4/fmu-v6x/nuttx-config/include/board.h:259-263` |
-| SDMMC2 软件时钟 | PL-a 启用 PLL1Q：HSE /1 ×60 /20 = 48 MHz，选择 PLL1Q；首轮请求 25 MHz，HAL v2 候选实际 24 MHz | `src/platform.rs`、`src/sd_logger.rs`；17 项编译谓词通过，物理时钟待 H-04 |
+| SDMMC2 软件时钟 | PL-a 启用 PLL1Q：HSE /1 ×60 /20 = 48 MHz，选择 PLL1Q；首轮请求 25 MHz，HAL v2 候选实际 24 MHz | `src/platform.rs`、`src/storage/sd_logger.rs`；17 项编译谓词通过，物理时钟待 H-04 |
 | 状态 LED | 红 PE3、绿 PE4、蓝 PE5；开漏输出，初始化高电平；bootloader 定义低电平为亮 | `boards/px4/fmu-v6x/src/board_config.h:93-103`；`boards/px4/fmu-v6x/src/hw_config.h:81-84` |
 | 传感器 1/2/3 电源控制 | Rev 3 SPI 总线表分别给出 PI11 / PF4 / PE7；公共控制函数高电平使能。项目只初始化 SPI2 对应 PF4；其余仅作来源记录 | `boards/px4/fmu-v6x/src/spi.cpp:87-97`；`platforms/nuttx/src/px4/stm/stm32_common/spi/spi.cpp:319-345` |
 | SPI 复位后的等待 | PX4 复位 helper 重新上电后等待 100 us 再配置引脚；该值不代替 ICM-42688-P datasheet 的 POR/复位/配置等待 | `platforms/nuttx/src/px4/stm/stm32_common/spi/spi.cpp:469-484` |
@@ -197,7 +197,7 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 
 四电机配置回填表见 [dronecan-notes.md](dronecan-notes.md)。实际 source node ID、ESC_INDEX、位置、旋向和极数须独立记录；不能用 Quad X 名称推导现有接线顺序。
 
-## 当前 Rust P1 对比与验收
+## 当前 Rust 软件对比与验收
 
 | 项 | 当前实现 | 来源 |
 | --- | --- | --- |
@@ -206,14 +206,15 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | 时钟/供电 | HSE16 MHz、PLL1 CPU480/HCLK240/PCLK120 MHz；PLL3Q USB48 MHz；LDO/Scale1+ODEN、flash LATENCY4/WRHIGHFREQ2，I-cache开/D-cache关；平台寄存器/时基检查通过 | `src/platform.rs:20-135`；HAL `rcc/h.rs:286-296,402-427`及上述PX4来源 |
 | 时基/调度 | TIM2/P1、PSC239/ARR65535、1 MHz；TIM7/P3仅软件pend；USB/P6；线程raw executor/测量idle | `src/platform.rs`、`src/diagnostics.rs`、`src/main.rs` |
 | LED/加热 | 保留PHY灯；PE3红故障/PE4绿1 Hz/PE5蓝启动开漏；PB10加热保持低；本板FMU灯目视项不适用 | `src/main.rs:46-72,118-147`；[HIL](acceptance/p1/20261031-hil.md#led适用范围) |
-| 软件 reboot/故障 | BKP0=b007b007复位；BKP16..31版本化CRC故障；HardFault先切1 KiB栈；共享wrapper匹配RTC/LSE，HAL后比较全部BKP及BDCR，不再补写BKP | `src/backup_domain.rs`、`src/fault.rs`、`src/fault_record.rs`；[故障审查](acceptance/p1/fault-review.md) |
-| FDCAN1 软件配置 | PD0/PD1，HSE 16 MHz，1 Mbit/s，采样点 87.5%；IT0/1=P2，TIM6_DAC I/O executor=P4；FIFO、单次发送、自动重传关闭 | `src/dronecan_can.rs`、`src/platform.rs`；[P4b-a 软件记录](acceptance/p4b-a/README.md)，电气/HIL 待 H-02/03 |
-| SDMMC2 软件配置 | PC13 默认低；显式 `!logger-start` 后高电平供电；PD6/PD7/PB14/PB15/PG11/PB4 四线、P7 IRQ、内部 IDMA、FAT 单写者 | `src/sd_logger.rs`、`src/main.rs`；[PL-a 软件记录](acceptance/pl-a/README.md)，卡兼容/时延/故障待 H-04 |
-| TELEM1 软件配置 | UART7 RX PF6、TX PE8；115200 8N1、DMA1_CH0/CH1、Async 传输；独立序列/解析/节拍，RTS PF8/CTS PE10 未启用待 H-03 | `src/mavlink_uart7.rs`、`src/main.rs`；[P2 软件记录](acceptance/p2/README.md)，线序/电平/流控待 H-03 |
+| 软件 reboot/故障 | BKP0=b007b007复位；BKP16..31版本化CRC故障；HardFault先切1 KiB栈；共享wrapper匹配RTC/LSE，HAL后比较全部BKP及BDCR，不再补写BKP | `src/backup_domain.rs`、`src/fault.rs`、`src/core/fault_record.rs`；[故障审查](acceptance/p1/fault-review.md) |
+| FDCAN1 软件配置 | PD0/PD1，HSE 16 MHz，1 Mbit/s，采样点 87.5%；IT0/1=P2，TIM6_DAC I/O executor=P4；FIFO、单次发送、自动重传关闭 | `src/drivers/dronecan_can.rs`、`src/platform.rs`；[P4b-a 软件记录](acceptance/p4b-a/README.md)，电气/HIL 待 H-02/03 |
+| SPI2 IMU 软件配置 | ICM-42688-P；PI1/PI3/PI2、PH5 CS、PF4 power、PA10 EXTI；DMA1_CH2/CH3、24 MHz 请求、8 kHz ODR、8×20 B FIFO、YAW270；EXTI P0/DMA P1/TIM7 executor P3 | `src/core/icm42688.rs`、`src/drivers/imu.rs`、`src/main.rs`；[P4 软件记录](acceptance/p4/README.md)，ID/实际 SPI/速率/方向待实物 |
+| SDMMC2 软件配置 | PC13 默认低；显式 `!logger-start` 后高电平供电；PD6/PD7/PB14/PB15/PG11/PB4 四线、P7 IRQ、内部 IDMA、FAT 单写者 | `src/storage/sd_logger.rs`、`src/main.rs`；[PL-a 软件记录](acceptance/pl-a/README.md)，卡兼容/时延/故障待 H-04 |
+| TELEM1 软件配置 | UART7 RX PF6、TX PE8；115200 8N1、DMA1_CH0/CH1、Async 传输；独立序列/解析/节拍，RTS PF8/CTS PE10 未启用待 H-03 | `src/comms/mavlink_uart7.rs`、`src/main.rs`；[P2 软件记录](acceptance/p2/README.md)，线序/电平/流控待 H-03 |
 | 安装 bootloader 的识别 | 实测3185:0035、`PX4 BL FMU v6X.x`、协议v5、board ID=53；构建版本未知；独立QGC往返及普通回装通过 | [HIL](acceptance/p1/20261031-hil.md) |
 | QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION固件已就绪，连接/重连显示待 HIL 复核 | [QGC记录](qgc-notes.md)、[P2 软件记录](acceptance/p2/README.md) |
 
-P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。FRAM、IMU、CAN和SD按后续阶段验收。
+P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。当前板载为 P4/PL-b HIL source=`496484e26b3502fe`；CAN、SD、双链路和 IMU 的结果分别见对应 acceptance，未完成实物项仍按阶段验收。
 
 ## 验收与后续待核实
 
@@ -229,4 +230,4 @@ P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptanc
 | SD 卡槽、卡型号/容量、卡检测和掉电行为 | 工程师提供卡；PL-a 实测，不以 PX4 配置替代 HAL/卡兼容性验证 |
 | TELEM1/直连接收机的线序、电平、流控/反相 | P2/P5b 按本板与所选设备核实 |
 
-P0、P1、P3a已完成；P4b-a、PL-a 软件门通过，实物待 H-02/03/04，M1尚未验收。阶段状态见[TODO](../TODO.md)。
+P0、P1、P3a已完成；P4b-a、PL-a、P2、P4 软件门通过，实物待 H-02/03/04 与工程师操作，M1尚未验收。阶段状态见[TODO](../TODO.md)。

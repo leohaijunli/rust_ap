@@ -18,20 +18,27 @@ trip passed. The final normal Rust restore completed at 21:28 UTC on 2026-10-31,
 with source **`a946a529360eac83`**, disarmed, fault injection disabled, and no valid
 retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
 [essential-check plan](plan.md). **P3a is complete:** FRAM backup, parameter API,
-atomic save and power-cycle readback passed. The board now runs source
-**`1d3d08e3dd64f3ac`**, with `LINK_LED_HZ=2.0` saved; see
-[P3a evidence](docs/acceptance/p3a/README.md). **P4b-a software is ready:** the
+atomic save and power-cycle readback passed; `LINK_LED_HZ=2.0` remains saved.
+The board now runs the P4/PL-b HIL source **`496484e26b3502fe`**; see
+[P3a](docs/acceptance/p3a/README.md) and [P4](docs/acceptance/p4/README.md) evidence.
+**P4b-a software is ready:** the
 bounded DroneCAN v0 core, node services, FDCAN1 adapter, and zero-only periodic
 output passed host/build checks; hardware mapping remains blocked by H-02/03.
 **PL-a software is also ready:** pure Rust ULog, bounded queues and the explicit-start
 SDMMC2/FAT path pass software checks; H-04 remains. PL-a supersedes the P4b-a
-logging path, so neither package has been uploaded; see
+logging path. Their standalone packages were not uploaded; the current P4 image
+contains both software paths, while their hardware gates remain open. See
 [P4b-a](docs/acceptance/p4b-a/README.md) and
 [PL-a](docs/acceptance/pl-a/README.md) evidence.
 **P2 software is also ready:** a transport-agnostic MAVLink core now drives both
 USB CDC and TELEM1 UART7 (115200 8N1) with independent sequences, queues and
 heartbeat pacing, so the dual-link/relink and version-display checks only await
-the H-03 wiring. See [P2 evidence](docs/acceptance/p2/README.md).
+the H-03 wiring. The USB side now runs in the P4 image. See [P2 evidence](docs/acceptance/p2/README.md).
+**P4 software is ready:** the Embassy SPI2 ICM-42688-P path uses an 8 kHz
+high-resolution FIFO, bounded AHRS fan-out, 1 kHz ULog and 20 Hz `HIGHRES_IMU`
+on both MAVLink links. The image is uploaded and WHO_AM_I/SPI/short static USB
+telemetry passed; six-face, long-run, ULog and fault recovery remain. See
+[P4 evidence](docs/acceptance/p4/README.md).
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
 
@@ -310,7 +317,7 @@ parameter API or console for ordinary management.
 
 The text console adds `!fram`, `!fram-read <hex>`, `!params`, `!param-save`,
 and `!param-load`. Adding a parameter means one entry in
-`src/parameters.rs`; transports and storage follow automatically, and an
+`src/core/parameters.rs`; transports and storage follow automatically, and an
 incompatible registry falls back to defaults instead of migrating silently.
 See [architecture](docs/architecture.md#p3a-参数-api-与存储契约).
 
@@ -436,10 +443,19 @@ Open the Rust CDC port with a serial terminal or `pyserial`:
 - `!fault`: CRC-validated retained record; `!fault-clear` explicitly clears it.
 - `!dronecan`: FDCAN register/error counters, bounded transport counters, node
   discovery, and trusted/candidate ESC status.
-- `!logger`: ULog queue, SD/FAT state, bytes, flushes, errors and high-water mark.
-- `!logger-start`: explicitly power PC13 and start one SD mount/log session. The
-  default firmware leaves SD power off so a missing or abnormal card cannot affect boot.
+- `!logger`: ULog queue, SD/FAT state, bytes, flushes, errors, sync period and high-water mark.
+- `!logger-start` / `!logger-stop`: start a new SD/FAT file, or drain the queue,
+  align/write staging, flush file/filesystem and power the card off. Start may be used again.
+- `!logger-sync`: request an immediate file/filesystem flush.
+- `!logger-config <100..10000>`: set the runtime sync period in milliseconds.
+  The default firmware leaves SD power off so a missing or abnormal card cannot affect boot.
 - `!panic` / `!hardfault`: **only** in `fault-injection` builds, never in the normal package.
+
+QGroundControl **Analyze Tools → MAVLink Console** uses the same bounded command parser
+through `SERIAL_CONTROL_DEV_SHELL`. Commands omit `!`, for example `help`, `status`,
+`imu`, `logger status`, `logger start`, `logger sync`, `logger stop`, and
+`logger config 500`. Standard `MAV_CMD_LOGGING_START`/`STOP` call the same state
+machine; commands invalid for the current state are rejected instead of silently succeeding.
 
 Engineer-run captures (close QGC and all other readers first):
 
@@ -551,16 +567,16 @@ and [local QGC installation notes](docs/qgc-notes.md).
 
 ## Project layout
 
-- `src/main.rs`: measured Embassy thread executor, PHY/status LEDs and USB setup.
+- `src/main.rs`: board startup and top-level Embassy task wiring.
 - `src/platform.rs`: 480/240/120 MHz clock/power/cache/IRQ setup and diagnostics.
 - `src/backup_domain.rs`: shared retained RTC/LSE configuration and post-HAL checks.
-- `src/diagnostics.rs`: 1 kHz substitute, CPU accounting and shared-stack monitoring.
+- `src/diagnostics.rs`: fast interrupt executor, CPU accounting and shared-stack monitoring.
 - `src/fault.rs`: RTC record/recovery and HardFault emergency-stack entry.
-- `src/fault_record.rs`, `src/metrics.rs`: no_std host-testable record/statistics logic.
-- `src/eth_led.rs`: LAN8742A MDIO, MMD LED function control, and diagnostics.
-- `src/mavlink_usb.rs`: MAVLink transport, scheduling, requests, USB session
-  reset handling, and packet termination.
-- `src/usb_console.rs`: bounded PHY/platform/metrics/fault diagnostic responses.
+- `src/core/`: no_std/host-testable config, ICM-42688 decoding, DroneCAN,
+  parameters, retained faults, metrics, ULog and log queues.
+- `src/drivers/`: Embassy ICM-42688/SPI2, FDCAN1 DroneCAN and LAN8742A owners.
+- `src/comms/`: shared MAVLink logic, USB CDC, TELEM1/UART7 and diagnostics console.
+- `src/storage/`: FM25V02A, parameter manager and SDMMC2/FAT logger.
 - `memory.x`: application flash partition and SRAM layout.
 - `build.rs`: linker layout/map and source/feature identity.
 - `.cargo/config.toml`: Cortex-M7 target and `cortex-m-rt` linker script.
@@ -582,9 +598,9 @@ Before adding each driver, confirm the exact sensor or peripheral **model** to
 support. For that model, identify the bus (SPI, I2C, UART, or CAN), board wiring,
 and required functionality.
 
-Keep register definitions and device behavior in `src/drivers/<model>.rs`.
-Configure the STM32 peripheral, chip-select, interrupt pins, and power controls
-alongside the board setup in `src/main.rs`, then bring the selected driver up
+Keep host-testable register/data contracts in `src/core/` and Embassy hardware
+ownership in `src/drivers/`. Configure top-level peripheral ownership in
+`src/main.rs`, then bring the selected driver up
 on the board.
 
 Use Embassy's asynchronous peripheral drivers and the compatible
