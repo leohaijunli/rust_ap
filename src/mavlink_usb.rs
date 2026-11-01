@@ -12,16 +12,13 @@ use embassy_time::{with_timeout, Duration, Instant, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, Receiver, Sender};
 use embassy_usb::driver::{Driver, EndpointError};
 use mavlink::common::*;
-use mavlink::{MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion, Message};
-use v6x_rust_led::parameters::{Id, COUNT, REGISTRY};
 
 use crate::dronecan_can;
 use crate::eth_led::Lan8742;
+use crate::mavlink_core::{self, FrameParser};
 use crate::parameter_manager::ParameterManager;
 use crate::usb_console::{self, Command, CommandLine, Response};
 
-const SYSTEM_ID: u8 = Id::MavSysId.definition().default as u8;
-const COMPONENT_ID: u8 = 1;
 // Fixed-size buffers are intentional: this no_std firmware has no allocator.
 #[allow(clippy::large_enum_variant)]
 enum Outbound {
@@ -124,7 +121,11 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
     'connection: loop {
         sender.wait_connection().await;
         let mut ticks = 0u32;
-        for message in [heartbeat(), status_text(), autopilot_version()] {
+        for message in [
+            mavlink_core::heartbeat(),
+            mavlink_core::status_text(),
+            mavlink_core::autopilot_version(),
+        ] {
             if send_message(sender, &mut sequence, &message).await.is_err() {
                 continue 'connection;
             }
@@ -135,17 +136,22 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
             let result = match select(Timer::at(next_heartbeat), replies.receive()).await {
                 Either::First(()) => {
                     ticks = ticks.wrapping_add(1);
-                    let mut result = send_message(sender, &mut sequence, &heartbeat()).await;
+                    let mut result =
+                        send_message(sender, &mut sequence, &mavlink_core::heartbeat()).await;
                     if result.is_ok() {
-                        result = send_message(sender, &mut sequence, &system_status()).await;
+                        result =
+                            send_message(sender, &mut sequence, &mavlink_core::system_status())
+                                .await;
                     }
                     if result.is_ok() {
                         // Generate boot time after earlier USB writes complete,
                         // so opening the port cannot release an old timestamp.
-                        result = send_message(sender, &mut sequence, &system_time()).await;
+                        result =
+                            send_message(sender, &mut sequence, &mavlink_core::system_time()).await;
                     }
                     if result.is_ok() && ticks.is_multiple_of(5) {
-                        result = send_message(sender, &mut sequence, &status_text()).await;
+                        result =
+                            send_message(sender, &mut sequence, &mavlink_core::status_text()).await;
                     }
                     // USB writes can wait while the host's serial port is closed.
                     // Skip missed periods rather than bursting old heartbeats.
@@ -195,15 +201,9 @@ async fn send_message<'d, D: Driver<'d>>(
     sequence: &mut u8,
     message: &MavMessage,
 ) -> Result<(), EndpointError> {
-    let header = MavHeader {
-        system_id: SYSTEM_ID,
-        component_id: COMPONENT_ID,
-        sequence: *sequence,
-    };
-    *sequence = sequence.wrapping_add(1);
-    let mut frame = MAVLinkV2MessageRaw::new();
-    frame.serialize_message(header, message);
-    write_transfer(sender, frame.raw_bytes()).await
+    let mut frame = [0u8; mavlink::MAX_FRAME_SIZE];
+    let len = mavlink_core::encode(sequence, message, &mut frame);
+    write_transfer(sender, &frame[..len]).await
 }
 
 async fn write_transfer<'d, D: Driver<'d>>(
@@ -245,8 +245,8 @@ async fn receive<'d, D: Driver<'d>>(
             for &byte in &packet[..n] {
                 if parser.receiving() || matches!(byte, 0xfe | 0xfd) {
                     command_line = CommandLine::new();
-                    if let Some((header, message)) = parser.push(byte) {
-                        handle_message(header, message, replies, parameters).await;
+                    if let Some(decoded) = parser.push(byte) {
+                        handle_message(decoded, replies, parameters).await;
                     }
                 } else {
                     match command_line.push(byte) {
@@ -301,321 +301,18 @@ async fn receive<'d, D: Driver<'d>>(
 // Keep PING and command 520 for ground stations using the older discovery flow.
 #[allow(deprecated)]
 async fn handle_message(
-    header: MavHeader,
-    message: MavMessage,
+    decoded: mavlink_core::Decoded,
     replies: &Replies,
     parameters: &ParameterManager<'_>,
 ) {
-    if message
-        .target_system_id()
-        .is_some_and(|id| id != 0 && id != SYSTEM_ID)
-        || message
-            .target_component_id()
-            .is_some_and(|id| id != 0 && id != COMPONENT_ID)
-    {
-        return;
+    let mut reply = mavlink_core::Reply::EMPTY;
+    mavlink_core::handle(decoded.header, decoded.message, parameters, &mut reply).await;
+    for message in reply.drain() {
+        replies.send(Outbound::Message(message)).await;
     }
-
-    match message {
-        MavMessage::PARAM_REQUEST_LIST(_) => {
-            for entry in REGISTRY {
-                replies
-                    .send(Outbound::Message(parameter(parameters, entry.id)))
-                    .await;
-            }
-        }
-        MavMessage::PARAM_REQUEST_READ(data) => {
-            let id = if data.param_index >= 0 {
-                Id::from_index(data.param_index as usize)
-            } else {
-                data.param_id.to_str().ok().and_then(Id::from_name)
-            };
-            if let Some(id) = id {
-                replies
-                    .send(Outbound::Message(parameter(parameters, id)))
-                    .await;
-            }
-        }
-        MavMessage::PARAM_SET(data) => {
-            if let Some(id) = data.param_id.to_str().ok().and_then(Id::from_name) {
-                let error = if data.param_type == MavParamType::MAV_PARAM_TYPE_REAL32 {
-                    parameters
-                        .set(id, data.param_value)
-                        .err()
-                        .map(|error| error.message())
-                } else {
-                    Some("PARAM_SET: expected REAL32")
-                };
-                replies
-                    .send(Outbound::Message(parameter(parameters, id)))
-                    .await;
-                if let Some(error) = error {
-                    replies
-                        .send(Outbound::Message(parameter_warning(error)))
-                        .await;
-                }
-            }
-        }
-        MavMessage::PING(data) if data.target_system == 0 => {
-            replies
-                .send(Outbound::Message(MavMessage::PING(PING_DATA {
-                    time_usec: data.time_usec,
-                    seq: data.seq,
-                    target_system: header.system_id,
-                    target_component: header.component_id,
-                })))
-                .await;
-        }
-        MavMessage::TIMESYNC(data) if data.tc1 == 0 => {
-            replies
-                .send(Outbound::Message(MavMessage::TIMESYNC(TIMESYNC_DATA {
-                    tc1: (Instant::now().as_micros() * 1000) as i64,
-                    ts1: data.ts1,
-                    ..Default::default()
-                })))
-                .await;
-        }
-        MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_PREFLIGHT_STORAGE => {
-            let result = if data.param1 == 1.0 {
-                parameters.save(crate::OUTPUT_STATE).await.map(|_| ())
-            } else if data.param1 == 0.0 {
-                parameters.load().await.map(|_| ())
-            } else {
-                replies
-                    .send(Outbound::Message(command_ack(
-                        header,
-                        data.command,
-                        MavResult::MAV_RESULT_UNSUPPORTED,
-                    )))
-                    .await;
-                return;
-            };
-            let ack = if result.is_ok() {
-                MavResult::MAV_RESULT_ACCEPTED
-            } else {
-                MavResult::MAV_RESULT_FAILED
-            };
-            replies
-                .send(Outbound::Message(command_ack(header, data.command, ack)))
-                .await;
-            if result.is_err() {
-                replies
-                    .send(Outbound::Message(parameter_warning(
-                        "Parameter storage failed; see !params",
-                    )))
-                    .await;
-            }
-        }
-        MavMessage::COMMAND_LONG(data) => {
-            let mut reboot = false;
-            let response = match data.command {
-                MavCmd::MAV_CMD_REQUEST_MESSAGE => match data.param1 as u32 {
-                    0 => Some(heartbeat()),
-                    1 => Some(system_status()),
-                    2 => Some(system_time()),
-                    148 => Some(autopilot_version()),
-                    253 => Some(status_text()),
-                    _ => None,
-                },
-                MavCmd::MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES => Some(autopilot_version()),
-                MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN if data.param1 == 3.0 => {
-                    reboot = true;
-                    None
-                }
-                _ => None,
-            };
-            let supported = response.is_some() || reboot;
-            if let Some(response) = response {
-                replies.send(Outbound::Message(response)).await;
-            }
-            replies
-                .send(Outbound::Message(command_ack(
-                    header,
-                    data.command,
-                    if supported {
-                        MavResult::MAV_RESULT_ACCEPTED
-                    } else {
-                        MavResult::MAV_RESULT_UNSUPPORTED
-                    },
-                )))
-                .await;
-            if reboot {
-                replies
-                    .send(Outbound::Bootloader { console_ack: false })
-                    .await;
-            }
-        }
-        _ => {}
-    }
-}
-
-fn heartbeat() -> MavMessage {
-    MavMessage::HEARTBEAT(HEARTBEAT_DATA {
-        custom_mode: 0,
-        mavtype: MavType::MAV_TYPE_GENERIC,
-        autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
-        base_mode: if crate::OUTPUT_STATE.armed {
-            MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED
-        } else {
-            MavModeFlag::empty()
-        },
-        system_status: MavState::MAV_STATE_STANDBY,
-        mavlink_version: 3,
-    })
-}
-
-fn status_text() -> MavMessage {
-    MavMessage::STATUSTEXT(STATUSTEXT_DATA {
-        severity: MavSeverity::MAV_SEVERITY_INFO,
-        text: concat!(
-            "Rust FMUv6X v",
-            env!("CARGO_PKG_VERSION"),
-            " running; USB MAVLink OK"
-        )
-        .into(),
-        ..Default::default()
-    })
-}
-
-fn system_status() -> MavMessage {
-    MavMessage::SYS_STATUS(SYS_STATUS_DATA {
-        // The explicit validity/staleness flag is available in !metrics. Before
-        // the first valid window retain the baseline's zero load field.
-        load: crate::diagnostics::cpu_load().unwrap_or(0),
-        voltage_battery: u16::MAX,
-        current_battery: -1,
-        battery_remaining: -1,
-        ..Default::default()
-    })
-}
-
-fn system_time() -> MavMessage {
-    MavMessage::SYSTEM_TIME(SYSTEM_TIME_DATA {
-        time_unix_usec: 0,
-        time_boot_ms: Instant::now().as_millis() as u32,
-    })
-}
-
-fn autopilot_version() -> MavMessage {
-    let uid = embassy_stm32::uid::uid();
-    let mut uid2 = [0u8; 18];
-    uid2[..uid.len()].copy_from_slice(&uid);
-    MavMessage::AUTOPILOT_VERSION(AUTOPILOT_VERSION_DATA {
-        capabilities: MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
-            | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_C_CAST,
-        flight_sw_version: v6x_rust_led::build_info::FLIGHT_SW_VERSION,
-        flight_custom_version: v6x_rust_led::build_info::SOURCE_ID.to_le_bytes(),
-        vendor_id: 0x1209,
-        product_id: 0x0001,
-        uid: u64::from_le_bytes(uid[..8].try_into().unwrap()),
-        uid2,
-        ..Default::default()
-    })
-}
-
-fn parameter(parameters: &ParameterManager<'_>, id: Id) -> MavMessage {
-    MavMessage::PARAM_VALUE(PARAM_VALUE_DATA {
-        param_id: id.definition().name.into(),
-        param_value: parameters.get(id),
-        param_type: MavParamType::MAV_PARAM_TYPE_REAL32,
-        param_count: COUNT as u16,
-        param_index: id as u16,
-    })
-}
-
-fn parameter_warning(text: &'static str) -> MavMessage {
-    MavMessage::STATUSTEXT(STATUSTEXT_DATA {
-        severity: MavSeverity::MAV_SEVERITY_WARNING,
-        text: text.into(),
-        ..Default::default()
-    })
-}
-
-fn command_ack(header: MavHeader, command: MavCmd, result: MavResult) -> MavMessage {
-    MavMessage::COMMAND_ACK(COMMAND_ACK_DATA {
-        command,
-        result,
-        target_system: header.system_id,
-        target_component: header.component_id,
-        ..Default::default()
-    })
-}
-
-/// Bounded packet assembly; USB packet boundaries do not delimit MAVLink frames.
-struct FrameParser {
-    bytes: [u8; mavlink::MAX_FRAME_SIZE],
-    len: usize,
-    expected: usize,
-}
-
-impl FrameParser {
-    fn new() -> Self {
-        Self {
-            bytes: [0; mavlink::MAX_FRAME_SIZE],
-            len: 0,
-            expected: 0,
-        }
-    }
-
-    fn receiving(&self) -> bool {
-        self.len != 0
-    }
-
-    fn push(&mut self, byte: u8) -> Option<(MavHeader, MavMessage)> {
-        if self.len == 0 && !matches!(byte, 0xfe | 0xfd) {
-            return None;
-        }
-        self.bytes[self.len] = byte;
-        self.len += 1;
-        if self.len == 2 {
-            self.expected = usize::from(byte) + if self.bytes[0] == 0xfe { 8 } else { 12 };
-        }
-        if self.len == 3 && self.bytes[0] == 0xfd && byte & 1 != 0 {
-            self.expected += 13;
-        }
-        if self.expected == 0 || self.len < self.expected {
-            return None;
-        }
-
-        let result = self.parse();
-        self.len = 0;
-        self.expected = 0;
-        result
-    }
-
-    fn parse(&self) -> Option<(MavHeader, MavMessage)> {
-        if self.bytes[0] == 0xfe {
-            let mut raw = MAVLinkV1MessageRaw::new();
-            raw.as_mut_slice()[..self.len].copy_from_slice(&self.bytes[..self.len]);
-            if !raw.has_valid_crc::<MavMessage>() {
-                return None;
-            }
-            let header = MavHeader {
-                sequence: raw.sequence(),
-                system_id: raw.system_id(),
-                component_id: raw.component_id(),
-            };
-            MavMessage::parse(
-                MavlinkVersion::V1,
-                u32::from(raw.message_id()),
-                raw.payload(),
-            )
-            .ok()
-            .map(|message| (header, message))
-        } else {
-            let mut raw = MAVLinkV2MessageRaw::new();
-            raw.as_mut_slice()[..self.len].copy_from_slice(&self.bytes[..self.len]);
-            if raw.incompatibility_flags() != 0 || !raw.has_valid_crc::<MavMessage>() {
-                return None;
-            }
-            let header = MavHeader {
-                sequence: raw.sequence(),
-                system_id: raw.system_id(),
-                component_id: raw.component_id(),
-            };
-            MavMessage::parse(MavlinkVersion::V2, raw.message_id(), raw.payload())
-                .ok()
-                .map(|message| (header, message))
-        }
+    if reply.reboot {
+        replies
+            .send(Outbound::Bootloader { console_ack: false })
+            .await;
     }
 }

@@ -1,7 +1,7 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-10-31。**P0、P1、P3a 完成；P4b-a、PL-a 软件门通过，实物集中待 H-02/03/04；M1 未开始。**
-规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [PL-a](docs/acceptance/pl-a/README.md)
+更新：2026-11-01。**P0、P1、P3a 完成；P4b-a、PL-a、P2 软件门通过，实物集中待 H-02/03/04 与工程师接线；M1 未开始。**
+规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md)
 
 ## 执行规则
 
@@ -36,7 +36,7 @@ P1 最终普通回装为 `a946a529360eac83`；当前板上为 P3a 普通 Rust `1
 - [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
 - [ ] **PL-a / LOG-A01～05**：LOG-A01～04 软件门已通过；待 H-04 做实物解析、断电恢复和卡故障。[证据](docs/acceptance/pl-a/README.md)；P4b-a 未关闭，不放行依赖阶段。
 - [ ] **P4b-g / GNSS-01～03**：H-RTK 身份、Fix2/Auxiliary、有效性与日志。依赖 P4b-a、PL-a、H-10。
-- [ ] **P2 / MAV-01～03**：USB/TELEM1、QGC 连接/重连及版本显示。依赖 P1、P3a。
+- [ ] **P2 / MAV-01～03**：USB/TELEM1 双链路、QGC 连接/重连及版本显示；MAV-01 软件门已通过，待 H-03 与工程师接线做双链路/重连实测。[证据](docs/acceptance/p2/README.md)。依赖 P1、P3a。
 - [ ] **P3 / PARAM-01～02**：标准参数读设、合法/非法值回显及保存读回。依赖 P3a、P2。
 - [ ] **P4 / SENS-01～04**：唯一 IMU 的 ID/方向、采样/校准和时间戳。依赖 P1、P3a、PL-a。
 - [ ] **P6a / EST-01～02**：Mahony AHRS、姿态日志/QGC 方向；相对 yaw。依赖 P4、P2、PL-a。

@@ -209,8 +209,9 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | 软件 reboot/故障 | BKP0=b007b007复位；BKP16..31版本化CRC故障；HardFault先切1 KiB栈；共享wrapper匹配RTC/LSE，HAL后比较全部BKP及BDCR，不再补写BKP | `src/backup_domain.rs`、`src/fault.rs`、`src/fault_record.rs`；[故障审查](acceptance/p1/fault-review.md) |
 | FDCAN1 软件配置 | PD0/PD1，HSE 16 MHz，1 Mbit/s，采样点 87.5%；IT0/1=P2，TIM6_DAC I/O executor=P4；FIFO、单次发送、自动重传关闭 | `src/dronecan_can.rs`、`src/platform.rs`；[P4b-a 软件记录](acceptance/p4b-a/README.md)，电气/HIL 待 H-02/03 |
 | SDMMC2 软件配置 | PC13 默认低；显式 `!logger-start` 后高电平供电；PD6/PD7/PB14/PB15/PG11/PB4 四线、P7 IRQ、内部 IDMA、FAT 单写者 | `src/sd_logger.rs`、`src/main.rs`；[PL-a 软件记录](acceptance/pl-a/README.md)，卡兼容/时延/故障待 H-04 |
+| TELEM1 软件配置 | UART7 RX PF6、TX PE8；115200 8N1、DMA1_CH0/CH1、Async 传输；独立序列/解析/节拍，RTS PF8/CTS PE10 未启用待 H-03 | `src/mavlink_uart7.rs`、`src/main.rs`；[P2 软件记录](acceptance/p2/README.md)，线序/电平/流控待 H-03 |
 | 安装 bootloader 的识别 | 实测3185:0035、`PX4 BL FMU v6X.x`、协议v5、board ID=53；构建版本未知；独立QGC往返及普通回装通过 | [HIL](acceptance/p1/20261031-hil.md) |
-| QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION显示归P2 | [QGC记录](qgc-notes.md) |
+| QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION固件已就绪，连接/重连显示待 HIL 复核 | [QGC记录](qgc-notes.md)、[P2 软件记录](acceptance/p2/README.md) |
 
 P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。FRAM、IMU、CAN和SD按后续阶段验收。
 

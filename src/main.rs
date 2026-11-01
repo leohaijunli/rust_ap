@@ -18,6 +18,10 @@ mod fault_dump;
 #[cfg(not(feature = "fault-dump"))]
 mod fram;
 #[cfg(not(feature = "fault-dump"))]
+mod mavlink_core;
+#[cfg(not(feature = "fault-dump"))]
+mod mavlink_uart7;
+#[cfg(not(feature = "fault-dump"))]
 mod mavlink_usb;
 #[cfg(not(feature = "fault-dump"))]
 mod parameter_manager;
@@ -30,6 +34,7 @@ mod usb_console;
 
 use embassy_stm32::bind_interrupts;
 use embassy_stm32::sdmmc::InterruptHandler as SdmmcInterruptHandler;
+use embassy_stm32::usart::InterruptHandler as UsartInterruptHandler;
 use embassy_stm32::usb::InterruptHandler as UsbInterruptHandler;
 
 #[cfg(not(feature = "fault-dump"))]
@@ -77,6 +82,10 @@ bind_interrupts!(struct UsbIrqs {
 
 bind_interrupts!(struct SdIrqs {
     SDMMC2 => SdmmcInterruptHandler<embassy_stm32::peripherals::SDMMC2>;
+});
+
+bind_interrupts!(struct Uart7Irqs {
+    UART7 => UsartInterruptHandler<embassy_stm32::peripherals::UART7>;
 });
 
 #[cfg(not(feature = "fault-dump"))]
@@ -188,6 +197,22 @@ async fn application(p: Peripherals) {
         embassy_stm32::sdmmc::Config::default(),
     );
 
+    // TELEM1 is UART7 (RX PF6, TX PE8). 115200 8N1 is the first-round link
+    // candidate; hardware flow control (RTS PF8 / CTS PE10) is deferred until
+    // the physical adapter is confirmed under H-03.
+    let mut uart7_config = embassy_stm32::usart::Config::default();
+    uart7_config.baudrate = 115_200;
+    let uart7 = embassy_stm32::usart::Uart::new(
+        p.UART7,
+        p.PF6,
+        p.PE8,
+        Uart7Irqs,
+        p.DMA1_CH0,
+        p.DMA1_CH1,
+        uart7_config,
+    )
+    .expect("UART7 configuration");
+
     // USB CDC ACM on the FS OTG peripheral (PA11/PA12), clocked from PLL3Q.
     let mut ep_out_buffer = [0u8; 256];
     let mut usb_config = embassy_stm32::usb::Config::default();
@@ -232,41 +257,44 @@ async fn application(p: Peripherals) {
         join(
             mavlink_usb::run(class, &phy, &eth_power, &session, &parameters, &dronecan),
             join(
-                dronecan_can::run(&parameters, &dronecan),
+                mavlink_uart7::run(uart7, &parameters),
                 join(
+                    dronecan_can::run(&parameters, &dronecan),
                     join(
-                        sd_logger::run(sdmmc, sd_power, &parameters),
-                        sd_logger::health_task(),
-                    ),
-                    join(
-                        async {
-                            loop {
-                                let half_period_us =
-                                    (500_000.0 / parameters.get(Id::LinkLedHz)) as u64;
-                                // All MDIO transactions finish before yielding to the USB task.
-                                {
-                                    let mut phy = phy.borrow_mut();
-                                    if !phy.found() {
-                                        phy.init();
+                        join(
+                            sd_logger::run(sdmmc, sd_power, &parameters),
+                            sd_logger::health_task(),
+                        ),
+                        join(
+                            async {
+                                loop {
+                                    let half_period_us =
+                                        (500_000.0 / parameters.get(Id::LinkLedHz)) as u64;
+                                    // All MDIO transactions finish before yielding to the USB task.
+                                    {
+                                        let mut phy = phy.borrow_mut();
+                                        if !phy.found() {
+                                            phy.init();
+                                        }
+                                        if phy.found() && !phy.led_control_ready() {
+                                            phy.configure_leds();
+                                        }
+                                        let on = (Instant::now().as_micros() / half_period_us)
+                                            .is_multiple_of(2);
+                                        phy.set_link_led(on);
+                                        green.set_level(if on { Level::Low } else { Level::High });
+                                        red.set_level(if fault::present() {
+                                            Level::Low
+                                        } else {
+                                            Level::High
+                                        });
                                     }
-                                    if phy.found() && !phy.led_control_ready() {
-                                        phy.configure_leds();
-                                    }
-                                    let on = (Instant::now().as_micros() / half_period_us)
-                                        .is_multiple_of(2);
-                                    phy.set_link_led(on);
-                                    green.set_level(if on { Level::Low } else { Level::High });
-                                    red.set_level(if fault::present() {
-                                        Level::Low
-                                    } else {
-                                        Level::High
-                                    });
-                                }
 
-                                Timer::after_micros(half_period_us).await;
-                            }
-                        },
-                        diagnostics::stack_monitor(),
+                                    Timer::after_micros(half_period_us).await;
+                                }
+                            },
+                            diagnostics::stack_monitor(),
+                        ),
                     ),
                 ),
             ),

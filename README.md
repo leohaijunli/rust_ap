@@ -28,6 +28,10 @@ SDMMC2/FAT path pass software checks; H-04 remains. PL-a supersedes the P4b-a
 logging path, so neither package has been uploaded; see
 [P4b-a](docs/acceptance/p4b-a/README.md) and
 [PL-a](docs/acceptance/pl-a/README.md) evidence.
+**P2 software is also ready:** a transport-agnostic MAVLink core now drives both
+USB CDC and TELEM1 UART7 (115200 8N1) with independent sequences, queues and
+heartbeat pacing, so the dual-link/relink and version-display checks only await
+the H-03 wiring. See [P2 evidence](docs/acceptance/p2/README.md).
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
 
