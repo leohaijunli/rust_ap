@@ -5,7 +5,7 @@ Pixhawk 6X / FMUv6X, using `no_std`, `cortex-m-rt`, `embassy-stm32`, and
 `embassy-usb`. The existing PX4 USB bootloader starts the application.
 
 - **PWR:** steady on; the Ethernet PHY stays powered.
-- **LINK:** 500 ms on, 500 ms off (1 Hz).
+- **LINK:** parameter-controlled; 1 Hz default, currently saved at 2 Hz.
 - **USB CDC ACM:** MAVLink 2 telemetry, PHY status, and software reboot to the bootloader.
 
 Development now follows the selected **A3 hybrid** approach. The first integration
@@ -17,7 +17,10 @@ software, on-board timing, restart/fault recovery, and the independent QGC round
 trip passed. The final normal Rust restore completed at 21:28 UTC on 2026-10-31,
 with source **`a946a529360eac83`**, disarmed, fault injection disabled, and no valid
 retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
-[essential-check plan](plan.md). Next is P3a: FRAM identification/backup and parameters.
+[essential-check plan](plan.md). **P3a is complete:** FRAM backup, parameter API,
+atomic save and power-cycle readback passed. The board now runs source
+**`1d3d08e3dd64f3ac`**, with `LINK_LED_HZ=2.0` saved; see
+[P3a evidence](docs/acceptance/p3a/README.md). Next is DroneCAN zero-output bring-up.
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
 
@@ -250,12 +253,42 @@ and firmware type **Generic**:
 | `SYSTEM_TIME` | 1 Hz; the actual MCU boot time in milliseconds |
 | `STATUSTEXT` | At connection, every 5 heartbeats, and on request; identifies Rust firmware |
 | `AUTOPILOT_VERSION` | At connection and on request; Cargo version, source ID (little-endian custom version), STM32 UID |
-| `PARAM_VALUE` | Read-only `MAV_SYS_ID` and `LINK_LED_HZ` discovery/read replies |
+| `PARAM_VALUE` | Full-table discovery, by-name/index read, and validated `PARAM_SET` echo |
+| `COMMAND_ACK` | `MAV_CMD_PREFLIGHT_STORAGE` (0 load / 1 save), message requests, reboot |
 
 Receive supports unsigned MAVLink v1/v2, fragmented frames, CRC validation,
 `PING`, `TIMESYNC`, and basic `COMMAND_LONG` replies. Unsupported commands
 return an explicit unsupported result. Reboot-to-bootloader is supported via
 `MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN`, parameter 1 = `3`.
+
+### Parameters and FRAM
+
+The identified FM25V02A (32 KiB) retains the pre-write PX4 data below `0x7800`.
+Rust parameters use two 1 KiB slots at `0x7800` and `0x7C00`; each record carries
+a format version, a registry schema tag, a generation, and an IEEE CRC-32. A
+save invalidates the inactive slot, writes and verifies its body, then commits
+one byte, so power loss keeps the previous record.
+
+`MAV_SYS_ID` is read-only. `LINK_LED_HZ` accepts 0.1–10 Hz, applies on the next
+blink period, and is only persisted by an explicit save while disarmed and with
+outputs off. `PARAM_SET` always echoes the actual value and reports rejected
+values in `STATUSTEXT`.
+
+```sh
+.venv/bin/python tools/fram_backup.py --source-id <source> --output <new-dir>
+.venv/bin/python tools/p3a_parameters.py --mode save   --source-id <source> --backup <fram.bin> --output <new-dir>
+.venv/bin/python tools/p3a_parameters.py --mode verify --source-id <source> --backup <fram.bin> --output <new-dir> --save-result <save>/result.json
+```
+
+The save/verify commands are the one-time P3a acceptance workflow, pinned to
+the verified pre-write backup. Do not rerun save on the accepted board; use the
+parameter API or console for ordinary management.
+
+The text console adds `!fram`, `!fram-read <hex>`, `!params`, `!param-save`,
+and `!param-load`. Adding a parameter means one entry in
+`src/parameters.rs`; transports and storage follow automatically, and an
+incompatible registry falls back to defaults instead of migrating silently.
+See [architecture](docs/architecture.md#p3a-参数-api-与存储契约).
 
 Periodic messages are generated from current state. Missed send periods are
 skipped instead of replayed when a host opens the serial port later. USB reset

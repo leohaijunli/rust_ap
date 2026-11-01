@@ -129,8 +129,46 @@ USB 与 TELEM1 分别维护 MAVLink 序列号、RX 解析器、发送队列和 s
 1. 名称 ≤16 ASCII 且唯一；REAL32 对外，整数/枚举必须精确可逆；拒绝 NaN/Inf、越界、非整数枚举和只读写入。
 2. `PARAM_REQUEST_LIST` 限速发送完整表，`param_count/index` 稳定；`PARAM_REQUEST_READ` 支持名称/索引。
 3. `PARAM_SET` 校验后应用并回显 **实际值**；失败回显保留值并有原因。两条链路访问同一表，重复设置幂等，节点/总线配置按明确的重启/生效时机处理。
-4. 当前值、待保存值与保存成功分开；持久化只有 disarmed 且输出关闭时允许。P3a 先只读识别/备份 FRAM 再决定布局；内部 flash 会受原 bootloader 应用擦除影响。
+4. 当前值、待保存值与保存成功分开；持久化只有 disarmed 且输出关闭时允许。P3a 已只读识别/备份 FRAM 并确定双槽布局；内部 flash 会受原 bootloader 应用擦除影响。
 5. QGC 参数页加独立 pymavlink 脚本检查全表、按名/索引访问、合法/非法设置、双链路一致性、掉电后的实际保存结果。QGC 元数据和专有校准向导不是 M1 的参数协议前置。
+
+### P3a 参数 API 与存储契约
+
+参数只有一份静态注册表 `src/parameters.rs`：每条包含名称、类型、默认值、范围、只读/生效时机。`MAV_SYS_ID` 为只读整数，`LINK_LED_HZ` 为 0.1–10 Hz 实数、下一个灯周期生效。
+
+| 层 | 位置 | 职责 |
+| --- | --- | --- |
+| 注册表与 RAM 状态 | `src/parameters.rs`（no_std、host 可测） | `Id` 类型键、名称/索引查找、范围与整数校验、`Parameters::{get,set,snapshot,restore,is_dirty}` |
+| 存储格式与提交 | `src/parameter_store.rs`（无 HAL） | 双槽记录编码/解码、schema 标签、CRC、生成号选择、写入计划 |
+| 设备服务 | `src/parameter_manager.rs` | 唯一持有 FRAM；`get/set/is_dirty/status` 与异步 `load/save`，保存后按“已校验快照”确认 |
+| 传输 | `src/mavlink_usb.rs`、`src/usb_console.rs` | MAVLink 读设/保存与 `!params`、`!param-save`、`!param-load` |
+
+**新增参数**：在 `parameter_table!` 加一条，功能侧用 `Id::新名称` 读取即可；MAVLink 全表/按名/按索引、FRAM 记录和诊断输出自动跟随。名称 ≤16 个 ASCII 大写/数字/下划线且唯一，默认值必须在范围内；只读项写 `ReadOnly`。
+
+功能侧共用主任务创建的 `ParameterManager`（当前为单执行器服务）；`set` 返回实际是否改变，错误不改变 RAM，只有 `save` 成功才确认存储快照：
+
+```rust
+let hz = parameters.get(Id::LinkLedHz);
+let changed = parameters.set(Id::LinkLedHz, 2.0); // Result<bool, parameters::Error>
+let dirty = parameters.is_dirty();
+let saved = parameters.save(output_state).await; // Result<Saved, manager::Error>
+let loaded = parameters.load().await; // 从 FRAM 读回；无兼容记录则默认值
+```
+
+**FRAM 布局**（实物 FM25V02A，32 KiB，实测 `7F…C2 22 08`、SR=0x00）：
+
+| 地址 | 内容 |
+| --- | --- |
+| `0x0000–0x77FF` | 现有 PX4 参数/校准数据；Rust 不写，写入前已全量备份 |
+| `0x7800–0x7BFF` | Rust 参数槽 A（1024 B） |
+| `0x7C00–0x7FFF` | Rust 参数槽 B（1024 B） |
+
+记录（小端）：`0` 提交字节 `0xA5`、`1..5` 魔数 `RPAR`、`5` 保留 0、`6` 格式版本、`8` 注册表 schema 标签、`12` 生成号、`16` 参数个数、`18` 负载字节数、`20` 起按注册表顺序的 f32、末尾 IEEE CRC-32（覆盖 `1..负载末`）。
+
+- **提交**：先把目标槽首字节写 0 使其失效 → 写其余字节并逐块读回 → 最后只写首字节 `0xA5` → 整槽读回并解码。任一时刻掉电，最多丢失本次新值，另一槽保持上一个有效版本。
+- **加载**：解码两槽，按生成号（串行回绕比较）取最新有效记录；无有效记录则用默认值。启动和 `!param-load` 都不写 FRAM。
+- **保存许可**：`OutputState{armed, outputs_enabled}` 任一为真即拒绝。P3a 无解锁/输出通路，固定为 false；P5a 接入同一仲裁真源后替换该常量。
+- **升级策略**：格式版本或 schema 标签不匹配的槽被拒绝；有另一兼容槽则加载它，均无效才用默认值。`!params` 显示槽状态与原因，不做静默迁移；确需迁移时提升格式版本并单独实现。应用重刷和 PX4 bootloader 上传只擦内部 flash，FRAM 保留；回到 PX4 后该器件仍被其当作参数 MTD，后续 PX4 保存可能覆盖本区，恢复依据是写入前的全量备份。
 
 ## 7. 启动与实现顺序
 

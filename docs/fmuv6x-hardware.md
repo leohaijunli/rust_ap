@@ -145,7 +145,7 @@ P4.0 实测记录至少包含：日期、固件 hash、器件 ID、总线/CS/地
 | 项 | 值 / 结论 | PX4 来源（文件:行） |
 | --- | --- | --- |
 | 参数 FRAM 总线 | SPI5，CS PG7 | `boards/px4/fmu-v6x/src/spi.cpp:102-104`；`boards/px4/fmu-v6x/nuttx-config/include/board.h:415-441` |
-| 参数 FRAM 型号/布局 | MTD 注释 FM25V02A，32 KiB；一个 MTD_PARAMETERS 区 `/fs/mtd_params`。实物型号/容量待 P3a 只读识别 | `boards/px4/fmu-v6x/src/mtd.cpp:39-43`；`boards/px4/fmu-v6x/src/mtd.cpp:54-64` |
+| 参数 FRAM 型号/布局 | 实物已识别为 **FM25V02A，32 KiB**：RDID=`7F 7F 7F 7F 7F 7F C2 22 08`、SR=0x00、MODE3、SPI5 配置读回 937.5 kHz。PX4 为一个 MTD_PARAMETERS 区 `/fs/mtd_params`；写入前备份末个非零字节在 `0x6C57`，`0x7800–0x7FFF` 当时全 0，用作 Rust 参数双槽 | `boards/px4/fmu-v6x/src/mtd.cpp:39-43`；`boards/px4/fmu-v6x/src/mtd.cpp:54-64`；[P3a 实测](acceptance/p3a/README.md) |
 | base EEPROM | 注释 24LC64T，I2C3 @0x51；分区为板级版本/网络信息，不作本项目参数区 | `boards/px4/fmu-v6x/src/mtd.cpp:44-47`；`boards/px4/fmu-v6x/src/mtd.cpp:66-82` |
 | IMU EEPROM | 注释 24LC64T，I2C4 @0x50；含校准/修订/身份分区，不作本项目参数区 | `boards/px4/fmu-v6x/src/mtd.cpp:48-51`；`boards/px4/fmu-v6x/src/mtd.cpp:84-104` |
 | SD 总线 | **SDMMC2**；CK PD6、CMD PD7、D0 PB14、D1 PB15、D2 PG11、D3 PB4 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:479-496` |

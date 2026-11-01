@@ -171,15 +171,24 @@ def check(link, expected_version, source_id=None):
 
     link.mav.param_request_list_send(1, 1)
     parameters = {}
-    for _ in range(2):
-        message = receive(link, "PARAM_VALUE")
-        assert message.param_count == 2
+    message = receive(link, "PARAM_VALUE")
+    count = message.param_count
+    assert count > 0
+    indices = set()
+    for index in range(count):
+        if index:
+            message = receive(link, "PARAM_VALUE")
+        assert message.param_count == count and 0 <= message.param_index < count
+        assert message.param_index not in indices and message.param_id not in parameters
+        assert math.isfinite(message.param_value)
+        indices.add(message.param_index)
         parameters[message.param_id] = message.param_value
-    assert parameters == {"MAV_SYS_ID": 1.0, "LINK_LED_HZ": 1.0}, parameters
+    assert parameters["MAV_SYS_ID"] == 1.0, parameters
+    assert 0.1 <= parameters["LINK_LED_HZ"] <= 10.0, parameters
     print(f"Parameter discovery: {parameters}")
     link.mav.param_request_read_send(1, 1, b"LINK_LED_HZ", -1)
     message = receive(link, "PARAM_VALUE", lambda msg: msg.param_id == "LINK_LED_HZ")
-    assert message.param_value == 1.0
+    assert message.param_value == parameters["LINK_LED_HZ"]
 
     request(link, 999999)
     ack = receive(link, "COMMAND_ACK", lambda msg: msg.command == 512)

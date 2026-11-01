@@ -1,7 +1,7 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-10-31。**P0、P1 完成；下一步 P3a；M1 未开始。**
-规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md)
+更新：2026-10-31。**P0、P1、P3a 完成；下一步 P4b-a；M1 未开始。**
+规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md)
 
 ## 执行规则
 
@@ -28,12 +28,12 @@
 - [x] **独立 QGC 恢复**：USB 重插、Stable 上传/校验和 PX4 v1.17.0 运行已留档。
 - [x] **P1-01 / H-05 / P1-04 收口**：21:28 UTC 从 PX4 直接回装普通包，CRC/source、disarmed、fault_injection=false、故障 valid=false 全部通过；[最终回装](docs/acceptance/p1/20261031-hil.md#最终普通回装与p1结论)。
 
-P1 已关闭，当前板上为普通 Rust `a946a529360eac83`。Inspector 版本显示问题归 P2；FMU 灯目视项不适用，原参数/校准/FRAM 无备份。
+P1 最终普通回装为 `a946a529360eac83`；当前板上为 P3a 普通 Rust `1d3d08e3dd64f3ac`，disarmed、`LINK_LED_HZ=2.0` 已保存。Inspector 版本显示及主机重启后 CDC 零数据问题归 P2；FMU 灯目视项不适用。项目开始前原配置仍无备份，P3a 已备份写入前当前 FRAM。
 
 ## M1 前置阶段
 
-- [ ] **下一步 P3a / P3A-01～04**：FRAM 只读识别/备份、参数表与原子持久化。P1 依赖已满足。
-- [ ] **P4b-a / CAN-A01～04**：v0 协议、节点服务、ESC 映射/Status、零命令。依赖 P1、P3a、H-02/03；DNA 仅设备必需时加入。
+- [x] **P3a / P3A-01～04**：FM25V02A 全量备份、统一参数 API、双槽原子持久化、一次保存/掉电读回通过；[证据](docs/acceptance/p3a/README.md)。
+- [ ] **下一步 P4b-a / CAN-A01～04**：v0 协议、节点服务、ESC 映射/Status、零命令。P1/P3a 依赖已满足，待 H-02/03；DNA 仅设备必需时加入。
 - [ ] **PL-a / LOG-A01～05**：ULog、SDMMC2/FAT；独立解析、一次断电恢复和卡故障。依赖 P3a、P4b-a、H-04。
 - [ ] **P4b-g / GNSS-01～03**：H-RTK 身份、Fix2/Auxiliary、有效性与日志。依赖 P4b-a、PL-a、H-10。
 - [ ] **P2 / MAV-01～03**：USB/TELEM1、QGC 连接/重连及版本显示。依赖 P1、P3a。

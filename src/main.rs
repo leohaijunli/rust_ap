@@ -14,7 +14,11 @@ mod fault;
 #[cfg(feature = "fault-dump")]
 mod fault_dump;
 #[cfg(not(feature = "fault-dump"))]
+mod fram;
+#[cfg(not(feature = "fault-dump"))]
 mod mavlink_usb;
+#[cfg(not(feature = "fault-dump"))]
+mod parameter_manager;
 #[cfg(not(feature = "fault-dump"))]
 mod platform;
 #[cfg(not(feature = "fault-dump"))]
@@ -32,11 +36,15 @@ use embassy_futures::join::join;
 #[cfg(not(feature = "fault-dump"))]
 use embassy_stm32::gpio::{Input, Level, Output, OutputOpenDrain, Pull, Speed};
 #[cfg(not(feature = "fault-dump"))]
+use embassy_stm32::spi::{Config as SpiConfig, Spi, MODE_3};
+#[cfg(not(feature = "fault-dump"))]
+use embassy_stm32::time::Hertz;
+#[cfg(not(feature = "fault-dump"))]
 use embassy_stm32::usb::Driver;
 #[cfg(not(feature = "fault-dump"))]
 use embassy_stm32::Peripherals;
 #[cfg(not(feature = "fault-dump"))]
-use embassy_time::{Duration, Instant, Ticker, Timer};
+use embassy_time::{Instant, Timer};
 #[cfg(not(feature = "fault-dump"))]
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 #[cfg(not(feature = "fault-dump"))]
@@ -48,7 +56,7 @@ use static_cell::StaticCell;
 use eth_led::Lan8742;
 
 #[cfg(not(feature = "fault-dump"))]
-const LINK_HALF_PERIOD_MS: u64 = 500;
+use v6x_rust_led::parameters::Id;
 
 bind_interrupts!(struct UsbIrqs {
     OTG_FS => InterruptHandler<embassy_stm32::peripherals::USB_OTG_FS>;
@@ -91,6 +99,24 @@ async fn application(p: Peripherals) {
     let _not_armed = Input::new(p.PE6, Pull::Up);
     diagnostics::start(p.TIM7);
 
+    let fram_cs = Output::new(p.PG7, Level::High, Speed::Medium);
+    let mut fram_config = SpiConfig::default();
+    fram_config.mode = MODE_3;
+    fram_config.frequency = Hertz(1_000_000);
+    fram_config.gpio_speed = Speed::Medium;
+    let fram = fram::Fram::new(
+        Spi::new(
+            p.SPI5,
+            p.PF7,
+            p.PF11,
+            p.PH7,
+            p.DMA2_CH0,
+            p.DMA2_CH1,
+            fram_config,
+        ),
+        fram_cs,
+    );
+
     // The ETH LEDs are driven by the LAN8742A PHY. Power it up and give it
     // time to boot before touching the MDIO bus.
     // Keep PHY power (and its PWR LED) on throughout the application.
@@ -110,6 +136,11 @@ async fn application(p: Peripherals) {
     }
     let phy = RefCell::new(phy);
     blue.set_high();
+
+    let parameters = parameter_manager::ParameterManager::new(fram);
+    // PHY startup has already exceeded the FRAM power-up access delay.
+    // Load failures remain visible in !params while USB recovery stays available.
+    let _ = parameters.load().await;
 
     // USB CDC ACM on the FS OTG peripheral (PA11/PA12), clocked from PLL3Q.
     let mut ep_out_buffer = [0u8; 256];
@@ -153,11 +184,11 @@ async fn application(p: Peripherals) {
     join(
         usb.run(),
         join(
-            mavlink_usb::run(class, &phy, &eth_power, &session),
+            mavlink_usb::run(class, &phy, &eth_power, &session, &parameters),
             join(
                 async {
-                    let mut ticker = Ticker::every(Duration::from_millis(LINK_HALF_PERIOD_MS));
                     loop {
+                        let half_period_us = (500_000.0 / parameters.get(Id::LinkLedHz)) as u64;
                         // All MDIO transactions finish before yielding to the USB task.
                         {
                             let mut phy = phy.borrow_mut();
@@ -167,13 +198,10 @@ async fn application(p: Peripherals) {
                             if phy.found() && !phy.led_control_ready() {
                                 phy.configure_leds();
                             }
-                            let now = Instant::now().as_millis();
-                            phy.set_link_led((now / LINK_HALF_PERIOD_MS).is_multiple_of(2));
-                            green.set_level(if (now / LINK_HALF_PERIOD_MS).is_multiple_of(2) {
-                                Level::Low
-                            } else {
-                                Level::High
-                            });
+                            let on =
+                                (Instant::now().as_micros() / half_period_us).is_multiple_of(2);
+                            phy.set_link_led(on);
+                            green.set_level(if on { Level::Low } else { Level::High });
                             red.set_level(if fault::present() {
                                 Level::Low
                             } else {
@@ -181,7 +209,7 @@ async fn application(p: Peripherals) {
                             });
                         }
 
-                        ticker.next().await;
+                        Timer::after_micros(half_period_us).await;
                     }
                 },
                 diagnostics::stack_monitor(),

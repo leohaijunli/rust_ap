@@ -2,7 +2,11 @@ use core::cell::RefCell;
 use core::fmt::{self, Write};
 
 use crate::eth_led::Lan8742;
+use crate::fram;
+use crate::parameter_manager::ParameterManager;
 use embassy_stm32::gpio::Output;
+use v6x_rust_led::parameter_store::{self, OutputState};
+use v6x_rust_led::parameters::{schema_tag, REGISTRY};
 
 pub(crate) fn status(phy: &RefCell<Lan8742<'_>>, eth_power: &Output<'_>) -> Response {
     let mut response = Response::new();
@@ -40,6 +44,103 @@ pub(crate) fn report(command: Command) -> Response {
     response
 }
 
+pub(crate) async fn fram_report(command: Command, parameters: &ParameterManager<'_>) -> Response {
+    let mut response = Response::new();
+    let result = match command {
+        Command::Fram => match parameters.fram_info().await {
+            Ok(info) => {
+                let _ = write!(response, "FRAM schema=1 id=");
+                for byte in info.id {
+                    let _ = write!(response, "{byte:02x}");
+                }
+                let _ = writeln!(
+                    response,
+                    " supported={} bytes={} sr={:02x} mode=3 spi_hz={}",
+                    info.supported,
+                    if info.supported { fram::CAPACITY } else { 0 },
+                    info.status,
+                    info.spi_hz,
+                );
+                Ok(())
+            }
+            Err(error) => Err(error),
+        },
+        Command::FramRead(address) => {
+            let mut data = [0; fram::CHUNK];
+            match parameters.read_fram(address, &mut data).await {
+                Ok(()) => {
+                    let _ = write!(
+                        response,
+                        "FRAM_DATA addr={address:04x} len={} hex=",
+                        data.len()
+                    );
+                    for byte in data {
+                        let _ = write!(response, "{byte:02x}");
+                    }
+                    let _ = writeln!(response);
+                    Ok(())
+                }
+                Err(error) => Err(error),
+            }
+        }
+        _ => unreachable!(),
+    };
+    if let Err(error) = result {
+        let _ = writeln!(response, "ERR fram={error:?}");
+    }
+    response.finish();
+    response
+}
+
+pub(crate) async fn parameter_report(
+    command: Command,
+    parameters: &ParameterManager<'_>,
+    outputs: OutputState,
+) -> Response {
+    let mut response = Response::new();
+    match command {
+        Command::Parameters => {
+            let status = parameters.status();
+            let _ = writeln!(response, "PARAMS schema=1 storage={:?} valid={} dirty={} slot={} generation={} format={} registry={:08x} slot_a={:?} slot_b={:?} last_error={:?}",
+                status.load, status.active.is_some(), parameters.is_dirty(),
+                status.active.map_or(-1, |active| active.slot as i32),
+                status.active.map_or(0, |active| active.generation),
+                parameter_store::FORMAT_VERSION, schema_tag(), status.slots[0], status.slots[1], status.last_error);
+            let _ = write!(response, "PARAM_VALUES");
+            for entry in REGISTRY {
+                let _ = write!(response, " {}={}", entry.name, parameters.get(entry.id));
+            }
+            let _ = writeln!(response);
+        }
+        Command::ParamSave => match parameters.save(outputs).await {
+            Ok(saved) => {
+                let _ = writeln!(
+                    response,
+                    "PARAM_SAVE ok=true written={} slot={} generation={} dirty={}",
+                    saved.written,
+                    saved.active.slot as usize,
+                    saved.active.generation,
+                    parameters.is_dirty()
+                );
+            }
+            Err(error) => {
+                let _ = writeln!(response, "ERR param={error:?}");
+            }
+        },
+        Command::ParamLoad => match parameters.load().await {
+            Ok(state) => {
+                let _ = writeln!(response, "PARAM_LOAD storage={state:?}");
+            }
+            Err(error) => {
+                let _ = writeln!(response, "ERR param={error:?}");
+            }
+        },
+        _ => unreachable!(),
+    }
+    response.finish();
+    response
+}
+
 pub(crate) enum Command {
     Status,
     Bootloader,
@@ -48,6 +149,11 @@ pub(crate) enum Command {
     MetricsReset,
     Fault,
     FaultClear,
+    Fram,
+    FramRead(u16),
+    Parameters,
+    ParamSave,
+    ParamLoad,
     #[cfg(feature = "fault-injection")]
     Panic,
     #[cfg(feature = "fault-injection")]
@@ -84,11 +190,20 @@ impl CommandLine {
                     b"!metrics-reset" => Some(Command::MetricsReset),
                     b"!fault" => Some(Command::Fault),
                     b"!fault-clear" => Some(Command::FaultClear),
+                    b"!fram" => Some(Command::Fram),
+                    b"!params" => Some(Command::Parameters),
+                    b"!param-save" => Some(Command::ParamSave),
+                    b"!param-load" => Some(Command::ParamLoad),
                     #[cfg(feature = "fault-injection")]
                     b"!panic" => Some(Command::Panic),
                     #[cfg(feature = "fault-injection")]
                     b"!hardfault" => Some(Command::HardFault),
-                    _ => None,
+                    _ => line
+                        .strip_prefix(b"!fram-read ")
+                        .filter(|address| address.len() == 4)
+                        .and_then(|address| core::str::from_utf8(address).ok())
+                        .and_then(|address| u16::from_str_radix(address, 16).ok())
+                        .map(Command::FramRead),
                 }
             };
             self.len = 0;
