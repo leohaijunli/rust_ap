@@ -24,8 +24,9 @@ atomic save and power-cycle readback passed. The board now runs source
 bounded DroneCAN v0 core, node services, FDCAN1 adapter, and zero-only periodic
 output passed host/build checks; hardware mapping remains blocked by H-02/03.
 **PL-a software is also ready:** pure Rust ULog, bounded queues and the explicit-start
-SDMMC2/FAT path pass software checks; H-04 remains. Neither package has been
-uploaded; see [P4b-a](docs/acceptance/p4b-a/README.md) and
+SDMMC2/FAT path pass software checks; H-04 remains. PL-a supersedes the P4b-a
+logging path, so neither package has been uploaded; see
+[P4b-a](docs/acceptance/p4b-a/README.md) and
 [PL-a](docs/acceptance/pl-a/README.md) evidence.
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
