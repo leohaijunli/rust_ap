@@ -27,6 +27,9 @@ mod imu;
 #[path = "drivers/ina219.rs"]
 mod ina219;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/mavcan.rs"]
+mod mavcan;
+#[cfg(not(feature = "fault-dump"))]
 #[path = "comms/mavlink_core.rs"]
 mod mavlink_core;
 #[cfg(not(feature = "fault-dump"))]
@@ -219,6 +222,9 @@ async fn application(p: Peripherals) {
     let can_spawner = CAN_EXECUTOR.start(embassy_stm32::interrupt::TIM6_DAC);
     can_spawner
         .spawn(dronecan_can::io_task(p.FDCAN1, p.PD0, p.PD1))
+        .unwrap();
+    can_spawner
+        .spawn(mavcan::io_task(p.FDCAN2, p.PB12, p.PB13))
         .unwrap();
 
     let sd_power = Output::new(p.PC13, Level::Low, Speed::Low);

@@ -42,7 +42,7 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 - [ ] **P2 / MAV-01～03**：USB/TELEM1 双链路、QGC 连接/重连及版本显示；MAV-01 软件门已通过，待 H-03 与工程师接线做双链路/重连实测。[证据](docs/acceptance/p2/README.md)。依赖 P1、P3a。
 - [ ] **P3 / PARAM-01～02**：软件/工具路径已由 P3a/P2 就绪；待 P2 闭合与 H-03 接线后做双链路一致性、合法/非法值回显及保存重启读回。依赖 P3a、P2。
 - [ ] **P4 / SENS-01～04**：软件门、实物 WHO_AM_I/SPI/短时 8 kHz 计数、USB `HIGHRES_IMU` 与旧 `imu_icm42688` 短时 1 kHz ULog 已通过；待 DRDY 仪器测量、60 s 标准 `sensor_accel` / `sensor_gyro` 日志、六面方向、校准与故障恢复。[证据](docs/acceptance/p4/README.md)。依赖 P1、P3a、PL-a。
-- [ ] **P4p / PWR-01～04**：INA219 I2C3、探测/采样/超时恢复已实现；`source=b2e70b0ecc7ab844` 实测单条 `DEBUG_VECT`（`name=INA219`、`x=V/y=A/z=W`）约 9.98 Hz，Windows QGC Inspector x/y/z 同显已确认；ULog `rust_current_sensor` 干净短日志约 9.975 Hz 无 dropout。已构建（未烧录）`15a3094727d65d4a`：IMU 200 Hz + 日志开关/速率参数 `LOG_EN_*`/`LOG_*_HZ`（NextCycle、可经 QGC 读设保存）。全量负载日志 4 dropout/5685 条普通丢样为 SD 吞吐落后（队列满）的既有日志吞吐问题，并入 PL-a/M1。实测总线约 0.92 V，需确认支路供电/接线；精度与断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
+- [ ] **P4p / PWR-01～04**：INA219 I2C3、探测/采样/超时恢复已实现；`source=b2e70b0ecc7ab844` 实测单条 `DEBUG_VECT`（`name=INA219`、`x=V/y=A/z=W`）约 9.98 Hz，Windows QGC Inspector x/y/z 同显已确认；ULog `rust_current_sensor` 干净短日志约 9.975 Hz 无 dropout。日志参数 `LOG_EN_*`/`LOG_*_HZ` 曾不生效（apply 读 REGISTRY 默认而非 RAM 值），已在 `9d7c9b5` 修复并板载核对：设 `LOG_IMU_HZ=50`→回读 50.0、`LOG_EN_IMU=0`→回读 0.0，恢复默认 200/1 通过；IMU 200 Hz。全量负载日志 4 dropout/5685 条普通丢样为 SD 吞吐落后（队列满）的既有日志吞吐问题，并入 PL-a/M1。实测总线约 0.92 V，需确认支路供电/接线；精度与断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
 - [ ] **P6a / EST-01～02**：Mahony AHRS、姿态日志/QGC 方向；相对 yaw。依赖 P4、P2、PL-a。
 - [ ] **P7 / TEL-01～02**：随真实数据源补遥测与速率控制。依赖相应数据源、P2。
 - [ ] **M1-01～02**：一次 5 分钟数据链联合运行，核对数据、日志和资源；零命令/DISARMED。依赖以上阶段。
@@ -63,7 +63,7 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 
 - [ ] **P6b→P6c→P6d→P6e→P6f→P6g**：模式→GNSS 融合/导航→路径→影子回退→INDI/NMPC/轨迹→任务协议；依赖详见计划。
 - [ ] **P3b / P8 / BACK-01～03**：元数据、按需外设/冗余和发布自动化。
-- [ ] **CAN-BRD（新增）**：DroneCAN ↔ CAN 总线 SLCAN 调试桥。工程师确认 GUI（UavcanGUI/yakut）连的是 **CAN 总线**、飞控经 SLCAN（ASCII serial-CAN）当 USB-CAN 适配器；用 **FDCAN2（PB12/PB13）** 独立。SLCAN 编解码已实现并过 host 测试（`src/core/slcan.rs`）；待 FDCAN2 驱动 + USB CDC 字节自动分流接入（见 [plan.md](../plan.md#7-M1-后续)）。
+- [ ] **CAN-BRD（新增）**：DroneCAN ↔ CAN 总线 MAVCAN 调试桥。工程师确认 GUI 经 `mavcan:`（MAVLink CANFD_FRAME）把飞控当 USB-CAN 适配器（参考 VimDrones/MAVCAN_Bridge）；用 **FDCAN2（PB12/PB13）** 独立收发器（与 FDCAN1 各走各自收发器）。驱动 `src/drivers/mavcan.rs` 已实现并编译通过：FDCAN2 io_task + USB 收发分流（CANFD_FRAME 进 mavlink_usb）。SLCAN 编解码 `src/core/slcan.rs` 保留备选。待烧录核对（USB 分流、节点可见）。[plan.md](../plan.md#7-M1-后续)。
 
 ## 待补硬件输入
 

@@ -2,7 +2,7 @@
 
 use core::cell::RefCell;
 
-use embassy_futures::join::join;
+use embassy_futures::join::join3;
 use embassy_futures::select::{select, Either};
 use embassy_stm32::gpio::Output;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
@@ -87,7 +87,7 @@ pub async fn run<'d, D: Driver<'d>>(
     let mut rx_reset = session.receiver().unwrap();
     tx_reset.get().await;
     rx_reset.get().await;
-    join(
+    join3(
         async {
             loop {
                 // Poll reset first: never begin a fresh write for an old session.
@@ -109,6 +109,13 @@ pub async fn run<'d, D: Driver<'d>>(
                     ),
                 )
                 .await;
+            }
+        },
+        async {
+            // Forward FDCAN2 MAVCAN frames (CANFD_FRAME) into the USB TX path.
+            loop {
+                let message = crate::mavcan::OUTBOUND.receive().await;
+                replies.send(Outbound::Message(message)).await;
             }
         },
     )
@@ -337,6 +344,10 @@ async fn handle_message(
 ) {
     if let Some(request) = mavlink_core::log_request(&decoded.message) {
         handle_log_request(request, replies).await;
+        return;
+    }
+    // MAVCAN bridge: forward USB CANFD_FRAME frames to FDCAN2.
+    if crate::mavcan::handle_message(&decoded.message) {
         return;
     }
     match decoded.message {
