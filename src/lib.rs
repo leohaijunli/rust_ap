@@ -13,6 +13,10 @@ pub mod dronecan;
 pub mod fault_record;
 #[path = "core/icm42688.rs"]
 pub mod icm42688;
+#[path = "core/ina219.rs"]
+pub mod ina219;
+#[path = "core/log_config.rs"]
+pub mod log_config;
 #[path = "core/log_queue.rs"]
 pub mod log_queue;
 #[path = "core/logger.rs"]

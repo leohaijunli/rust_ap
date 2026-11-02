@@ -92,6 +92,10 @@ pub fn init() -> Peripherals {
     embassy_stm32::interrupt::DMA2_STREAM1.set_priority(Priority::P7);
     embassy_stm32::interrupt::DMA1_STREAM2.set_priority(Priority::P1);
     embassy_stm32::interrupt::DMA1_STREAM3.set_priority(Priority::P1);
+    embassy_stm32::interrupt::I2C3_EV.set_priority(Priority::P6);
+    embassy_stm32::interrupt::I2C3_ER.set_priority(Priority::P6);
+    embassy_stm32::interrupt::DMA1_STREAM4.set_priority(Priority::P6);
+    embassy_stm32::interrupt::DMA1_STREAM5.set_priority(Priority::P6);
     assert!(clock_registers_ok());
     p
 }

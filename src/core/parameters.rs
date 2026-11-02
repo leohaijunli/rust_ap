@@ -46,6 +46,42 @@ parameter_table! {
         name: "LINK_LED_HZ", kind: Real, default: 1.0,
         min: 0.1, max: 10.0, access: NextCycle
     },
+    LogEnImu {
+        name: "LOG_EN_IMU", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogImuHz {
+        name: "LOG_IMU_HZ", kind: Real, default: 200.0,
+        min: 1.0, max: 1000.0, access: NextCycle
+    },
+    LogEnIna {
+        name: "LOG_EN_INA", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogInaHz {
+        name: "LOG_INA_HZ", kind: Real, default: 10.0,
+        min: 1.0, max: 100.0, access: NextCycle
+    },
+    LogEnCan {
+        name: "LOG_EN_CAN", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogCanHz {
+        name: "LOG_CAN_HZ", kind: Real, default: 400.0,
+        min: 1.0, max: 1000.0, access: NextCycle
+    },
+    LogEnHealth {
+        name: "LOG_EN_HEALTH", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogHealthHz {
+        name: "LOG_HEALTH_HZ", kind: Real, default: 10.0,
+        min: 1.0, max: 100.0, access: NextCycle
+    },
+    LogEnEvent {
+        name: "LOG_EN_EVENT", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
 }
 
 pub const COUNT: usize = REGISTRY.len();

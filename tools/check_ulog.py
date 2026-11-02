@@ -19,6 +19,7 @@ TOPICS = {
     "rust_can_stats",
     "rust_runtime_health",
     "rust_parameter_change",
+    "rust_current_sensor",
 }
 
 PX4_REVISION = "d6f12ad1c4f70ad3230afd7d86e971421e02fef4"
@@ -84,10 +85,26 @@ def check(path: Path, expect_dropout: bool) -> None:
         require(log.message_formats[name].fields == px4_fields(filename),
                 f"{name} does not match the pinned PX4 message")
     for item in log.data_list:
-        count = 2 if item.name in {"sensor_accel", "sensor_gyro"} else 1
+        count = 2 if item.name in {"sensor_accel", "sensor_gyro", "rust_current_sensor"} else 1
         require(len(item.data["timestamp"]) == count, f"wrong sample count for {item.name}")
     check_sensor(log, "sensor_accel", {"x": [1.25, 156.9], "y": [2.5, 156.9], "z": [-9.75, -10.0]})
     check_sensor(log, "sensor_gyro", {"x": [0.125, 34.9], "y": [0.25, 34.9], "z": [-0.5, 0.0]})
+    current_sensor = log.get_dataset("rust_current_sensor")
+    require(current_sensor.multi_id == 0, "current sensor subscription mismatch")
+    require(log.message_formats["rust_current_sensor"].fields == [
+        ("uint64_t", 0, "timestamp"), ("uint64_t", 0, "timestamp_sample"),
+        ("float", 0, "voltage_v"), ("float", 0, "current_a"), ("float", 0, "power_w"),
+    ], "current sensor schema mismatch")
+    for field, values in {
+        "timestamp": [1_010_100, 1_110_100],
+        "timestamp_sample": [1_010_000, 1_110_000],
+        "voltage_v": [12.0, 16.0],
+        "current_a": [1.0, -0.5],
+        "power_w": [12.0, -8.0],
+    }.items():
+        require(all(math.isclose(actual, value, rel_tol=1e-6, abs_tol=1e-5)
+                    for actual, value in zip(current_sensor.data[field], values, strict=True)),
+                f"wrong rust_current_sensor.{field}")
     dataset = log.get_dataset("actuator_armed")
     require(dataset.multi_id == 0, "arming subscription mismatch")
     data = dataset.data
@@ -112,7 +129,7 @@ def main() -> None:
         truncated = Path(directory) / "truncated.ulg"
         truncated.write_bytes(data[:-1])
         check(truncated, expect_dropout=False)
-    print("PX4 schemas, FRD sensor fields, pyulog full and truncated-tail checks: PASS")
+    print("PX4 schemas, FRD/INA219 fields, pyulog full and truncated-tail checks: PASS")
 
 
 if __name__ == "__main__":

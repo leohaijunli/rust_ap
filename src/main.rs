@@ -24,6 +24,9 @@ mod fram;
 #[path = "drivers/imu.rs"]
 mod imu;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/ina219.rs"]
+mod ina219;
+#[cfg(not(feature = "fault-dump"))]
 #[path = "comms/mavlink_core.rs"]
 mod mavlink_core;
 #[cfg(not(feature = "fault-dump"))]
@@ -48,6 +51,10 @@ mod sd_logger;
 mod usb_console;
 
 use embassy_stm32::bind_interrupts;
+use embassy_stm32::i2c::{
+    ErrorInterruptHandler as I2cErrorInterruptHandler,
+    EventInterruptHandler as I2cEventInterruptHandler,
+};
 use embassy_stm32::sdmmc::InterruptHandler as SdmmcInterruptHandler;
 use embassy_stm32::usart::InterruptHandler as UsartInterruptHandler;
 use embassy_stm32::usb::InterruptHandler as UsbInterruptHandler;
@@ -57,9 +64,11 @@ use core::cell::RefCell;
 #[cfg(not(feature = "fault-dump"))]
 use embassy_executor::{raw::Executor, InterruptExecutor};
 #[cfg(not(feature = "fault-dump"))]
-use embassy_futures::join::join;
+use embassy_futures::join::{join, join3};
 #[cfg(not(feature = "fault-dump"))]
 use embassy_stm32::gpio::{Input, Level, Output, OutputOpenDrain, Pull, Speed};
+#[cfg(not(feature = "fault-dump"))]
+use embassy_stm32::i2c::{Config as I2cConfig, I2c};
 #[cfg(not(feature = "fault-dump"))]
 use embassy_stm32::spi::{Config as SpiConfig, Spi, MODE_3};
 #[cfg(not(feature = "fault-dump"))]
@@ -101,6 +110,11 @@ bind_interrupts!(struct SdIrqs {
 
 bind_interrupts!(struct Uart7Irqs {
     UART7 => UsartInterruptHandler<embassy_stm32::peripherals::UART7>;
+});
+
+bind_interrupts!(struct I2c3Irqs {
+    I2C3_EV => I2cEventInterruptHandler<embassy_stm32::peripherals::I2C3>;
+    I2C3_ER => I2cErrorInterruptHandler<embassy_stm32::peripherals::I2C3>;
 });
 
 #[cfg(not(feature = "fault-dump"))]
@@ -148,6 +162,8 @@ async fn application(p: Peripherals) {
     let mut green = OutputOpenDrain::new(p.PE4, Level::High, Speed::Low);
     let mut blue = OutputOpenDrain::new(p.PE5, Level::Low, Speed::Low);
     let _heater = Output::new(p.PB10, Level::Low, Speed::Low);
+    // GPIO_VDD_5V_PERIPH_nEN: power the standalone I2C connector.
+    let _periph_power = Output::new(p.PG4, Level::Low, Speed::Low);
     let _not_armed = Input::new(p.PE6, Pull::Up);
     let fast_spawner = diagnostics::start(p.TIM7);
 
@@ -234,6 +250,17 @@ async fn application(p: Peripherals) {
     )
     .expect("UART7 configuration");
 
+    // Standalone I2C connector: SCL3/SDA3 (PA8/PH8), not the GPS/POWER I2C buses.
+    let mut i2c_config = I2cConfig::default();
+    i2c_config.timeout = embassy_time::Duration::from_millis(20);
+    // Weak internal pull-ups distinguish a floating bus from a slave holding
+    // SCL/SDA low; external 10 kOhm pull-ups on the module dominate when powered.
+    i2c_config.scl_pullup = true;
+    i2c_config.sda_pullup = true;
+    let i2c3 = I2c::new(
+        p.I2C3, p.PA8, p.PH8, I2c3Irqs, p.DMA1_CH4, p.DMA1_CH5, i2c_config,
+    );
+
     // USB CDC ACM on the FS OTG peripheral (PA11/PA12), clocked from PLL3Q.
     let mut ep_out_buffer = [0u8; 256];
     let mut usb_config = embassy_stm32::usb::Config::default();
@@ -286,7 +313,8 @@ async fn application(p: Peripherals) {
                             sd_logger::run(sdmmc, sd_power, &parameters),
                             sd_logger::health_task(),
                         ),
-                        join(
+                        join3(
+                            ina219::run(i2c3),
                             async {
                                 loop {
                                     let half_period_us =

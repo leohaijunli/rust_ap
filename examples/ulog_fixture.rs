@@ -3,6 +3,7 @@ use std::fs;
 use std::mem::size_of;
 
 use v6x_rust_led::icm42688::Sample;
+use v6x_rust_led::ina219::Measurement;
 use v6x_rust_led::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro, PX4_REVISION};
 use v6x_rust_led::ulog::{self, DataEncoder, TopicId};
 
@@ -32,7 +33,10 @@ fn main() {
     bytes.extend_from_slice(ulog::padding(5).unwrap().as_bytes());
     let mut data = DataEncoder::new();
     for topic in ulog::TOPICS {
-        if matches!(topic.id, TopicId::SensorAccel | TopicId::SensorGyro) {
+        if matches!(
+            topic.id,
+            TopicId::SensorAccel | TopicId::SensorGyro | TopicId::CurrentSensor
+        ) {
             continue;
         }
         let timestamp = 1_000_100 + topic.id as u64;
@@ -86,6 +90,23 @@ fn main() {
                     .as_bytes(),
             );
         }
+    }
+    for (index, (bus, shunt, current)) in [(0x5dc2, 1000, 4096), (0x7d02, -500, -2048)]
+        .into_iter()
+        .enumerate()
+    {
+        let measurement =
+            Measurement::decode(bus, shunt, current, 1_010_000 + index as u64 * 100_000).unwrap();
+        let payload = ulog::current_sensor_payload(measurement);
+        bytes.extend_from_slice(
+            data.encode(
+                TopicId::CurrentSensor,
+                measurement.timestamp_us + 100,
+                payload.as_bytes(),
+            )
+            .unwrap()
+            .as_bytes(),
+        );
     }
     bytes.extend_from_slice(ulog::dropout(25).as_bytes());
     fs::write(path, bytes).expect("write ULog fixture");

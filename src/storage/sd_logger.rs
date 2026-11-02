@@ -17,6 +17,7 @@ use embedded_fatfs::{
 };
 use embedded_io_async::{Read, Seek, SeekFrom, Write};
 use embedded_partitions::mbr::Scheme;
+use v6x_rust_led::log_config::Group;
 use v6x_rust_led::log_queue::{Class, Logger};
 use v6x_rust_led::logger::{
     accepts, download_count, is_ulog_name, list_bounds, Command, Config as LoggerConfig,
@@ -257,7 +258,7 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
 }
 
 pub fn record_motor_command(timestamp_us: u64) {
-    if !ready() {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, timestamp_us) {
         return;
     }
     let mut payload = ulog::Payload::new();
@@ -280,7 +281,7 @@ pub fn record_motor_command(timestamp_us: u64) {
 }
 
 pub fn record_arming_status(timestamp_us: u64) {
-    if !ready() {
+    if !ready() || !v6x_rust_led::log_config::enabled(Group::Event) {
         return;
     }
     let report = ActuatorArmed {
@@ -302,7 +303,7 @@ pub fn record_arming_status(timestamp_us: u64) {
 }
 
 pub fn record_imu(timestamp_us: u64, sample: v6x_rust_led::icm42688::Sample, error_count: u32) {
-    if !ready() {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Imu, timestamp_us) {
         return;
     }
     let accel = SensorAccel::from_sample(timestamp_us, sample, error_count);
@@ -321,6 +322,18 @@ pub fn record_imu(timestamp_us: u64, sample: v6x_rust_led::icm42688::Sample, err
     );
 }
 
+pub fn record_current_sensor(timestamp_us: u64, measurement: v6x_rust_led::ina219::Measurement) {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Current, timestamp_us) {
+        return;
+    }
+    record(
+        TopicId::CurrentSensor,
+        Class::Normal,
+        timestamp_us,
+        &ulog::current_sensor_payload(measurement),
+    );
+}
+
 pub fn record_esc_status(
     timestamp_us: u64,
     source_node_id: u8,
@@ -328,7 +341,7 @@ pub fn record_esc_status(
     trusted: bool,
     stale: bool,
 ) {
-    if !ready() {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, timestamp_us) {
         return;
     }
     let mut payload = ulog::Payload::new();
@@ -359,7 +372,7 @@ pub fn record_node_status(
     status: v6x_rust_led::dronecan::dsdl::NodeStatus,
     online: bool,
 ) {
-    if !ready() {
+    if !ready() || !v6x_rust_led::log_config::enabled(Group::Event) {
         return;
     }
     let mut payload = ulog::Payload::new();
@@ -378,7 +391,7 @@ pub fn record_node_status(
 }
 
 pub fn record_can_stats(timestamp_us: u64, counters: [u32; 10]) {
-    if !ready() {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Health, timestamp_us) {
         return;
     }
     let mut payload = ulog::Payload::new();
@@ -394,6 +407,9 @@ pub fn record_parameter(timestamp_us: u64, index: u16, kind: Kind, value: f32, d
     if status != Status::Ready as u8
         && !(status == Status::Initializing as u8 && definitions_started)
     {
+        return;
+    }
+    if !v6x_rust_led::log_config::enabled(Group::Event) {
         return;
     }
     let payload = parameter_payload(index, kind, value, dirty);
@@ -899,23 +915,25 @@ pub async fn health_task() -> ! {
     loop {
         if ready() {
             let timestamp = Instant::now().as_micros();
-            let stats = LOGGER.stats();
-            let mut payload = ulog::Payload::new();
-            let cpu = crate::diagnostics::cpu_load();
-            payload.push_u8(u8::from(cpu.is_some())).unwrap();
-            payload.push_u16(cpu.unwrap_or(0)).unwrap();
-            payload.push_u8(0).unwrap();
-            payload.push_u32(0).unwrap();
-            payload.push_u8(0).unwrap();
-            payload.push_u32(0).unwrap();
-            payload.push_u32(0).unwrap();
-            payload.push_u32(stats.normal_dropped).unwrap();
-            payload.push_u32(stats.event_dropped).unwrap();
-            payload.push_u32(stats.high_water_bytes).unwrap();
-            if let Ok(record) =
-                encoder.encode(TopicId::RuntimeHealth, timestamp, payload.as_bytes())
-            {
-                let _ = LOGGER.try_record(Class::Normal, timestamp, record);
+            if v6x_rust_led::log_config::rate(Group::Health, timestamp) {
+                let stats = LOGGER.stats();
+                let mut payload = ulog::Payload::new();
+                let cpu = crate::diagnostics::cpu_load();
+                payload.push_u8(u8::from(cpu.is_some())).unwrap();
+                payload.push_u16(cpu.unwrap_or(0)).unwrap();
+                payload.push_u8(0).unwrap();
+                payload.push_u32(0).unwrap();
+                payload.push_u8(0).unwrap();
+                payload.push_u32(0).unwrap();
+                payload.push_u32(0).unwrap();
+                payload.push_u32(stats.normal_dropped).unwrap();
+                payload.push_u32(stats.event_dropped).unwrap();
+                payload.push_u32(stats.high_water_bytes).unwrap();
+                if let Ok(record) =
+                    encoder.encode(TopicId::RuntimeHealth, timestamp, payload.as_bytes())
+                {
+                    let _ = LOGGER.try_record(Class::Normal, timestamp, record);
+                }
             }
         }
         Timer::after_millis(100).await;

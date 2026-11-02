@@ -135,7 +135,7 @@ pub struct Config {
 impl Config {
     pub const DEFAULT: Self = Self {
         odr_hz: 8_000,
-        log_rate_hz: 1_000,
+        log_rate_hz: 200,
         accel_fsr_g: 16,
         gyro_fsr_dps: 2_000,
         rotation: Rotation::Yaw270,
@@ -345,19 +345,19 @@ mod tests {
         assert_eq!(Config::DEFAULT.validate(), Ok(Config::DEFAULT));
         assert_eq!(Config::DEFAULT.fifo_batch_samples(), 8);
         assert_eq!(Config::DEFAULT.sample_period_us(), 125);
-        assert_eq!(Config::DEFAULT.log_decimation(), 8);
+        assert_eq!(Config::DEFAULT.log_decimation(), 40);
         assert_eq!(SETTINGS[5].apply(0xff), 0x03);
         assert_eq!(SETTINGS[6].apply(0xff), 0x03);
         assert_eq!(SETTINGS[12].set, 160);
         let low_rate = Config {
             odr_hz: 1_000,
-            log_rate_hz: 1_000,
+            log_rate_hz: 500,
             ..Config::DEFAULT
         };
         assert_eq!(low_rate.validate(), Ok(low_rate));
         assert_eq!(low_rate.fifo_batch_samples(), 1);
         assert_eq!(low_rate.sample_period_us(), 1_000);
-        assert_eq!(low_rate.log_decimation(), 1);
+        assert_eq!(low_rate.log_decimation(), 2);
     }
 
     #[test]

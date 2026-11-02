@@ -181,7 +181,7 @@ pub async fn task(
                         ) {
                             Ok(sample) => {
                                 sequence = sequence.wrapping_add(1);
-                                publish(sample, config.log_decimation());
+                                publish(sample);
                             }
                             Err(_) => {
                                 STATE.decode_errors.fetch_add(1, Ordering::Relaxed);
@@ -217,7 +217,7 @@ pub async fn task(
     }
 }
 
-fn publish(sample: Sample, log_decimation: u32) {
+fn publish(sample: Sample) {
     LATEST.sender().send(sample);
     if AHRS_ACTIVE.load(Ordering::Acquire) && AHRS.try_send(sample).is_err() {
         let dropped = AHRS.len() as u32;
@@ -226,14 +226,12 @@ fn publish(sample: Sample, log_decimation: u32) {
         let _ = AHRS.try_send(sample);
     }
     STATE.samples.fetch_add(1, Ordering::Relaxed);
-    if sample.sequence.is_multiple_of(log_decimation) {
-        let error_count = STATE
-            .transfer_errors
-            .load(Ordering::Relaxed)
-            .saturating_add(STATE.decode_errors.load(Ordering::Relaxed))
-            .saturating_add(STATE.drdy_timeouts.load(Ordering::Relaxed));
-        crate::sd_logger::record_imu(Instant::now().as_micros(), sample, error_count);
-    }
+    let error_count = STATE
+        .transfer_errors
+        .load(Ordering::Relaxed)
+        .saturating_add(STATE.decode_errors.load(Ordering::Relaxed))
+        .saturating_add(STATE.drdy_timeouts.load(Ordering::Relaxed));
+    crate::sd_logger::record_imu(Instant::now().as_micros(), sample, error_count);
 }
 
 fn reconstruct_timestamp(now: u64) -> u64 {

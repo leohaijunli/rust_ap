@@ -138,6 +138,7 @@ H753实际选用的PAC文件为 `src/peripherals/rcc_h7rm0433.rs`（`src/chips/s
 | SPI5 | SCK PF7、MISO PH7、MOSI PF11 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:439-441` |
 | I2C1 / I2C2 | I2C1 SCL PB8/SDA PB9；I2C2 SCL PF1/SDA PF0 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:455-462` |
 | I2C3 / I2C4 | I2C3 SCL PA8/SDA PH8；I2C4 SCL PF14/SDA PF15 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:467-474` |
+| 独立 I2C 插座 / INA219 | 4 针：1=5 V、2=SCL3/PA8、3=SDA3/PH8、4=GND，信号 3.3 V；SEN0291 拨码 A0=0/A1=1 即 **0x44**（固件自动探测 0x40/41/44/45）、10 mΩ、±8 A、独立支路，工程师确认已连接。**注意**：模块 P3 通孔座为 1=VCC、2=SCL、3=SDA、4=GND（与飞控一致），P2 Gravity 座为 1=GND、2=SDA、3=SCL、4=VCC（与飞控整序相反），直插 Gravity 线会反接供电。I2C3 100 kHz、DMA1_CH4/5、P6；PG4 低使能 5 V 外设电源 | 固定 PX4 `i2c.cpp` / `board_config.h`；[Holybro 插座表](https://docs.holybro.com/autopilot/pixhawk-baseboards/pixhawk-baseboard-v2-ports.md#i2c-port)；[SEN0291 原理图](https://github.com/DFRobot/Wiki/raw/master/SEN0291/res/SEN0291%20(V1.0)%20Schematic.pdf)；[P4p](acceptance/ina219/README.md) |
 
 P4.0 实测记录至少包含：日期、固件 hash、器件 ID、总线/CS/地址、识别序列、DRDY 实测、轴向/安装方向、原始输出文件和工程师确认。读到 ID 不能证明 DRDY、方向、FIFO 或校准已经正确。
 
@@ -214,7 +215,7 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | 安装 bootloader 的识别 | 实测3185:0035、`PX4 BL FMU v6X.x`、协议v5、board ID=53；构建版本未知；独立QGC往返及普通回装通过 | [HIL](acceptance/p1/20261031-hil.md) |
 | QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION固件已就绪，连接/重连显示待 HIL 复核 | [QGC记录](qgc-notes.md)、[P2 软件记录](acceptance/p2/README.md) |
 
-P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。最近实测板载为普通 Rust source=`81d6c1221048f08a`；RTC、正常 SD/短时 IMU 日志已有有限 HIL，新标准消息软件见[记录](acceptance/messages/README.md)，未完成实物项仍按阶段验收。
+P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。最近实测板载为普通 Rust source=`81d6c1221048f08a`；RTC、正常 SD/短时 IMU 日志已有有限 HIL，新标准消息软件见[记录](acceptance/messages/README.md)，未完成实物项仍按阶段验收。P4p INA219 实测板载为 `b2e70b0ecc7ab844`：单条 `DEBUG_VECT` V/A/W 在 Windows Inspector 同显、ULog `rust_current_sensor` 干净短日志 10 Hz 通过，见 [P4p](acceptance/ina219/README.md)。
 
 ## 验收与后续待核实
 

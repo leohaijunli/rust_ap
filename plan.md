@@ -32,6 +32,7 @@
 | 模块 | 首版范围 |
 | --- | --- |
 | IMU | ICM-42688-P 的 ID、DRDY/FIFO/DMA；8 kHz ODR、8 包批处理、1 kHz ULog、时间戳、SI 单位、方向及基础校准 |
+| 支路电流 | 工程师新增 INA219/SEN0291：独立 I2C3 插座，0x44（A0=0/A1=1）并自动探测、10 mΩ、±8 A；10 Hz 采样，先用单条标准 `DEBUG_VECT` 同时显示 V/A/W |
 | AHRS | 统一 `AttitudeEstimator` API 下先接 Mahony gyro/accel 姿态、角速度与有效性；yaw 为相对航向。EKF2 不作为 M1 前置，位置融合归后续 P6a-e/P6c |
 | DroneCAN | 节点发现/服务、ESC 映射与 Status、零命令、H-RTK Fix2/Auxiliary；优先静态 ID，仅设备必需时增加 DNA |
 | 日志 | 纯 Rust ULog、有界缓冲、SDMMC2/FAT；IMU 用标准 `sensor_accel` / `sensor_gyro`，输出状态用 `actuator_armed`；M1 取卡解析，在线下载归 PL-b |
@@ -105,6 +106,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P2 / MAV-01～03 | USB/TELEM1 双链路、消息/命令和重连；软件门通过，实物待验 | P1、P3a |
 | P3 / PARAM-01～02 | QGC 标准参数读设；软件/工具路径就绪，双链路实物待验 | P3a、P2 |
 | P4 / SENS-01～04 | 单 IMU 驱动、校准及采样；软件门通过，实物待验 | P1、P3a、PL-a |
+| P4p / PWR-01～02 | SEN0291/INA219 I2C3 支路电流、有效性和标准遥测；本轮新增 | P1、P2、H-11 |
 | P6a / EST-01～02 | Mahony AHRS、姿态遥测与日志 | P4、P2、PL-a |
 | P7 / TEL-01～02 | 随已有数据源补遥测及速率控制 | 对应数据源、P2 |
 | M1 / M1-01～02 | 一次完整数据链联合验收 | 上述 M1 阶段 |
@@ -163,6 +165,14 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 5. **数值验证**：用同一固定输入分别运行 PX4 v1.17.0 参考核心和 Rust 版本，按状态、创新、方差及拒绝/复位事件对拍；容差在测试前固定。未通过 replay、边界失败路径和实际 GNSS HIL 前，不称为“等价 EKF2”。
 6. **许可/来源**：逐文件记录 PX4/ECL 原路径、commit、BSD-3-Clause 版权与 Rust 修改点；估计数学输入保留独立 DTO，标准 PX4 消息用于数据边界，不链接 PX4 C++。
 
+### INA219 支路电流（工程师新增）
+
+- **PWR-01**：参考固定 LibDriver `266a1ee32a5f70e4e5d47591ce28c4e1c387857c`，纯 Rust/Embassy I2C3（PA8/PH8、100 kHz、DMA1_CH4/5、P6）；PG4 低使能 5 V 外设电源。SEN0291 拨码 A0=0/A1=1 对应 0x44；启动及每次重试只读探测 0x40/0x41/0x44/0x45 并采纳首个应答地址，10 mΩ、±8 A，采用 ±80 mV PGA、12-bit 单次 shunt+bus 转换、CAL=16776（FS0 固定零）、有界超时和回读/重试。
+- **PWR-02**：工程师要求使用现有 QGC Inspector、三个量放在一条消息，先验证标准 `DEBUG_VECT`（ID 252）：`name=INA219`、`time_usec` 为采样启动相对时间，`x=电压 V`、`y=电流 A`、`z=功率 W`。USB/TELEM1 共用最新快照，各 10 Hz；W 为同次采样的 V×I，保留负电流符号。失败或年龄 >300 ms 停发，请求 ID 252 回同一消息；`!ina219` 可诊断。
+- **PWR-03 日志**：同次有效测量直接进入现有有界 ULog 队列，主题 `rust_current_sensor`，字段为 `timestamp`、`timestamp_sample`、`voltage_v`、`current_a`、`power_w`，10 Hz；记录不依赖 MAVLink/QGC，采样失败不重复写旧值。日志仍显式 start/stop。
+- **PWR-04 日志开关与速率**：新增 `LOG_EN_IMU/INA/CAN/HEALTH/EVENT`（0/1）与 `LOG_IMU_HZ`（200）、`LOG_INA_HZ`（10）、`LOG_CAN_HZ`（400）、`LOG_HEALTH_HZ`（10）参数，NextCycle 生效并持久化；`log_config` 按数据源组限速/启用，事件源只启用。新数据源按来源归组或新增一组参数。
+- **必要检查**：host 标定/单位/符号、CNVR/OVF、范围/陈旧用例；普通配置 fmt/Clippy、release/布局；新 ULog 主题经 pyulog 独立解析，核对单位、符号和采样时间。刷写后做一次已连接传感器读取、MAVLink 字段/更新率及短时 ULog 主题核对；精度收口用一组已知负载/参考电流，一次断线失效/恢复。复用当前板和已通过结果，见[记录](docs/acceptance/ina219/README.md)。
+
 ### 时间基准与 GNSS 授时
 
 1. **范围**：RTC 只服务日志 UTC、QGC 命名和 `SYSTEM_TIME` 遥测；控制与估计仍用 TIM2 单调时间，不依赖墙上时钟。
@@ -192,6 +202,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P6f / INDI-01、NMPC-01、TRAJ-01 | 辨识、INDI/NMPC/轨迹；有界求解与过期/NaN 回退 | P6e、H-09 |
 | P6g / MISSION-01～02 | MAVLink 任务上传/执行/完成，复用参数和日志协议 | P6f、P2/P3、PL-b |
 | P3b / P8 / BACK-01～03 | 元数据、按需外设/冗余、发布自动化 | 实际需求确认后 |
+| CAN-BRD / 新增 | DroneCAN 调试桥：把 FDCAN1 收到的 DroneCAN 帧按 GUI 所需封装（视目标 GUI：UavcanGUI/yakut 连 CAN 总线，需 USB-CAN 适配器；或按 ArduPilot 的 DroneCAN-over-serial 桥），固件做帧中继/节点状态导出 | 确认 GUI 与连接方式后 |
 
 远期接口和指标在 M1 硬件结果后细化。控制与估计算法不直接驱动外设；输出必须经同一仲裁。同步求解不能仅靠 async timeout 声称有时限；保留 Mahony 可运行基线、独立过期检测和 EKF2 明确回退。
 
@@ -207,6 +218,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | H-08 | GNSS 坐标/杆臂、精度与降级指标 | P6c/d |
 | H-09 | 质量/惯量、动力模型、辨识和求解预算 | P6f |
 | H-10 | H-RTK SKU/固件/节点/消息率；后补 RTCM 来源 | P4b-g/r |
+| H-11 | INA219/SEN0291 独立 I2C 插座、0x44（A0=0/A1=1）、10 mΩ、±8 A、独立支路已确认且已连接；超时处理与总线恢复修改后 0x44 通信和三条命名值 10 Hz 已实测，原 SCL 低电平未复现；单条调试消息、参考负载精度和一次断线恢复待验 | P4p |
 
 ## 9. 记录与交付
 

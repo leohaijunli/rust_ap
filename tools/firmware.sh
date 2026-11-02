@@ -73,10 +73,10 @@ build_firmware() {
 upload_firmware() {
     local mode="$1"
     shift
-    uploader="${PX4_UPLOADER:-$HOME/PX4-Autopilot/Tools/px4_uploader.py}"
+    uploader="${PX4_UPLOADER:-$root/.venv/px4_uploader.py}"
     ports="${PX4_PORTS:-/dev/serial/by-id/usb-Rust_FMUv6X_V6X_Rust_CDC_V6X-RUST-001-if00,/dev/serial/by-id/usb-Auterion_PX4_FMU_v6X.x_*-if00,/dev/serial/by-id/*PX4_BL*}"
     if [[ ! -f "$uploader" ]]; then
-        echo "Set PX4_UPLOADER to the path of PX4's Tools/px4_uploader.py." >&2
+        echo "Run bash tools/setup_ubuntu.sh or set PX4_UPLOADER to PX4's Tools/px4_uploader.py." >&2
         exit 1
     fi
     "$python" "$uploader" --help >/dev/null

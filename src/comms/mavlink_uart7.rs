@@ -33,16 +33,14 @@ pub async fn run(
 
 async fn transmit(tx: &mut UartTx<'static, Async>, replies: &Replies) -> ! {
     const IMU_PERIOD: Duration = Duration::from_millis(50);
+    const POWER_PERIOD: Duration = Duration::from_micros(v6x_rust_led::ina219::SAMPLE_PERIOD_US);
     let mut sequence = 0u8;
     let mut frame = [0u8; mavlink::MAX_FRAME_SIZE];
     let mut next_heartbeat = Instant::now() + Duration::from_secs(1);
     let mut next_imu = Instant::now() + IMU_PERIOD;
+    let mut next_power = Instant::now() + POWER_PERIOD;
     loop {
-        let next_wakeup = if next_imu < next_heartbeat {
-            next_imu
-        } else {
-            next_heartbeat
-        };
+        let next_wakeup = next_imu.min(next_heartbeat).min(next_power);
         let result = match select(Timer::at(next_wakeup), replies.receive()).await {
             Either::First(()) => {
                 let now = Instant::now();
@@ -52,6 +50,12 @@ async fn transmit(tx: &mut UartTx<'static, Async>, replies: &Replies) -> ! {
                         success = send(tx, &mut sequence, &message, &mut frame).await;
                     }
                     next_imu = now + IMU_PERIOD;
+                }
+                if success && now >= next_power {
+                    if let Some(message) = mavlink_core::ina219_status() {
+                        success = send(tx, &mut sequence, &message, &mut frame).await;
+                    }
+                    next_power = now + POWER_PERIOD;
                 }
                 if success && now >= next_heartbeat {
                     success = send(tx, &mut sequence, &mavlink_core::heartbeat(), &mut frame).await

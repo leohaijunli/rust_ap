@@ -41,6 +41,9 @@ ULog 使用显式小端编码：16 B 文件头、格式/订阅/版本信息、�
 
 M1 5 分钟原始预算约 **49 MB**，加余量约 62 MB；卡需有足够空闲空间。启动格式/参数快照突发预算另限 32 KiB，开始正常记录前确认头部完成。参数变更事件超过 20 次/s 时限速或合并，并明确统计；不得无限生成日志事件。
 
+本次新增 `rust_current_sensor`：payload 28 B、DATA 33 B，10 Hz 增加 330 B/s；
+在上表预算上合计 164652 B/s，加 25% 为 205815 B/s。
+
 `sensor_gps` 的 256 B 上限用于完整标准字段；Fix2 原始协方差/ECEF 若需独立记录，必须另算可选诊断预算。当前 `dronecan_esc_status` 每条 37 B、四节点合计最高 200 Hz，标准 ESC 汇总接入后该原始诊断默认按需启用，避免重复常驻流量。M1 不记录另外两颗 IMU。
 
 复算命令：
@@ -54,7 +57,7 @@ python3 tools/p0/budgets.py --profile m1
 ## 3. 缓冲、调度与 SD 能力边界
 
 - 当前为单一 **136 KiB** MPSC 固定槽队列，普通记录准入上限严格保留至少 **8 KiB** 事件容量；运行时最大记录 124 B。生产者只做有界 `try_record`，不调用 SD/FAT。
-- 当前已接入的 9 个 topic 均小于 124 B；后续标准 `esc_status` 汇总超过此上限，接入前须调整固定记录/队列布局并重新核验 RAM、编码及准入，不能直接放入现有队列。
+- 当前已接入的 10 个 topic 均小于 124 B；后续标准 `esc_status` 汇总超过此上限，接入前须调整固定记录/队列布局并重新核验 RAM、编码及准入，不能直接放入现有队列。
 - 单一 LoggerControl 状态机提供 start/stop/sync/status/apply_config；stop 先切 Stopping 阻止新记录，再清空队列、对齐 staging、flush file/fs、释放 FAT 所有权并拉低 PC13。错误态也允许重新 start，新会话始终创建新文件。
 - sync 周期运行时范围 100–10000 ms，默认 1000 ms；修改只影响后续同步，不改变 ULog schema 或数据采样率。USB 原始控制台、MAVLink Console 和标准 logging commands 共用该状态机。
 - 普通记录入口目标 ≤5 us；关全局中断区每次 ≤2 us。大块编码/复制/SD 等待均在临界区外；错误计数更新不会递归产生日志。
@@ -82,4 +85,4 @@ HAL `embassy-stm32 0.5.0/src/sdmmc/mod.rs:1043-1142` 存在同步命令/取消�
 
 完整 PL-a 仍按 LOG-A05 做断电/损坏/移除验证。首轮可提出“最多丢 2 s 完整记录前缀”作为待测值，不能把 1 s sync 当作物理持久化保证；FAT 元数据与卡内缓存必须另测。此时不冻结长期轮转、飞行日志故障动作或在线下载细节。
 
-原始 CAN trace 默认关闭；启用时按独立字节上限限速并重算预算。IMU 内部采集/给 AHRS 的速率为 8 kHz，但 ULog 固定先抽取 1 kHz，不能把 8 kHz 全量写卡而仍宣称本表预算。真实 AHRS/IMU/ESC/GNSS 日志在 M1 验收；控制/任务 topic 随后续硬件测试扩展。
+原始 CAN trace 默认关闭；启用时按独立字节上限限速并重算预算。IMU 内部采集/给 AHRS 的速率为 8 kHz，ULog 每 40 个原始样本记录 1 个（**200 Hz**），不能把 8 kHz 全量写卡而仍宣称本表预算。真实 AHRS/IMU/ESC/GNSS 日志在 M1 验收；控制/任务 topic 随后续硬件测试扩展。

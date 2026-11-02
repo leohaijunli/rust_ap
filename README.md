@@ -45,6 +45,13 @@ on both MAVLink links. Current software records standard PX4 `sensor_accel` and
 telemetry and the previous custom IMU ULog passed; six-face, 60-second standard
 logs, calibration and fault recovery remain. See
 [P4 evidence](docs/acceptance/p4/README.md).
+**INA219 support:** the SEN0291 on the standalone I2C3 connector (PA8/PH8),
+address 0x44 (auto-detected), 10 mOhm shunt and +/-8 A, publishes independent load measurements
+in one standard `DEBUG_VECT` at 10 Hz on USB/TELEM1: `name=INA219`, `x=voltage V`,
+`y=current A`, `z=power W`. See [P4p status](docs/acceptance/ina219/README.md).
+The same valid samples are logged at 10 Hz as `rust_current_sensor` in ULog,
+with `timestamp`, `timestamp_sample`, `voltage_v`, `current_a`, and `power_w`.
+Use `logger start` / `logger stop` in MAVLink Console, then QGC Log Download.
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
 
@@ -95,16 +102,16 @@ appear in the toolbar's run selector; select one and press **Shift+F10**:
 
 | Configuration | Action |
 | --- | --- |
+| **Setup Ubuntu** | Install project-local Python tools and the pinned PX4 uploader |
 | **Build firmware** | Compile the release image and create the validated `.px4` package |
 | **Upload firmware (USB)** | Build, enter the original PX4 bootloader without a physical replug, upload, verify CRC, and restart |
 | **Monitor MAVLink** | Decode telemetry for 10 seconds |
 | **Check firmware** | Formatting, normal/injection/Dump Clippy, host tests, normal/Dump build and package/layout/hash reports |
 
-On this machine, launch the configured IDE with `rustrover ~/rust_ap` or the
-**RustRover** application-menu entry. Its launcher loads the Rust environment.
-The project uses the `thumbv7em-none-eabihf` target; `rust-src` provides standard
-library sources for code navigation. Complete JetBrains activation on first
-launch, choosing the non-commercial license if applicable.
+On Ubuntu, open the project directory in RustRover (`rustrover .` from this
+directory). Shared configurations use `/bin/bash` and project-relative paths;
+`firmware.sh` loads `~/.cargo/env`. The project uses `thumbv7em-none-eabihf`;
+the pinned Rust toolchain includes `rust-src` for code navigation.
 
 The same actions work from any terminal:
 
@@ -120,17 +127,19 @@ built package without rebooting or uploading. Stop other serial readers before
 uploading or monitoring. Upload handles both the Rust CDC and PX4 bootloader
 USB identities, including a changed tty number after reboot.
 
-For setup on another Linux machine, install Rust with rustup, then run:
+For Ubuntu setup, install Rust with rustup and the `python3-venv` Ubuntu package,
+then run from the project directory:
 
 ```sh
 source "$HOME/.cargo/env"
 rustup show
-python3 -m venv .venv
-.venv/bin/python -m pip install -r tools/requirements.txt
+bash tools/setup_ubuntu.sh
 ```
 
-The upload action defaults to `~/PX4-Autopilot/Tools/px4_uploader.py`. Set
-`PX4_UPLOADER` to another copy of the uploader if needed. `PX4_PORTS` can
+Setup installs the Python requirements and PX4 uploader from fixed commit
+`a2be9197b57b2d065e4c47ca7fc5b7565ee07282`, verifies its SHA-256, and caches it
+at `.venv/px4_uploader.py`. Upload uses this local tool by default. Set
+`PX4_UPLOADER` to an explicit uploader path if needed. `PX4_PORTS` can
 override the comma-separated serial-port patterns. Defaults recognize the Rust
 CDC, the official Auterion PX4 FMUv6X application, and the PX4 bootloader. Custom
 patterns must include the application and bootloader identities when starting
@@ -293,6 +302,7 @@ capability is advertised, so logs still use `LOG_REQUEST_*`), and vehicle type
 | `AUTOPILOT_VERSION` | At connection and on request; Cargo version, source ID (little-endian custom version), STM32 UID |
 | `PARAM_VALUE` | Full-table discovery, by-name/index read, and validated `PARAM_SET` echo |
 | `COMMAND_ACK` | `MAV_CMD_PREFLIGHT_STORAGE` (0 load / 1 save), message requests, reboot |
+| `DEBUG_VECT` | 10 Hz; `name=INA219`, `x=V`, `y=A`, `z=signed W=V×I` from one fresh sample; request ID 252 |
 
 Receive supports unsigned MAVLink v1/v2, fragmented frames, CRC validation,
 `PING`, `TIMESYNC`, and basic `COMMAND_LONG` replies. Unsupported commands
@@ -309,7 +319,12 @@ one byte, so power loss keeps the previous record.
 
 `MAV_SYS_ID` is read-only. `LINK_LED_HZ` accepts 0.1–10 Hz, applies on the next
 blink period, and is only persisted by an explicit save while disarmed and with
-outputs off. `PARAM_SET` always echoes the actual value and reports rejected
+outputs off. `LOG_EN_*`/`LOG_*_HZ` enable or rate-limit each logging source on
+the next cycle: IMU (`LOG_EN_IMU`/`LOG_IMU_HZ`, 200 Hz), current sensor
+(`LOG_EN_INA`/`LOG_INA_HZ`, 10 Hz), DroneCAN (`LOG_EN_CAN`/`LOG_CAN_HZ`,
+400 Hz), health/statistics (`LOG_EN_HEALTH`/`LOG_HEALTH_HZ`, 10 Hz), and event
+topics (`LOG_EN_EVENT`). See [logging-control](docs/logging-control.md).
+`PARAM_SET` always echoes the actual value and reports rejected
 values in `STATUSTEXT`.
 
 ```sh
@@ -341,6 +356,10 @@ system 1 in the ground station's MAVLink inspector, or look for:
 ```text
 Rust FMUv6X v0.2.0 running; USB MAVLink OK
 ```
+
+For the current sensor, select **DEBUG_VECT** (`name=INA219`) in Inspector.
+Its `x`, `y`, and `z` fields show voltage, current, and power together; each can
+be plotted. `time_usec` is the sample's boot-relative timestamp.
 
 For a ground station running on the VMware host, attach the Rust USB device to the host.
 For a Linux terminal test, attach it to the guest instead.
@@ -450,6 +469,8 @@ Open the Rust CDC port with a serial terminal or `pyserial`:
 - `!fault`: CRC-validated retained record; `!fault-clear` explicitly clears it.
 - `!dronecan`: FDCAN register/error counters, bounded transport counters, node
   discovery, and trusted/candidate ESC status.
+- `!ina219`: I2C3 address probe/adoption, configuration, calibration, measurement counters and A/V/W;
+  the standard MAVLink values stop on I/O/conversion failure or stale data.
 - `!time` / `!time set <unix|ISO8601>`: RTC source, calendar progression and
   bounded write/read-back; see [时间基准](docs/time-sync.md).
 - `!logger`: ULog queue, SD/FAT state, bytes, flushes, errors, sync period and high-water mark.

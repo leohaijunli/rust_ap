@@ -154,6 +154,17 @@ pub async fn handle(
                 logger_result(crate::sd_logger::request_stop()),
             ));
         }
+        MavMessage::COMMAND_LONG(data)
+            if data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE && data.param1 == 252.0 =>
+        {
+            let result = if let Some(message) = ina219_status() {
+                reply.push(message);
+                MavResult::MAV_RESULT_ACCEPTED
+            } else {
+                MavResult::MAV_RESULT_TEMPORARILY_REJECTED
+            };
+            reply.push(command_ack(&header, data.command, result));
+        }
         MavMessage::COMMAND_LONG(data) => {
             let mut reboot = false;
             let response = match data.command {
@@ -291,6 +302,19 @@ pub fn autopilot_version() -> MavMessage {
         uid2,
         ..Default::default()
     })
+}
+
+pub fn ina219_status() -> Option<MavMessage> {
+    let measurement = crate::ina219::latest()?;
+    // One standard debug message keeps all three SI values visible together
+    // even in QGC versions which merge named scalar messages in Inspector.
+    Some(MavMessage::DEBUG_VECT(DEBUG_VECT_DATA {
+        time_usec: measurement.timestamp_us,
+        name: "INA219".into(),
+        x: measurement.bus_voltage_v,
+        y: measurement.current_a,
+        z: measurement.power_w,
+    }))
 }
 
 pub fn parameter(parameters: &ParameterManager<'_>, id: Id) -> MavMessage {

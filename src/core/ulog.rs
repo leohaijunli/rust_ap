@@ -2,11 +2,12 @@
 
 use core::mem::size_of;
 
+use crate::ina219::Measurement;
 use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro};
 
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 512;
-pub const TOPIC_COUNT: usize = 9;
+pub const TOPIC_COUNT: usize = 10;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -23,6 +24,7 @@ pub enum TopicId {
     CanStats = 6,
     RuntimeHealth = 7,
     ParameterChange = 8,
+    CurrentSensor = 9,
 }
 
 pub struct Topic {
@@ -86,6 +88,12 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
         name: "rust_parameter_change",
         format: "rust_parameter_change:uint64_t timestamp;uint16_t index;uint8_t kind;uint8_t dirty;uint8_t persisted;float value;",
         payload_len: 17,
+    },
+    Topic {
+        id: TopicId::CurrentSensor,
+        name: "rust_current_sensor",
+        format: "rust_current_sensor:uint64_t timestamp;uint64_t timestamp_sample;float voltage_v;float current_a;float power_w;",
+        payload_len: 28,
     },
 ];
 
@@ -372,6 +380,19 @@ pub fn actuator_armed_payload(report: ActuatorArmed) -> Payload {
         report.in_esc_calibration_mode,
     ] {
         payload.push_u8(u8::from(value)).unwrap();
+    }
+    payload
+}
+
+pub fn current_sensor_payload(measurement: Measurement) -> Payload {
+    let mut payload = Payload::new();
+    payload.push_u64(measurement.timestamp_us).unwrap();
+    for value in [
+        measurement.bus_voltage_v,
+        measurement.current_a,
+        measurement.power_w,
+    ] {
+        payload.push_f32(value).unwrap();
     }
     payload
 }

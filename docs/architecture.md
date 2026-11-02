@@ -14,6 +14,7 @@
 | 参数 | 一个静态注册表提供类型/范围/默认值/生效时机；USB、MAVLink、DroneCAN 与持久层共用 |
 | 日志 | 纯 Rust ULog、PX4 标准测量/输出字段与独立诊断 topic；有界非阻塞入口、独立存储任务；LoggerControl 统一 start/stop/sync/status/config |
 | 通信 | 复用 rust-mavlink；USB CDC 和 TELEM1 共用消息/参数/`SERIAL_CONTROL` shell 逻辑，各自有队列与速率预算 |
+| 支路电流 | SEN0291/INA219 I2C3/100 kHz、0x44（A0=0/A1=1，启动自动探测）、10 mΩ、±8 A；10 Hz 单次转换与有界超时，共享 SI 快照和标准 `NAMED_VALUE_FLOAT` |
 
 任务和时间采用 `embassy-executor` / `embassy-time`，tick 固定 **1 MHz**。板上应用无 C/C++ 运行库或 FFI；原 PX4 bootloader 为保留的恢复边界。`src/core` 放 no_std/host 核心，`src/drivers` 放硬件所有者，`src/comms` 放链路，`src/storage` 放 FRAM/参数/日志；启动、平台、诊断和故障入口留在 `src/` 根目录。
 
@@ -78,6 +79,7 @@ M1 快照至少携带源、序号、本地微秒时间、有效标志和数据�
 | IMU/AHRS | TIM7 软件 pend 的 InterruptExecutor，P3 | IMU task 与既有周期诊断同 executor；AHRS 尚未接入。16 槽队列只在 AHRS 首次等待后启用，满时清积压、计数并从最新样本重同步 |
 | CAN 协议 | 线程 executor | P4 只做 I/O/周期帧；重组、节点与参数服务走有界跨执行器通道，不持有高优先级锁 |
 | USB / UART7 | OTG_FS；UART7 DMA1_CH0/CH1，P6 | USB/TELEM1 双链路互不等待；各自 20 Hz 读取同一 IMU 最新快照 |
+| INA219 | I2C3 PA8/PH8、DMA1_CH4/CH5、EV/ER P6；线程 executor | 独立 I2C 插座，PG4 低使能外设 5 V；每 100 ms 转换，失败/陈旧停发支路测量 |
 | SD | SDMMC2/P7、内部 IDMA；线程存储任务 | PL-a 已构建：PC13 默认低、显式启动、32 KiB staging、FAT 单写者；同步 HAL 等待仍待 H-04 量化 |
 | 日志/参数/低速遥测 | 线程 executor | 有界 poll；任何等待都不持有高优先级路径需要的锁 |
 
@@ -132,6 +134,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | ATTITUDE | 20 Hz；有效 AHRS；按请求可调至经预算允许的速率 |
 | ATTITUDE_QUATERNION | 按需请求/设置速率；与 ATTITUDE 的总额度一起限制 |
 | HIGHRES_IMU | 20 Hz；只标记实际更新的 gyro/accel/temperature 字段 |
+| DEBUG_VECT | `name=INA219`、`x=V`、`y=A`、`z=W`，同次新鲜支路采样，10 Hz；每链路帧上限 420 B/s |
 | ESC_STATUS / ESC_INFO | 10 Hz / 1 Hz；四个真实 ESC 状态，正确处理 K→消息单位及未知值 |
 | GPS_RAW_INT | 按收到的 GNSS，目标 5 Hz；GPS 无定位也如实表示 |
 | AUTOPILOT_VERSION、PARAM_VALUE、STATUSTEXT | 请求/变化触发；队列/发送速率受限 |

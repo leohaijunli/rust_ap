@@ -118,6 +118,7 @@ pub async fn run<'d, D: Driver<'d>>(
 
 async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Replies) -> ! {
     const IMU_PERIOD: Duration = Duration::from_millis(50);
+    const POWER_PERIOD: Duration = Duration::from_micros(v6x_rust_led::ina219::SAMPLE_PERIOD_US);
     let mut sequence = 0u8;
     'connection: loop {
         sender.wait_connection().await;
@@ -133,13 +134,10 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
         }
         let mut next_heartbeat = Instant::now() + Duration::from_secs(1);
         let mut next_imu = Instant::now() + IMU_PERIOD;
+        let mut next_power = Instant::now() + POWER_PERIOD;
 
         loop {
-            let next_wakeup = if next_imu < next_heartbeat {
-                next_imu
-            } else {
-                next_heartbeat
-            };
+            let next_wakeup = next_imu.min(next_heartbeat).min(next_power);
             let result = match select(Timer::at(next_wakeup), replies.receive()).await {
                 Either::First(()) => {
                     let now = Instant::now();
@@ -149,6 +147,12 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
                             result = send_message(sender, &mut sequence, &message).await;
                         }
                         next_imu = now + IMU_PERIOD;
+                    }
+                    if result.is_ok() && now >= next_power {
+                        if let Some(message) = mavlink_core::ina219_status() {
+                            result = send_message(sender, &mut sequence, &message).await;
+                        }
+                        next_power = now + POWER_PERIOD;
                     }
                     if result.is_ok() && now >= next_heartbeat {
                         ticks = ticks.wrapping_add(1);

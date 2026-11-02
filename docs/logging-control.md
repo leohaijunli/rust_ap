@@ -77,7 +77,7 @@ LOGGER schema=2 status=2 stage=... file_index=0 bytes_written=... flushes=... er
 
 - 加速度：`sensor_accel.x/y/z`，FRD、m/s²；
 - 角速率：`sensor_gyro.x/y/z`，FRD、rad/s；
-- 两者都包含 `timestamp`、`timestamp_sample`、`device_id`、`temperature`、`error_count`、`clip_counter[0..2]` 和 `samples`；当前各 1 kHz、`samples=1`。
+- 两者都包含 `timestamp`、`timestamp_sample`、`device_id`、`temperature`、`error_count`、`clip_counter[0..2]` 和 `samples`；当前各 200 Hz、`samples=1`。
 
 最近实测板载 source `81d6c1221048f08a` 仍写旧 `imu_icm42688`：
 `gyro_rad_s[0..2]` / `accel_m_s2[0..2]` 为内部 FLU，2686 条/2.652 s、约 1012.5 Hz、
@@ -98,3 +98,38 @@ LOGGER schema=2 status=2 stage=... file_index=0 bytes_written=... flushes=... er
 
 判据：start 后 `status=2` 且 `bytes_written` 递增、`errors=0`；stop 后回到 `status=0`，
 `flushes` 增加；文件出现在卡上且可被 pyulog 解析。
+
+## 7. INA219 支路数据
+
+`rust_current_sensor` 在日志 Ready 时记录有效采样，约 10 Hz：
+
+| 字段 | 含义 |
+| --- | --- |
+| `timestamp` | 日志入队的启动相对微秒 |
+| `timestamp_sample` | 同次转换完成的启动相对微秒 |
+| `voltage_v` | 负载侧总线电压，V |
+| `current_a` | 有符号分流电流，A |
+| `power_w` | 同次 V×I，有符号功率，W |
+
+数据直接来自驱动的测量快照，ULog 不转录 MAVLink 帧。采样失败不重复写旧值；
+按第 6 节 start/stop 后，可在 QGC Log Download 的 Refresh/Download 下载 `.ulg`。
+本次软件和板载验证见 [P4p](acceptance/ina219/README.md)。
+
+## 8. 日志开关与速率参数
+
+每个常流量数据源一个启用开关 + 一个速率参数，NextCycle 生效，可经 QGC 参数页读/设、保存并掉电回读：
+
+| 参数 | 范围 | 默认 | 作用 |
+| --- | --- | --- | --- |
+| `LOG_EN_IMU` | 0/1 | 1 | `sensor_accel`/`sensor_gyro` 是否记录 |
+| `LOG_IMU_HZ` | 1–1000 | 200 | IMU 记录速率（8 kHz 采集抽稀） |
+| `LOG_EN_INA` | 0/1 | 1 | `rust_current_sensor` 是否记录 |
+| `LOG_INA_HZ` | 1–100 | 10 | 电流支路记录速率 |
+| `LOG_EN_CAN` | 0/1 | 1 | `dronecan_raw_command`/`dronecan_esc_status` 是否记录 |
+| `LOG_CAN_HZ` | 1–1000 | 400 | DroneCAN 记录速率 |
+| `LOG_EN_HEALTH` | 0/1 | 1 | `rust_runtime_health`/`rust_can_stats` 是否记录 |
+| `LOG_HEALTH_HZ` | 1–100 | 10 | 健康/统计记录速率 |
+| `LOG_EN_EVENT` | 0/1 | 1 | 事件类（`actuator_armed`/`rust_parameter_change`/`dronecan_node_status`）是否记录，事件即时无速率 |
+
+记录入口在 Logger Ready 后同时检查启用与速率；事件源只检查启用。加入新数据源时，
+按来源归入一个组，或新增一组 `LOG_EN_*`+`LOG_*_HZ` 并把记录入口接到 `log_config` 判断。

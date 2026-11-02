@@ -54,6 +54,7 @@ pub struct ParameterManager<'d> {
 
 impl<'d> ParameterManager<'d> {
     pub fn new(fram: Fram<'d>) -> Self {
+        v6x_rust_led::log_config::refresh_all();
         Self {
             values: RefCell::new(Parameters::default()),
             fram: Mutex::new(fram),
@@ -73,6 +74,7 @@ impl<'d> ParameterManager<'d> {
     pub fn set(&self, id: Id, value: f32) -> Result<bool, parameters::Error> {
         let changed = self.values.borrow_mut().set(id, value)?;
         if changed {
+            v6x_rust_led::log_config::apply(id);
             crate::sd_logger::record_parameter(
                 embassy_time::Instant::now().as_micros(),
                 id as u16,
@@ -132,6 +134,7 @@ impl<'d> ParameterManager<'d> {
             slots: records.map(|record| record.map(|_| ())),
             last_error: None,
         });
+        v6x_rust_led::log_config::refresh_all();
         Ok(load)
     }
 

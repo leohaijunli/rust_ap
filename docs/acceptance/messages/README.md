@@ -7,7 +7,7 @@
 - `src/core/px4_messages.rs` / ULog：完整 `sensor_accel`、`sensor_gyro`、`actuator_armed` 字段；FRD/SI、发布时间/采样时间、DeviceId、单样本裁剪/真实错误计数。
 - 三个固定 `.msg` 与 LICENSE 来自 PX4 v1.17.0 `d6f12ad1c4f70ad3230afd7d86e971421e02fef4`，见 `tools/px4_msgs/`；[消息约定](../../message-contracts.md) 与[来源](../../provenance.md)。
 - MAVLink 已使用 rust-mavlink 0.17.1 `common` 标准消息；本次复用既有协议证据。
-- ULog 只注册 9 个已接入 topic；原始 DroneCAN / Rust 诊断采用独立前缀。IMU 每 8 样本抽取 1 个，各 topic 1 kHz、`samples=1`。
+- ULog 注册 10 个已接入 topic（含新增 `rust_current_sensor`）；原始 DroneCAN / Rust 诊断采用独立前缀。IMU 每 40 样本抽取 1 个，各 topic 200 Hz、`samples=1`。
 - 局部简化审视：共用 accel/gyro 的一致线布局编码，移除未接入的日志 schema，原逐字节镜像测试由独立 pyulog/PX4 输入校验替代。
 
 ## 检查

@@ -29,6 +29,7 @@
 | [AM32](https://github.com/am32-firmware/AM32) | `86cf1e55e56c7e7e622d01ba6855905504f15105` | GPLv3；外接 ESC 行为参考，未构建/刷写 ESC |
 | [embedded-fatfs](https://github.com/MabezDev/embedded-fatfs) | `518528cc111fcf65c48abbdeb80735a38eada112` | MIT；PL-a 板上 FAT、块适配与 MBR/superfloppy，lock 与根 patch 固定 |
 | [pyulog](https://github.com/PX4/pyulog) | 1.3.0 | BSD-3-Clause；host 独立解析完整/截断 ULog，不进入板上应用 |
+| [LibDriver INA219](https://github.com/libdriver/ina219) | `266a1ee32a5f70e4e5d47591ce28c4e1c387857c`（1.0.7） | MIT；寄存器/大小端、shunt/bus/current 缩放、标定与单次转换时序参考；[许可](licenses/libdriver-ina219.txt) |
 
 许可文件 hash、origin、入口工作树和子模块清单分别见：
 
@@ -65,6 +66,8 @@
 | `src/core/icm42688.rs`、`src/core/config.rs`、`src/drivers/imu.rs` | 本项目 P4 纯 Rust/Embassy 实现；寄存器地址、20 B high-resolution FIFO、复位/配置/水位/周期回读流程对照固定 PX4 `d6f12ad…` 的 `src/drivers/imu/invensense/icm42688p/{InvenSense_ICM42688P_registers.hpp,ICM42688P.cpp,ICM42688P.hpp}`（BSD-3-Clause）。本项目采用 8 kHz ODR、YAW270/FLU、独立 fan-out 与 Embassy API，未链接或拷入 C++ 驱动 |
 | `src/core/px4_messages.rs`、`src/core/ulog.rs`、`tools/px4_msgs/`、fixture/检查工具 | 标准字段适配上述固定 `.msg`；本项目显式编码和 FRD 转换，保留 BSD-3-Clause 许可。DeviceId 对照同 commit 的 `Device.hpp`、`nuttx/SPI.cpp`、`drv_sensor.h`、FMUv6X `spi.cpp` 与 `spi_hw_description.h`；裁剪判据参考 `PX4Accelerometer.cpp` / `PX4Gyroscope.cpp` 的单样本 99.9% 满量程规则，未移植 FIFO 平均或 uORB 运行时 |
 | `tools/enter_bootloader.py`、`tools/test_enter_bootloader.py`、`tools/firmware.sh` | 本项目 host 上传入口；复用应用既有 `!bootloader` 协议和原 PX4 uploader，不修改或替换 bootloader |
+| `tools/setup_ubuntu.sh`、`.run/Setup Ubuntu.run.xml` | 本项目 Ubuntu 工具入口；下载上述固定 uploader 的 `Tools/px4_uploader.py` 到忽略的 `.venv/`，SHA-256=`f05929e1035e693005677e088e4e7085503b2e8ab3d7c8785f7bd84cd48880f8`；保留上游脚本许可，未修改上游代码 |
+| `src/core/ina219.rs`、`src/drivers/ina219.rs` 与遥测/诊断接线 | 本项目 SEN0291 纯 Rust 实现，参考固定 LibDriver `src/driver_ina219.{c,h}` / example 与 TI SBOS448G（23–24 页 CNVR/OVF/FS0）；采用工程师确认的 10 mΩ/8 A、±80 mV、CAL=16776（FS0 清零）、单次转换和同次 V×I。工程师提供的根目录 `ina219/` C++ 文件为参考，不链接 uORB/NuttX/C++ |
 | `.opencode/skills/`、`AGENTS.md` | 工程师要求安装并应用的 clean-code / code-simplifier 项目适配；固定来源、改动与许可见[技能说明](ai-coding-skills.md) |
 
 主工程没有拷入候选协议实现或引入 C/C++ FFI；P4b-a 为依据固定公开协议和参考向量编写的纯 Rust 实现。Python、参考 C 生成器只在 host 使用；原 PX4 bootloader 按恢复要求保留，外接 ESC/H-RTK 的厂商固件不属于本项目飞控应用。

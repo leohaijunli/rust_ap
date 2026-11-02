@@ -36,3 +36,9 @@
 - QGC退出码0。20:58 UTC独立串口采集确认PX4 v1.17.0、board_version=53和19个心跳。
 
 21:28 UTC最终回装普通Rust `a946a529360eac83`，CRC、disarmed及无保留测试故障检查通过。P1恢复往返已完成；后续M1消息/参数按[当前计划](../plan.md#4-仅保留必要测试)验证。
+
+## 2026-11-02 Windows 连接与 INA219 Inspector
+
+- 工程师使用 Windows 主机 QGC，最初反馈无连接，随后确认已看到 INA219 消息；Windows QGC 版本和 COM 编号未记录。
+- Rust CDC 为 `1209:0001`、`V6X Rust CDC`，不在 QGC 5.1.5 的 [USB 自动识别表](https://github.com/mavlink/qgroundcontrol/blob/v5.1.5/src/Comms/USBBoardInfo.json) 中。Windows 可在 Comm Links 手动选择对应 COM、115200、关闭硬件流控；USB 必须由运行 QGC 的主机持有。
+- 工程师要求现有 Inspector 中 V/A/W 同显，先采用标准 `DEBUG_VECT`、`name=INA219`、`x=V/y=A/z=W`，新固件/GUI 验证见 [P4p](acceptance/ina219/README.md)。专用新消息 ID 需要 QGC 方言支持；本次使用其已认识的标准调试消息。

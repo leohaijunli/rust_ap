@@ -17,6 +17,7 @@
 - [x] **D-M1 / D-QGC-M1 / D-PARAM**：IMU、AHRS、DroneCAN、ULog、USB/TELEM1、QGC 数据和标准参数读设。
 - [x] **D-IMU / D-ESC / D-GNSS**：单 SPI2 ICM-42688-P；4 个 Vimdrones Nano / Quad X；H-RTK DroneCAN SKU12059。
 - [x] **D-MESSAGES**：PX4 标准数据消息/ULog 字段 + MAVLink `common.xml` 标准消息与命令；[映射](docs/message-contracts.md)。
+- [x] **D-INA219 / H-11 接线配置**：SEN0291，独立 I2C3 插座，拨码 A0=0/A1=1 即 0x44（固件自动探测 4 个地址）、10 mΩ、±8 A，测量独立支路；工程师确认已连接。
 - [x] **D-PUBLIC / D-HOLSATUS / D-DEFER**：允许 GPL 来源并记录许可；Holsatus 构建修复暂缓；远期细节待 M1。
 - [x] **P0-01～10 / H-01**：软件基线、来源、硬件资料与 A3/M1 方案已归档。
 
@@ -41,6 +42,7 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 - [ ] **P2 / MAV-01～03**：USB/TELEM1 双链路、QGC 连接/重连及版本显示；MAV-01 软件门已通过，待 H-03 与工程师接线做双链路/重连实测。[证据](docs/acceptance/p2/README.md)。依赖 P1、P3a。
 - [ ] **P3 / PARAM-01～02**：软件/工具路径已由 P3a/P2 就绪；待 P2 闭合与 H-03 接线后做双链路一致性、合法/非法值回显及保存重启读回。依赖 P3a、P2。
 - [ ] **P4 / SENS-01～04**：软件门、实物 WHO_AM_I/SPI/短时 8 kHz 计数、USB `HIGHRES_IMU` 与旧 `imu_icm42688` 短时 1 kHz ULog 已通过；待 DRDY 仪器测量、60 s 标准 `sensor_accel` / `sensor_gyro` 日志、六面方向、校准与故障恢复。[证据](docs/acceptance/p4/README.md)。依赖 P1、P3a、PL-a。
+- [ ] **P4p / PWR-01～04**：INA219 I2C3、探测/采样/超时恢复已实现；`source=b2e70b0ecc7ab844` 实测单条 `DEBUG_VECT`（`name=INA219`、`x=V/y=A/z=W`）约 9.98 Hz，Windows QGC Inspector x/y/z 同显已确认；ULog `rust_current_sensor` 干净短日志约 9.975 Hz 无 dropout。已构建（未烧录）`15a3094727d65d4a`：IMU 200 Hz + 日志开关/速率参数 `LOG_EN_*`/`LOG_*_HZ`（NextCycle、可经 QGC 读设保存）。全量负载日志 4 dropout/5685 条普通丢样为 SD 吞吐落后（队列满）的既有日志吞吐问题，并入 PL-a/M1。实测总线约 0.92 V，需确认支路供电/接线；精度与断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
 - [ ] **P6a / EST-01～02**：Mahony AHRS、姿态日志/QGC 方向；相对 yaw。依赖 P4、P2、PL-a。
 - [ ] **P7 / TEL-01～02**：随真实数据源补遥测与速率控制。依赖相应数据源、P2。
 - [ ] **M1-01～02**：一次 5 分钟数据链联合运行，核对数据、日志和资源；零命令/DISARMED。依赖以上阶段。
@@ -61,6 +63,7 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 
 - [ ] **P6b→P6c→P6d→P6e→P6f→P6g**：模式→GNSS 融合/导航→路径→影子回退→INDI/NMPC/轨迹→任务协议；依赖详见计划。
 - [ ] **P3b / P8 / BACK-01～03**：元数据、按需外设/冗余和发布自动化。
+- [ ] **CAN-BRD（新增）**：DroneCAN ↔ CAN 总线调试桥，供 DroneCAN GUI 查看节点。工程师确认 GUI（UavcanGUI/yakut）连的是 **CAN 总线**、不是 MAVLink 串口桥；需 USB-CAN 适配器或飞控作 CAN 网桥。实现方式与连接形态待工程师提供目标 GUI 后细化（见 [plan.md](../plan.md#7-M1-后续)）。
 
 ## 待补硬件输入
 
@@ -71,3 +74,4 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 | H-06/07 | 台架限幅/停转，RC/UART/电源和预检策略；P5a/b |
 | H-08/09 | GNSS 坐标/精度，动力学/辨识/求解预算；P6c/d/f |
 | H-10 | H-RTK 固件/节点/消息率及后续 RTCM 来源；P4b-g/r |
+| H-11 | INA219 0x44 通信、单条 `DEBUG_VECT` V/A/W 在 Windows Inspector 已确认、ULog `rust_current_sensor` 已实测；待支路供电/接线确认、参考负载精度和一次断线恢复；P4p |

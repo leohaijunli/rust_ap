@@ -300,7 +300,7 @@ def monitor(link, seconds):
     received = 0
     while time.monotonic() < deadline:
         message = link.recv_match(
-            type=["HEARTBEAT", "STATUSTEXT", "SYSTEM_TIME", "HIGHRES_IMU", "COMMAND_ACK"],
+            type=["HEARTBEAT", "STATUSTEXT", "SYSTEM_TIME", "HIGHRES_IMU", "NAMED_VALUE_FLOAT", "DEBUG_VECT", "COMMAND_ACK"],
             blocking=True, timeout=0.2,
         )
         if message is not None:
