@@ -28,7 +28,7 @@
 - [x] **独立 QGC 恢复**：USB 重插、Stable 上传/校验和 PX4 v1.17.0 运行已留档。
 - [x] **P1-01 / H-05 / P1-04 收口**：21:28 UTC 从 PX4 直接回装普通包，CRC/source、disarmed、fault_injection=false、故障 valid=false 全部通过；[最终回装](docs/acceptance/p1/20261031-hil.md#最终普通回装与p1结论)。
 
-P1 最终普通回装为 `a946a529360eac83`；当前板上为 P4/PL-b HIL 普通 Rust `496484e26b3502fe`，disarmed、输出关闭，`LINK_LED_HZ=2.0` 的 P3a 保存值仍有效。Inspector 版本显示及主机重启后 CDC 零数据问题归 P2；FMU 灯目视项不适用。项目开始前原配置仍无备份，P3a 已备份写入前当前 FRAM。
+P1 最终普通回装为 `a946a529360eac83`；当前板上为 PL-b 普通 Rust `021161d4c09a4b91`（心跳 `autopilot=PX4`，QGC 日志保存为 `.ulg`），disarmed、输出关闭，`LINK_LED_HZ=2.0` 的 P3a 保存值仍有效。Inspector 版本显示及主机重启后 CDC 零数据问题归 P2；FMU 灯目视项不适用。项目开始前原配置仍无备份，P3a 已备份写入前当前 FRAM。
 
 ## M1 前置阶段
 
@@ -45,7 +45,7 @@ P1 最终普通回装为 `a946a529360eac83`；当前板上为 P4/PL-b HIL 普通
 
 ## M1 后续
 
-- [ ] **PL-b / LOG-B01～02**：软件与有限 HIL 通过：QGC 协议列出 2 个日志，分块下载 306176 B 后 pyulog 无 corruption；MAVLink Console start/sync/stop/restart 通过。待 QGC GUI Refresh/Download、断链与速率边界收口。[证据](docs/acceptance/pl-b/README.md)。依赖 M1、PL-a、P2。
+- [ ] **PL-b / LOG-B01～02**：软件与有限 HIL 通过：QGC 协议列出 2 个日志，分块下载 306176 B 后 pyulog 无 corruption；MAVLink Console start/sync/stop/restart 通过；心跳改 PX4 兼容后 QGC 下载应命名为 `.ulg`。待 QGC GUI Refresh/Download、断链与速率边界收口。[证据](docs/acceptance/pl-b/README.md)。依赖 M1、PL-a、P2。
 - [ ] **P6a-e / EKF-01～03**：固定 PX4 v1.17.0 数学核心的纯 Rust 移植；不含 uORB/NuttX/FFI。先 IMU 预测与数值对拍，再接 GNSS aiding、健康/复位和 Mahony 回退。依赖 M1、P6a、P4b-g、P2、PL-b。
 - [ ] **P4b-r / RTK-01～02**：RTCM 转发、RTK 与中断恢复。依赖 M1、P2、P4b-g、H-10。
 - [ ] **P5a / OUT-A01～02**：单一仲裁、限时授权/撤销、看门狗及零输出门控。依赖 M1、P4b-a、PL-a、H-06。

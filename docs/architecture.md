@@ -123,7 +123,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 
 ## 6. QGC、MAVLink 与参数
 
-**上游 QGroundControl 连接、Inspector 消息检查和参数页读/设是 M1 必验项。** 历史 q-MAG/MagGCS 连接不能替代。身份为 Generic，能力位只声明已支持的功能。
+**上游 QGroundControl 连接、Inspector 消息检查和参数页读/设是 M1 必验项。** 历史 q-MAG/MagGCS 连接不能替代。心跳 `autopilot` 为 `MAV_AUTOPILOT_PX4`：QGC 只在 PX4 身份下把机载日志保存为 `.ulg`，其余身份保存为 `.bin`（内容同为 ULog）。不声明 `MAV_PROTOCOL_CAPABILITY_FTP`，日志仍走 `LOG_REQUEST_LIST/DATA/END` 消息通道；能力位只声明已支持的功能。
 
 | 消息 | 首轮默认速率 / 条件 |
 | --- | --- |

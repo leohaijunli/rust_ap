@@ -6,7 +6,7 @@
 ## 1. 当前进度与执行原则
 
 - P0、P1、P3a 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-b 列表/分块下载协议有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b 仍待 H-02/03/04、QGC GUI 与工程师操作，依赖阶段未放行。
-- P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**当前板上为 P4/PL-b HIL 普通 Rust `496484e26b3502fe`；IMU、logger API、日志列举与分块下载有限 HIL 通过，但六面、长时、异常卡和 QGC GUI 尚未收口。**
+- P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**当前板上为 PL-b 普通 Rust `021161d4c09a4b91`（心跳 `autopilot=PX4`，QGC 日志保存为 `.ulg`）；IMU、logger API、日志列举与分块下载有限 HIL 通过，但六面、长时、异常卡和 QGC GUI 尚未收口。**
 - 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - 本计划的精简验收取代早期操作单中的重复次数、长时压测和截图齐套要求。历史测试结果及缺失记录仍按实保存。
 - 只实现当前阶段所需功能；清晰命名、小而直接的函数、复用现有工具。遵循 KISS/YAGNI，避免提前抽象、重复实现及无用注释。
@@ -33,7 +33,7 @@
 | AHRS | 统一 `AttitudeEstimator` API 下先接 Mahony gyro/accel 姿态、角速度与有效性；yaw 为相对航向。EKF2 不作为 M1 前置，位置融合归后续 P6a-e/P6c |
 | DroneCAN | 节点发现/服务、ESC 映射与 Status、零命令、H-RTK Fix2/Auxiliary；优先静态 ID，仅设备必需时增加 DNA |
 | 日志 | 纯 Rust ULog、有界缓冲、SDMMC2/FAT、参数/数据/事件记录；M1 取卡解析，在线下载归 PL-b |
-| MAVLink | USB CDC + TELEM1/UART7；真实心跳、状态、IMU/姿态、ESC/GNSS；Generic 身份 |
+| MAVLink | USB CDC + TELEM1/UART7；真实心跳、状态、IMU/姿态、ESC/GNSS；心跳 `autopilot=PX4` 以便 QGC 以 `.ulg` 保存日志，不声明 FTP 能力 |
 | 参数 | 唯一静态注册表，标准 PARAM_* 读设、实际值回显、范围校验与持久化 |
 | QGC | 上游 QGC 连接、查看真实数据、参数读设；不依赖 PX4 专用校准界面 |
 

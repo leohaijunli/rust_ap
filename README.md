@@ -19,8 +19,10 @@ with source **`a946a529360eac83`**, disarmed, fault injection disabled, and no v
 retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
 [essential-check plan](plan.md). **P3a is complete:** FRAM backup, parameter API,
 atomic save and power-cycle readback passed; `LINK_LED_HZ=2.0` remains saved.
-The board now runs the P4/PL-b HIL source **`496484e26b3502fe`**; see
-[P3a](docs/acceptance/p3a/README.md) and [P4](docs/acceptance/p4/README.md) evidence.
+The board now runs the PL-b source **`021161d4c09a4b91`** (heartbeat
+`autopilot=PX4` so QGC saves onboard logs as `.ulg`); see
+[P3a](docs/acceptance/p3a/README.md), [P4](docs/acceptance/p4/README.md) and
+[PL-b](docs/acceptance/pl-b/README.md) evidence.
 **P4b-a software is ready:** the
 bounded DroneCAN v0 core, node services, FDCAN1 adapter, and zero-only periodic
 output passed host/build checks; hardware mapping remains blocked by H-02/03.
@@ -275,11 +277,13 @@ serial number is **V6X-RUST-001**.
 ## MAVLink ground-station connection
 
 The CDC data stream carries MAVLink 2 with system ID **1**, component ID **1**,
-and firmware type **Generic**:
+autopilot ID **PX4** (QGC then names onboard log downloads `.ulg`; no FTP
+capability is advertised, so logs still use `LOG_REQUEST_*`), and vehicle type
+**Generic**:
 
 | Message | Schedule / purpose |
 | --- | --- |
-| `HEARTBEAT` | 1 Hz; Generic vehicle, standby state |
+| `HEARTBEAT` | 1 Hz; generic vehicle type, PX4-compatible autopilot ID, standby state |
 | `SYS_STATUS` | 1 Hz; P1 measured CPU load in permille, unknown batteries unchanged; CPU validity is in `!metrics` |
 | `SYSTEM_TIME` | 1 Hz; the actual MCU boot time in milliseconds |
 | `STATUSTEXT` | At connection, every 5 heartbeats, and on request; identifies Rust firmware |
@@ -378,10 +382,10 @@ changing and existing client handles becoming invalid.
 
 For direct q-MAG serial testing, stop every MAVProxy/terminal reader and select
 the current Rust CDC attachment. The UDP forwarding workflow keeps USB with
-one owner and avoids the handoff. The firmware truthfully reports a Generic
-autopilot; q-MAG's automatic FC discovery policy currently targets PX4
-multirotors, so automatic-platform support and manual telemetry reception are
-separate integration concerns.
+one owner and avoids the handoff. The firmware now reports a PX4-compatible
+autopilot ID (generic vehicle type) mainly so QGC names downloaded logs
+`.ulg`; q-MAG's automatic FC discovery may therefore match it, but vehicle
+type and feature discovery remain separate integration concerns.
 
 An independent live-wire check using `pyserial` and `pymavlink` is available:
 

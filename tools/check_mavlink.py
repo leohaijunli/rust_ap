@@ -162,7 +162,7 @@ def expected_source_id(expected_version, source_id, report):
 def check(link, expected_version, source_id=None):
     link.port.reset_input_buffer()
     heartbeat = receive(link, "HEARTBEAT")
-    assert heartbeat.autopilot == mavutil.mavlink.MAV_AUTOPILOT_GENERIC
+    assert heartbeat.autopilot == mavutil.mavlink.MAV_AUTOPILOT_PX4
     assert not heartbeat.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
     timestamps = [time.monotonic()]
     for _ in range(4):
@@ -170,7 +170,7 @@ def check(link, expected_version, source_id=None):
         timestamps.append(time.monotonic())
     period = (timestamps[-1] - timestamps[0]) / 4
     assert 0.8 < period < 1.2, f"Heartbeat period is {period:.3f}s"
-    print(f"HEARTBEAT: system=1 component=1, Generic, mean period={period:.3f}s")
+    print(f"HEARTBEAT: system=1 component=1, PX4-compatible, mean period={period:.3f}s")
 
     request(link, 253)
     text = receive(link, "STATUSTEXT")

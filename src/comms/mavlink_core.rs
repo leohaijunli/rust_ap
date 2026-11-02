@@ -193,7 +193,11 @@ pub fn heartbeat() -> MavMessage {
     MavMessage::HEARTBEAT(HEARTBEAT_DATA {
         custom_mode: 0,
         mavtype: MavType::MAV_TYPE_GENERIC,
-        autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
+        // QGC only saves onboard logs as `.ulg` when the autopilot is PX4;
+        // every other identity is stored as `.bin`. We keep the original PX4
+        // bootloader, MAVLink2 and no FTP capability, so the message-based
+        // LOG_* download path is still used.
+        autopilot: MavAutopilot::MAV_AUTOPILOT_PX4,
         base_mode: if crate::OUTPUT_STATE.armed {
             MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED
         } else {

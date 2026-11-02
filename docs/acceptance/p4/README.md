@@ -17,16 +17,16 @@
 | MAVLink | USB 与 TELEM1 各 20 Hz `HIGHRES_IMU`，只标记 accel XYZ、gyro XYZ、temperature；过期样本不发送；请求消息 ID 105 可读取 |
 | 目录 | `src/core`、`src/drivers`、`src/comms`、`src/storage` 按职责整理；`#[path]` 保持已有 crate 模块 API |
 | 软件检查 | fmt；普通/注入/Dump target Clippy；host Clippy（`-D warnings`）；52 项 Rust host 测试；77 项 Python 回归；17 项编译时钟谓词全部通过 |
-| release/打包 | Linux Rust 1.99.1；source=`ad6b017000ad127e`；raw/padded=`361864/361888 B`；static RAM=`231672 B`、空余 `226056 B`；布局/向量/ELF/bin/PX4 一致 |
+| release/打包 | Linux Rust 1.99.1；source=`021161d4c09a4b91`；raw/padded=`361856/361856 B`；static RAM=`231672 B`、空余 `226056 B`；布局/向量/ELF/bin/PX4 一致 |
 
-最终构建 `.px4` SHA-256：`5622749dbdc6dc0e763f482008640a457d68781378445318209259fe6f3004de`；`.bin` SHA-256：`e76701d101ccf91ec035612c2d9d1e4f0b8cb562f6d4ac828a26ffa4f8312858`。板上有限 HIL 使用前一精确 source=`496484e26b3502fe`；最终 `ad6b…` 增加断链响应清理，尚未重复刷写。
+最终构建 `.px4` SHA-256：`319b90ccc2effa9c51a220ba909bac5a6d4373e7e14f5993f31bfe747f4f4d07`；`.bin` SHA-256：`5eda35dfda5662810098c8f3977d8cb23060c15993c51489d9149ac0f3985518`。该包已由原 PX4 bootloader 上传/CRC 校验并运行；心跳 `autopilot` 改为 PX4 兼容，仅用于 QGC 把机载日志保存为 `.ulg`，仍不声明 FTP 能力，日志继续走 `LOG_REQUEST_*` 消息通道。
 
 ## 有限 HIL（2026-11-01）
 
 | 检查 | 结果 |
 | --- | --- |
 | 上传/身份 | 正常应用 `COM4`/`1209:0001` 发送 `!bootloader`，重枚举 `COM3`/`3185:0035`；固定 PX4 v1.17 `px_uploader.py` 识别 board 53、协议 5、STM32H7[4|5]x Rev V、1966080 B，擦除/写入/CRC Verify/重启通过 |
-| 应用 | 当前板载 `P1_PLATFORM`：source=`496484e26b3502fe`、fault_injection=false、clock registers_ok=true |
+| 应用 | 当前板载 `P1_PLATFORM`：source=`021161d4c09a4b91`、fault_injection=false、clock registers_ok=true；本节 IMU 数据采集自前一 source=`496484e26b3502fe`，配置未变 |
 | IMU 身份 | `!imu`：initialized=true、WHO_AM_I=`47`、odr_hz=8000、log_rate_hz=1000、实际 spi_hz=24000000 |
 | 短时计数 | 两次 `!imu` 间样本 `1146992→1195640`，host 窗口 6.019719 s，观测 8081.441 Hz；串口命令窗口/器件时钟误差未剥离，不据此关闭速率项 |
 | 健康 | 第二次快照 transfer_errors=0、decode_errors=0、fifo_resets=1（初始化 flush）、ahrs_dropped=0、latest_age_us=950 |
