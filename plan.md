@@ -202,7 +202,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P6f / INDI-01、NMPC-01、TRAJ-01 | 辨识、INDI/NMPC/轨迹；有界求解与过期/NaN 回退 | P6e、H-09 |
 | P6g / MISSION-01～02 | MAVLink 任务上传/执行/完成，复用参数和日志协议 | P6f、P2/P3、PL-b |
 | P3b / P8 / BACK-01～03 | 元数据、按需外设/冗余、发布自动化 | 实际需求确认后 |
-| CAN-BRD / 新增 | DroneCAN 调试桥：把 FDCAN1 收到的 DroneCAN 帧按 GUI 所需封装（视目标 GUI：UavcanGUI/yakut 连 CAN 总线，需 USB-CAN 适配器；或按 ArduPilot 的 DroneCAN-over-serial 桥），固件做帧中继/节点状态导出 | 确认 GUI 与连接方式后 |
+| CAN-BRD / 新增 | DroneCAN 调试桥：SLCAN（ASCII serial-CAN）经 USB CDC，GUI Tool 把飞控当 USB-CAN 适配器；FDCAN2（PB12/PB13）独立。SLCAN 编解码已实现并过 host 测试（`src/core/slcan.rs`，T/t/O/C/S/V/F/Z、帧往返）；待 FDCAN2 驱动与 USB CDC 字节自动分流接入 | 确认 GUI 与连接方式后 |
 
 远期接口和指标在 M1 硬件结果后细化。控制与估计算法不直接驱动外设；输出必须经同一仲裁。同步求解不能仅靠 async timeout 声称有时限；保留 Mahony 可运行基线、独立过期检测和 EKF2 明确回退。
 

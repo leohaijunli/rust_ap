@@ -29,6 +29,8 @@ pub mod parameter_store;
 pub mod parameters;
 #[path = "core/px4_messages.rs"]
 pub mod px4_messages;
+#[path = "core/slcan.rs"]
+pub mod slcan;
 #[path = "core/ulog.rs"]
 pub mod ulog;
 #[path = "core/wall_clock.rs"]

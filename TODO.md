@@ -63,7 +63,7 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 
 - [ ] **P6b→P6c→P6d→P6e→P6f→P6g**：模式→GNSS 融合/导航→路径→影子回退→INDI/NMPC/轨迹→任务协议；依赖详见计划。
 - [ ] **P3b / P8 / BACK-01～03**：元数据、按需外设/冗余和发布自动化。
-- [ ] **CAN-BRD（新增）**：DroneCAN ↔ CAN 总线调试桥，供 DroneCAN GUI 查看节点。工程师确认 GUI（UavcanGUI/yakut）连的是 **CAN 总线**、不是 MAVLink 串口桥；需 USB-CAN 适配器或飞控作 CAN 网桥。实现方式与连接形态待工程师提供目标 GUI 后细化（见 [plan.md](../plan.md#7-M1-后续)）。
+- [ ] **CAN-BRD（新增）**：DroneCAN ↔ CAN 总线 SLCAN 调试桥。工程师确认 GUI（UavcanGUI/yakut）连的是 **CAN 总线**、飞控经 SLCAN（ASCII serial-CAN）当 USB-CAN 适配器；用 **FDCAN2（PB12/PB13）** 独立。SLCAN 编解码已实现并过 host 测试（`src/core/slcan.rs`）；待 FDCAN2 驱动 + USB CDC 字节自动分流接入（见 [plan.md](../plan.md#7-M1-后续)）。
 
 ## 待补硬件输入
 
