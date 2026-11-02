@@ -227,7 +227,12 @@ fn publish(sample: Sample, log_decimation: u32) {
     }
     STATE.samples.fetch_add(1, Ordering::Relaxed);
     if sample.sequence.is_multiple_of(log_decimation) {
-        crate::sd_logger::record_imu(Instant::now().as_micros(), sample);
+        let error_count = STATE
+            .transfer_errors
+            .load(Ordering::Relaxed)
+            .saturating_add(STATE.decode_errors.load(Ordering::Relaxed))
+            .saturating_add(STATE.drdy_timeouts.load(Ordering::Relaxed));
+        crate::sd_logger::record_imu(Instant::now().as_micros(), sample, error_count);
     }
 }
 

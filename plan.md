@@ -1,12 +1,13 @@
 # Pixhawk 6X Rust 飞控实施计划
 
-更新：2026-11-01。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
+更新：2026-11-02。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
 状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md)。
 
 ## 1. 当前进度与执行原则
 
-- P0、P1、P3a 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-b 列表/分块下载协议有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b 仍待 H-02/03/04、QGC GUI 与工程师操作，依赖阶段未放行。
-- P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**当前板上为 PL-b 普通 Rust `021161d4c09a4b91`（心跳 `autopilot=PX4`，QGC 日志保存为 `.ulg`）；IMU、logger API、日志列举与分块下载有限 HIL 通过，但六面、长时、异常卡和 QGC GUI 尚未收口。**
+- P0、P1、P3a、RTC-01/TIME-01 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-a/P4/PL-b 正常路径有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b 仍待 H-02/03/04、QGC GUI 与工程师操作，GNSS 授时和 M1 未开始。
+- P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**最近实测板载为普通 Rust `81d6c1221048f08a`：RTC LSE 走时/写后回读、`SYSTEM_TIME`、日志 UTC 和短时自定义 IMU ULog 通过；心跳 `autopilot=PX4`，QGC `.ulg` 文件名/日期显示仍待 GUI 确认。**
+- 标准消息软件 source=`c2f3128aecc8a70b` 已通过必要检查/普通打包，见[记录](docs/acceptance/messages/README.md)；新 ULog schema 的实物核对并入下一次 P4 必验记录。
 - 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - 本计划的精简验收取代早期操作单中的重复次数、长时压测和截图齐套要求。历史测试结果及缺失记录仍按实保存。
 - 只实现当前阶段所需功能；清晰命名、小而直接的函数、复用现有工具。遵循 KISS/YAGNI，避免提前抽象、重复实现及无用注释。
@@ -24,6 +25,7 @@
 7. 上游仓库、工具链、DSDL 和生成器固定版本。允许 GPL 等来源复用；保留适用版权/许可证并记录[来源](docs/provenance.md)。Holsatus 的既有构建问题暂缓，按需取用固定 Cybflight 算法。
 8. 接线、供电、目视/QGC 和台架操作由工程师配合；人员称“工程师”。未知硬件事实和缺失备份如实记录。
 9. 后续 EKF2 只移植固定 PX4 v1.17.0 的估计数学核心；不移植 uORB、NuttX work queue、`EKF2.cpp` 模块封装或 PX4 shell，不以 C++ FFI 接入。Rust 版本保持 no_std、固定容量与独立来源/许可记录。
+10. 数据边界和 ULog 优先使用固定 PX4 v1.17.0 标准消息的字段、单位、时间与坐标语义；MAVLink 使用 `common.xml` 标准消息/命令。纯 Rust 类型与显式编码实现这些契约，标准映射见[消息约定](docs/message-contracts.md)。
 
 ## 3. M1 范围与实现边界
 
@@ -32,7 +34,7 @@
 | IMU | ICM-42688-P 的 ID、DRDY/FIFO/DMA；8 kHz ODR、8 包批处理、1 kHz ULog、时间戳、SI 单位、方向及基础校准 |
 | AHRS | 统一 `AttitudeEstimator` API 下先接 Mahony gyro/accel 姿态、角速度与有效性；yaw 为相对航向。EKF2 不作为 M1 前置，位置融合归后续 P6a-e/P6c |
 | DroneCAN | 节点发现/服务、ESC 映射与 Status、零命令、H-RTK Fix2/Auxiliary；优先静态 ID，仅设备必需时增加 DNA |
-| 日志 | 纯 Rust ULog、有界缓冲、SDMMC2/FAT、参数/数据/事件记录；M1 取卡解析，在线下载归 PL-b |
+| 日志 | 纯 Rust ULog、有界缓冲、SDMMC2/FAT；IMU 用标准 `sensor_accel` / `sensor_gyro`，输出状态用 `actuator_armed`；M1 取卡解析，在线下载归 PL-b |
 | MAVLink | USB CDC + TELEM1/UART7；真实心跳、状态、IMU/姿态、ESC/GNSS；心跳 `autopilot=PX4` 以便 QGC 以 `.ulg` 保存日志，不声明 FTP 能力 |
 | 参数 | 唯一静态注册表，标准 PARAM_* 读设、实际值回显、范围校验与持久化 |
 | QGC | 上游 QGC 连接、查看真实数据、参数读设；不依赖 PX4 专用校准界面 |
@@ -48,6 +50,7 @@
 - DroneCAN RawCommand 数组按 `esc_index`，不是 node ID 排列；撤销输出时清除待发非零帧，恢复不自动解锁。
 - 控制、参数和各链路使用同一真源与单一输出仲裁。细节见[架构](docs/architecture.md)、[DroneCAN](docs/dronecan-notes.md)、[日志预算](docs/logging-budget.md)、[日志控制](docs/logging-control.md)。
 - 估计器不直接访问外设或链路：输入为带 source/sequence/sample time/valid/age 的 DTO，输出为 `Watch<EstimatorState>` 最新快照；Mahony/EKF2 通过同一接口选择，配置只在显式 reset/apply 边界生效。
+- 标准消息必须完整匹配字段语义，不能只改 topic 名；附加有效性/相对 yaw/链路诊断用独立元数据或 `rust_*` / `dronecan_*` topic。真实数据源接入时再新增消息定义与发布路径。
 
 ## 4. 仅保留必要测试
 
@@ -82,7 +85,7 @@
 | 完成 | 本次 QGC 独立 USB 入口、Stable 上传/校验、PX4 v1.17.0 运行；早一轮 P0/普通回装结果也已保存 |
 | 完成 | 21:28 UTC 从 PX4 直接回装普通包一次；CRC=`B9FB636E`、source、3 个 disarmed 心跳、fault_injection=false、故障 valid=false，见[最终回装](docs/acceptance/p1/20261031-hil.md#最终普通回装与p1结论) |
 
-保存的普通包 SHA-256：`7652fa90836be3182becf8f888a052aebc982ecbf67e6ba303dc66719db8fff5`，应用 CRC=`B9FB636E`。P1 必验项全部通过；下一阶段为 P3a 的 FRAM 只读识别/备份、参数表与持久化。
+保存的普通包 SHA-256：`7652fa90836be3182becf8f888a052aebc982ecbf67e6ba303dc66719db8fff5`，应用 CRC=`B9FB636E`。这是 P1 收口的历史包；P3a 随后已通过，当前下一步为 CAN-A04 与各阶段剩余硬件门。
 
 本次 QGC 使用的包 SHA-256：`3206a5f445d85be730a4f6158d8fdd414b9cfab27fa84bbc05c6a6752deac284`；控制台上传/校验与独立版本采集已足够，不额外要求刷写前 PX4 CRC 读回或再绕经 P0。
 FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版本截图和完整升级 UI 文本作为补充记录。原 PX4 参数/校准/FRAM 无备份，保留此事实。
@@ -97,7 +100,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P1 / P1-01～04 | 可恢复 bring-up 与周期基线；已完成 | P0 |
 | P3a / P3A-01～04 | FRAM 识别/备份、参数注册表、持久化；已完成 | P1 |
 | P4b-a / CAN-A01～04 | DroneCAN 节点、ESC 状态和零命令；软件门通过，实物待验 | P1、P3a、H-02/03 |
-| PL-a / LOG-A01～05 | ULog、缓冲、SDMMC2/FAT、LoggerControl/MAVLink Console；软件门通过，实物待验 | P3a、P4b-a、H-04 |
+| PL-a / LOG-A01～05 | ULog、缓冲、SDMMC2/FAT、LoggerControl/MAVLink Console；软件门/正常路径有限 HIL 通过，故障门待验 | P3a、P4b-a、H-04 |
 | P4b-g / GNSS-01～03 | H-RTK 接收、有效性和日志 | P4b-a、PL-a、H-10 |
 | P2 / MAV-01～03 | USB/TELEM1 双链路、消息/命令和重连；软件门通过，实物待验 | P1、P3a |
 | P3 / PARAM-01～02 | QGC 标准参数读设；软件/工具路径就绪，双链路实物待验 | P3a、P2 |
@@ -130,8 +133,8 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 1. **LOG-A01/02**：固定 ULog schema、pyulog 1.3.0 独立解析、136 KiB 有界 MPSC 队列、事件保留和 dropout 已通过软件测试。
 2. **LOG-A03/04**：SDMMC2/PLL1Q、PC13 显式启动、固定 FAT 栈、MBR/superfloppy、新文件与 32 KiB 对齐写入已构建。
-3. **LOG-A05 待验**：H-04 提供后做实物取卡解析、受控断电和缺卡/拔卡故障；当前不把软件构建冒充存储可靠性。
-4. **控制 API**：start/stop/sync/status/apply_config 共用单一状态机；QGC MAVLink Console 与标准 logging commands 已接入。stop 的真实 drain/flush/断电和再次 start 仍待 SD 实物验证。
+3. **LOG-A05 待验**：实物正常 start/stop、MAVLink 下载和 pyulog 解析已通过；H-04 仍需受控断电、缺卡/拔卡和时延边界。一次旧日志断电后的 corruption/dropout 保留为失败记录，不能按通过收口。
+4. **控制 API**：start/stop/sync/status/apply_config 共用单一状态机；QGC MAVLink Console 与标准 logging commands 已接入。正常 stop 后 Disabled 与解析已验证；restart 的通过标记尚缺直接证据引用，先补录已有结果。
 
 详情和精确产物见 [PL-a 记录](docs/acceptance/pl-a/README.md)。
 
@@ -148,8 +151,8 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 1. **P3 软件/工具就绪**：P3a 已实现统一参数注册表、合法性校验、原子保存和掉电读回；P2 共享 MAVLink 核心已提供 `PARAM_REQUEST_LIST/READ/SET/VALUE` 与存储命令。`tools/check_mavlink.py`、`tools/p3a_parameters.py` 已覆盖全表、名称/索引、合法/非法设值及保存读回，不重复实现协议。
 2. **P3 实物待验**：P2 闭合且 H-03 接线后，一条链路设值、另一条链路读回同一当前值，再复用既有保存/掉电读回路径；通过后关闭 PARAM-01/02。
 3. **P4 软件门通过**：`src/core/icm42688.rs` 与 `src/core/config.rs` 提供寄存器策略、8 kHz 高分辨率 FIFO 解码、SI 单位、YAW270/FLU→FRD、陈旧判断与配置 API；`src/drivers/imu.rs` 接 SPI2 DMA1_CH2/3、PF4/PH5、PA10 EXTI、复位/回读/FIFO 恢复和周期寄存器核对。
-4. **P4 fan-out**：AHRS 使用按需启用的 16 槽有界队列，满时丢弃积压并从最新样本重同步；ULog 抽取 1 kHz；USB/TELEM1 各以 20 Hz 读取同一最新快照发送 `HIGHRES_IMU`，慢消费者不反压采样。
-5. **P4 有限 HIL**：普通包已由原 bootloader 上传/校验；WHO_AM_I=`0x47`、SPI=24 MHz、短时约 8.08 kHz、错误计数 0，USB `HIGHRES_IMU` 合理。仍待 DRDY 仪器测量、60 s/ULog、六面 YAW270、校准与故障恢复，当前不关闭 SENS-01～04。详情见 [P4 记录](docs/acceptance/p4/README.md)。
+4. **P4 fan-out**：AHRS 使用按需启用的 16 槽有界队列，满时丢弃积压并从最新样本重同步；ULog 每 8 样本各记录一个标准 `sensor_accel` / `sensor_gyro`（各 1 kHz、FRD/SI、`samples=1`，不是 8 样本平均）；USB/TELEM1 各 20 Hz `HIGHRES_IMU`，慢消费者不反压采样。标准消息软件检查见[记录](docs/acceptance/messages/README.md)，新 schema 随下一次 P4 必验记录核对实物。
+5. **P4 有限 HIL**：普通包已由原 bootloader 上传/校验；WHO_AM_I=`0x47`、SPI=24 MHz、短时约 8.08 kHz、错误计数 0，USB `HIGHRES_IMU` 合理。旧 `imu_icm42688` 有 2686 条/2.652 s、约 1012.5 Hz、无 corruption；仍待 DRDY 仪器测量、60 s 日志、六面 YAW270、校准与故障恢复，不关闭 SENS-01～04。详情见 [P4 记录](docs/acceptance/p4/README.md)。
 
 ### EKF2 后续移植约束
 
@@ -158,11 +161,12 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 3. **首个融合子集**：EKF-01 先做 IMU 预测、roll/pitch 与相对 yaw；EKF-02 在 P4b-g 后加入 GNSS 位置/速度和固定容量延迟缓冲。磁力计、气压计、空速不以虚构数据占位，只有实际硬件阶段才加入。
 4. **配置/切换**：`v6x_rust_led::config::Algorithm` 后续扩展 `Ekf2`；参数映射必须有范围校验和显式 reset/apply。EKF 无效、NaN、协方差异常、输入陈旧或 deadline miss 时撤销有效性并回退到已验证 Mahony，不无缝伪造连续状态。
 5. **数值验证**：用同一固定输入分别运行 PX4 v1.17.0 参考核心和 Rust 版本，按状态、创新、方差及拒绝/复位事件对拍；容差在测试前固定。未通过 replay、边界失败路径和实际 GNSS HIL 前，不称为“等价 EKF2”。
-6. **许可/来源**：逐文件记录 PX4/ECL 原路径、commit、BSD-3-Clause 版权与 Rust 修改点；不复制 uORB 消息定义作为内部 API，不链接 PX4 C++。
+6. **许可/来源**：逐文件记录 PX4/ECL 原路径、commit、BSD-3-Clause 版权与 Rust 修改点；估计数学输入保留独立 DTO，标准 PX4 消息用于数据边界，不链接 PX4 C++。
 
 ### 时间基准与 GNSS 授时
 
 1. **范围**：RTC 只服务日志 UTC、QGC 命名和 `SYSTEM_TIME` 遥测；控制与估计仍用 TIM2 单调时间，不依赖墙上时钟。
+   RTC-01/TIME-01 已在 `81d6c1221048f08a` 通过 LSE 走时、写后回读、遥测/日志 UTC；TIME-02 GNSS 授时仍待 P4b-g，见[实测记录](docs/time-sync.md#2026-11-02-实测结论)。
 2. **驱动约束**：PAC 直写 RTC/BDCR，不置 `BDRST`、不覆盖已是可信日期的日历；清 `RSF` 前解锁 WPR，日历快照固定为 `SSR → TR → DR`；同时验证 SSR 边沿与日历秒递增。必要时 `LSEDRV=HIGH` 重启 LSE，最后回退 LSI 并关闭失效的 LSE，避免下次启动等待 `LSERDY`。
 3. **精度**：LSE 晶振约 ±20 ppm；LSI 约 ±5%，只作后备，必须由 GNSS 周期校准（偏差 ≥1 s 或每 60 s）。
 4. **GNSS 授时（P4b-g）**：解析 H-RTK 的 `time_utc_usec`，仅 fix ≥3 且样本新鲜时采纳，按 PX4 的 5 s 阈值写 RTC；优先级 GNSS > 地面站 `SYSTEM_TIME` > 继承值。
@@ -207,6 +211,6 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 ## 9. 记录与交付
 
 - `TODO.md` 只列状态、下一步和依赖；`docs/acceptance/` 保存结果与原始证据引用，已测结果可跨任务复用。
-- 硬件资料：[台账](docs/fmuv6x-hardware.md)；来源/许可：[porting-notes](docs/porting-notes.md)、[provenance](docs/provenance.md)；设计：[architecture](docs/architecture.md)、[dronecan-notes](docs/dronecan-notes.md)、[logging-budget](docs/logging-budget.md)、[logging-control](docs/logging-control.md)、[time-sync](docs/time-sync.md)。
+- 硬件资料：[台账](docs/fmuv6x-hardware.md)；来源/许可：[porting-notes](docs/porting-notes.md)、[provenance](docs/provenance.md)；设计：[architecture](docs/architecture.md)、[消息约定](docs/message-contracts.md)、[dronecan-notes](docs/dronecan-notes.md)、[logging-budget](docs/logging-budget.md)、[logging-control](docs/logging-control.md)、[time-sync](docs/time-sync.md)。
 - 早期[恢复操作单](docs/recovery.md)、[P1 操作单](docs/acceptance/p1/bring-up.md)、[M1 操作单](docs/m1-verification.md)保留为参考；当前必验范围以本计划为准。
-- 本轮损坏文档的原始副本已保存到 HIL 证据中的 `recovery/push-prep-restart-damage/`；源码和工具 hash 与已通过的软件基线一致。
+- 2026-11-01 损坏文档的原始副本已保存到 HIL 证据中的 `recovery/push-prep-restart-damage/`；当轮源码和工具 hash 与当时通过的软件基线一致。

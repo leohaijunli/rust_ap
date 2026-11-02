@@ -19,8 +19,9 @@ with source **`a946a529360eac83`**, disarmed, fault injection disabled, and no v
 retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
 [essential-check plan](plan.md). **P3a is complete:** FRAM backup, parameter API,
 atomic save and power-cycle readback passed; `LINK_LED_HZ=2.0` remains saved.
-The board now runs the PL-b source **`021161d4c09a4b91`** (heartbeat
-`autopilot=PX4` so QGC saves onboard logs as `.ulg`); see
+The latest verified board source is **`81d6c1221048f08a`**: RTC/LSE timekeeping,
+UTC telemetry/log timestamps and short IMU ULog capture passed. The heartbeat is
+`autopilot=PX4` for QGC `.ulg` naming; GUI confirmation is pending. See
 [P3a](docs/acceptance/p3a/README.md), [P4](docs/acceptance/p4/README.md) and
 [PL-b](docs/acceptance/pl-b/README.md) evidence.
 **P4b-a software is ready:** the
@@ -37,9 +38,12 @@ USB CDC and TELEM1 UART7 (115200 8N1) with independent sequences, queues and
 heartbeat pacing, so the dual-link/relink and version-display checks only await
 the H-03 wiring. The USB side now runs in the P4 image. See [P2 evidence](docs/acceptance/p2/README.md).
 **P4 software is ready:** the Embassy SPI2 ICM-42688-P path uses an 8 kHz
-high-resolution FIFO, bounded AHRS fan-out, 1 kHz ULog and 20 Hz `HIGHRES_IMU`
-on both MAVLink links. The image is uploaded and WHO_AM_I/SPI/short static USB
-telemetry passed; six-face, long-run, ULog and fault recovery remain. See
+high-resolution FIFO, bounded AHRS fan-out and 20 Hz `HIGHRES_IMU`
+on both MAVLink links. Current software records standard PX4 `sensor_accel` and
+`sensor_gyro` at 1 kHz each, plus `actuator_armed`; see the
+[message contracts](docs/message-contracts.md). WHO_AM_I/SPI/short static USB
+telemetry and the previous custom IMU ULog passed; six-face, 60-second standard
+logs, calibration and fault recovery remain. See
 [P4 evidence](docs/acceptance/p4/README.md).
 The known-good 0.1.0 USB/LED recovery package remains in `.p0-baseline/20261031/`.
 See the [P1 operation sheet](docs/acceptance/p1/bring-up.md) before any new upload.
@@ -143,9 +147,8 @@ The post-PX4-restore `found []` preflight regression is fixed and covered by
 six host tests; the P1 acceptance run had 64 Python tests. See the
 [upload discovery record](docs/acceptance/p1/20261031-upload-discovery.md).
 Ordinary `upload` rebuilds and flashes the current working tree; `upload --dry-run`
-checks prerequisites and the package without rebooting or flashing. The board
-currently runs the accepted P3a source `1d3d08e3dd64f3ac`; the P4b-a package has
-not been uploaded.
+checks prerequisites and the package without rebooting or flashing. The latest
+board/software identities and acceptance gates are tracked in [TODO.md](TODO.md).
 
 The provided udev rules grant the active local desktop user access to both
 USB identities. Install once from an interactive terminal:
@@ -463,8 +466,10 @@ through `SERIAL_CONTROL_DEV_SHELL`. Both prefixes work, for example `help`, `sta
 transitions, accepted-vs-recording semantics and failure modes are documented in
 [日志控制](docs/logging-control.md). Standard `MAV_CMD_LOGGING_START`/`STOP` call the same
 state machine; commands invalid for the current state are rejected instead of silently succeeding.
-Raw gyro and accelerometer fields are stored in the custom ULog topic `imu_icm42688`,
-not PX4's `sensor_gyro` / `sensor_accel` names.
+Current software stores FRD/SI gyro and accelerometer fields in standard PX4 ULog
+`sensor_gyro.x/y/z` and `sensor_accel.x/y/z`. Each topic records one raw sample per
+eight acquired samples (`samples=1`). The latest verified board image still uses
+the historical `imu_icm42688` schema; see [log fields](docs/logging-control.md#5-ulog-中的-imu-字段).
 
 Engineer-run captures (close QGC and all other readers first):
 
@@ -498,8 +503,9 @@ H-RTK GNSS data. CAN firmware updates are outside that goal. See
 ## Verification status
 
 P1 and P3a passed the [current essential checks](plan.md#4-仅保留必要测试).
-P4b-a and PL-a software checks pass; concentrated CAN/SD hardware acceptance has
-not started because H-02/03/04 are still missing. M1 hardware acceptance has not started.
+P4b-a, PL-a, P2 and P4 software checks pass; RTC/time and limited IMU/normal SD
+captures are recorded. Full CAN/SD/dual-link/IMU gates still need H-02/03/04 and
+engineer operations. M1 hardware acceptance has not started.
 
 **P1 software checks:** fmt, normal/injection/Dump target Clippy, host Clippy,
 12 Rust tests, 64 Python tests, and normal/Dump/injection release builds and

@@ -23,6 +23,7 @@ use v6x_rust_led::logger::{
     ControlError, Link, LogError, LogRequest, LogResponse, RoutedLogRequest, Snapshot, Status,
 };
 use v6x_rust_led::parameters::{Kind, REGISTRY};
+use v6x_rust_led::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro, PX4_REVISION};
 use v6x_rust_led::ulog::{self, DataEncoder, TopicId, TOPICS};
 use v6x_rust_led::wall_clock::Utc;
 
@@ -73,7 +74,6 @@ static USB_LOG_RESPONSES: Channel<CriticalSectionRawMutex, LogResponse, 8> = Cha
 static UART_LOG_RESPONSES: Channel<CriticalSectionRawMutex, LogResponse, 8> = Channel::new();
 static MANAGEMENT_LINK: AtomicU8 = AtomicU8::new(0);
 static MOTOR_SEQUENCE: AtomicU32 = AtomicU32::new(0);
-static ARMING_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static ESC_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 
 #[repr(align(32))]
@@ -271,30 +271,53 @@ pub fn record_motor_command(timestamp_us: u64) {
         payload.push_i16(0).unwrap();
     }
     payload.push_u32(0).unwrap();
-    record(TopicId::MotorCommand, Class::Normal, timestamp_us, &payload);
+    record(
+        TopicId::DronecanRawCommand,
+        Class::Normal,
+        timestamp_us,
+        &payload,
+    );
 }
 
 pub fn record_arming_status(timestamp_us: u64) {
     if !ready() {
         return;
     }
-    let mut payload = ulog::Payload::new();
-    payload
-        .push_u32(ARMING_SEQUENCE.fetch_add(1, Ordering::Relaxed))
-        .unwrap();
-    payload.push_u8(0).unwrap();
-    record(TopicId::ArmingStatus, Class::Event, timestamp_us, &payload);
+    let report = ActuatorArmed {
+        timestamp: timestamp_us,
+        armed: crate::OUTPUT_STATE.armed,
+        prearmed: false,
+        ready_to_arm: false,
+        lockdown: false,
+        kill: false,
+        termination: false,
+        in_esc_calibration_mode: false,
+    };
+    record(
+        TopicId::ActuatorArmed,
+        Class::Event,
+        report.timestamp,
+        &ulog::actuator_armed_payload(report),
+    );
 }
 
-pub fn record_imu(timestamp_us: u64, sample: v6x_rust_led::icm42688::Sample) {
+pub fn record_imu(timestamp_us: u64, sample: v6x_rust_led::icm42688::Sample, error_count: u32) {
     if !ready() {
         return;
     }
+    let accel = SensorAccel::from_sample(timestamp_us, sample, error_count);
+    let gyro = SensorGyro::from_sample(timestamp_us, sample, error_count);
     record(
-        TopicId::Imu,
+        TopicId::SensorAccel,
         Class::Normal,
-        timestamp_us,
-        &ulog::imu_data_payload(timestamp_us, sample),
+        accel.timestamp,
+        &ulog::sensor_accel_payload(accel),
+    );
+    record(
+        TopicId::SensorGyro,
+        Class::Normal,
+        gyro.timestamp,
+        &ulog::sensor_gyro_payload(gyro),
     );
 }
 
@@ -322,7 +345,12 @@ pub fn record_esc_status(
     payload.push_f32(status.temperature).unwrap();
     payload.push_i32(status.rpm).unwrap();
     payload.push_u8(status.power_rating_pct).unwrap();
-    record(TopicId::EscStatus, Class::Normal, timestamp_us, &payload);
+    record(
+        TopicId::DronecanEscStatus,
+        Class::Normal,
+        timestamp_us,
+        &payload,
+    );
 }
 
 pub fn record_node_status(
@@ -341,7 +369,12 @@ pub fn record_node_status(
     payload.push_u8(u8::from(online)).unwrap();
     payload.push_u32(status.uptime_sec).unwrap();
     payload.push_u16(status.vendor_status).unwrap();
-    record(TopicId::NodeStatus, Class::Normal, timestamp_us, &payload);
+    record(
+        TopicId::DronecanNodeStatus,
+        Class::Normal,
+        timestamp_us,
+        &payload,
+    );
 }
 
 pub fn record_can_stats(timestamp_us: u64, counters: [u32; 10]) {
@@ -940,8 +973,9 @@ async fn write_definitions<W: Write>(
             &v6x_rust_led::build_info::FLIGHT_SW_VERSION.to_le_bytes(),
         )
         .unwrap(),
-        ulog::information("char[3] body_frame", b"FLU").unwrap(),
-        ulog::information("char[3] world_frame", b"ENU").unwrap(),
+        ulog::information("char[40] px4_msg_revision", PX4_REVISION.as_bytes()).unwrap(),
+        ulog::information("char[3] body_frame", b"FRD").unwrap(),
+        ulog::information("char[3] world_frame", b"NED").unwrap(),
     ] {
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
@@ -973,7 +1007,7 @@ async fn write_definitions<W: Write>(
         );
         let record = encoder
             .encode(TopicId::ParameterChange, log_start, payload.as_bytes())
-            .expect("parameter_change schema");
+            .expect("rust_parameter_change schema");
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
     }

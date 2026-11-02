@@ -73,16 +73,16 @@ LOGGER schema=2 status=2 stage=... file_index=0 bytes_written=... flushes=... er
 
 ## 5. ULog 中的 IMU 字段
 
-本项目当前不复制 PX4 的 `sensor_accel` / `sensor_gyro` topic 名；六轴原始数据在
-`imu_icm42688` 中：
+新软件使用固定 PX4 标准 topic，字段和坐标见[消息约定](message-contracts.md)：
 
-- 角速率：`gyro_rad_s[0]`、`gyro_rad_s[1]`、`gyro_rad_s[2]`；
-- 加速度：`accel_m_s2[0]`、`accel_m_s2[1]`、`accel_m_s2[2]`；
-- 另有 `sample_timestamp`、`sequence`、`age_us` 和 `temperature_c`。
+- 加速度：`sensor_accel.x/y/z`，FRD、m/s²；
+- 角速率：`sensor_gyro.x/y/z`，FRD、rad/s；
+- 两者都包含 `timestamp`、`timestamp_sample`、`device_id`、`temperature`、`error_count`、`clip_counter[0..2]` 和 `samples`；当前各 1 kHz、`samples=1`。
 
-因此按 PX4 标准 topic 名筛选会误以为没有 IMU 数据。2026-11-02 从 source
-`81d6c1221048f08a` 板上下载的最新日志经 pyulog 1.3.0 解析：2686 条 IMU 记录、
-2.652 s、约 1012.5 Hz，上述六个字段均有有限实数，`file_corruption=false`。
+最近实测板载 source `81d6c1221048f08a` 仍写旧 `imu_icm42688`：
+`gyro_rad_s[0..2]` / `accel_m_s2[0..2]` 为内部 FLU，2686 条/2.652 s、约 1012.5 Hz、
+`file_corruption=false`。该历史结果保留；新 schema 的实物核对并入 P4 下一次必验记录，
+软件互操作结果见[记录](acceptance/messages/README.md)。
 
 ## 6. 验证命令序列
 

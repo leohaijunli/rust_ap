@@ -2,11 +2,11 @@
 
 use core::mem::size_of;
 
-use crate::icm42688::{Sample, SOURCE_ID};
+use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro};
 
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 512;
-pub const TOPIC_COUNT: usize = 13;
+pub const TOPIC_COUNT: usize = 9;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -14,19 +14,15 @@ const FORMAT_VERSION: u8 = 1;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum TopicId {
-    Imu = 0,
-    Ahrs = 1,
-    MotorCommand = 2,
-    ArmingStatus = 3,
-    EscStatus = 4,
-    GnssFix = 5,
-    GnssAuxiliary = 6,
-    NodeStatus = 7,
-    CanStats = 8,
-    RuntimeHealth = 9,
-    Event = 10,
-    ParameterChange = 11,
-    MavlinkStats = 12,
+    SensorAccel = 0,
+    SensorGyro = 1,
+    DronecanRawCommand = 2,
+    ActuatorArmed = 3,
+    DronecanEscStatus = 4,
+    DronecanNodeStatus = 5,
+    CanStats = 6,
+    RuntimeHealth = 7,
+    ParameterChange = 8,
 }
 
 pub struct Topic {
@@ -38,82 +34,58 @@ pub struct Topic {
 
 pub const TOPICS: [Topic; TOPIC_COUNT] = [
     Topic {
-        id: TopicId::Imu,
-        name: "imu_icm42688",
-        format: "imu_icm42688:uint64_t timestamp;uint64_t sample_timestamp;uint32_t sequence;uint8_t valid;uint8_t source_id;uint32_t age_us;float[3] gyro_rad_s;float[3] accel_m_s2;float temperature_c;",
-        payload_len: 54,
+        id: TopicId::SensorAccel,
+        name: "sensor_accel",
+        format: "sensor_accel:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float x;float y;float z;float temperature;uint32_t error_count;uint8_t[3] clip_counter;uint8_t samples;",
+        payload_len: 44,
     },
     Topic {
-        id: TopicId::Ahrs,
-        name: "ahrs",
-        format: "ahrs:uint64_t timestamp;uint64_t sample_timestamp;uint32_t sequence;uint8_t valid;uint8_t yaw_relative;uint32_t age_us;float[4] q_body_to_world;float[3] angular_velocity_rad_s;",
-        payload_len: 54,
+        id: TopicId::SensorGyro,
+        name: "sensor_gyro",
+        format: "sensor_gyro:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float x;float y;float z;float temperature;uint32_t error_count;uint8_t[3] clip_counter;uint8_t samples;",
+        payload_len: 44,
     },
     Topic {
-        id: TopicId::MotorCommand,
-        name: "motor_command_4_slots",
-        format: "motor_command_4_slots:uint64_t timestamp;uint32_t sequence;uint8_t valid;uint8_t armed;uint8_t outputs_enabled;int16_t[4] command;uint32_t age_us;",
+        id: TopicId::DronecanRawCommand,
+        name: "dronecan_raw_command",
+        format: "dronecan_raw_command:uint64_t timestamp;uint32_t sequence;uint8_t valid;uint8_t armed;uint8_t outputs_enabled;int16_t[4] command;uint32_t age_us;",
         payload_len: 27,
     },
     Topic {
-        id: TopicId::ArmingStatus,
-        name: "arming_status",
-        format: "arming_status:uint64_t timestamp;uint32_t sequence;uint8_t status;",
-        payload_len: 13,
+        id: TopicId::ActuatorArmed,
+        name: "actuator_armed",
+        format: "actuator_armed:uint64_t timestamp;bool armed;bool prearmed;bool ready_to_arm;bool lockdown;bool kill;bool termination;bool in_esc_calibration_mode;",
+        payload_len: 15,
     },
     Topic {
-        id: TopicId::EscStatus,
-        name: "esc_status",
-        format: "esc_status:uint64_t timestamp;uint32_t sequence;uint8_t source_node_id;uint8_t esc_index;uint8_t valid;uint8_t stale;uint32_t error_count;float voltage;float current;float temperature;int32_t rpm;uint8_t power_rating_pct;",
+        id: TopicId::DronecanEscStatus,
+        name: "dronecan_esc_status",
+        format: "dronecan_esc_status:uint64_t timestamp;uint32_t sequence;uint8_t source_node_id;uint8_t esc_index;uint8_t valid;uint8_t stale;uint32_t error_count;float voltage;float current;float temperature;int32_t rpm;uint8_t power_rating_pct;",
         payload_len: 37,
     },
     Topic {
-        id: TopicId::GnssFix,
-        name: "gnss_fix",
-        format: "gnss_fix:uint64_t timestamp;uint64_t source_timestamp;uint32_t sequence;uint8_t valid;uint8_t status;uint8_t time_standard;uint8_t sats_used;uint8_t leap_seconds;uint8_t mode;uint8_t sub_mode;int64_t longitude_deg_1e8;int64_t latitude_deg_1e8;int32_t height_ellipsoid_mm;int32_t height_msl_mm;float[3] ned_velocity_m_s;float pdop;float[6] covariance;",
-        payload_len: 91,
-    },
-    Topic {
-        id: TopicId::GnssAuxiliary,
-        name: "gnss_auxiliary",
-        format: "gnss_auxiliary:uint64_t timestamp;uint32_t sequence;uint8_t valid;uint8_t sats_visible;uint8_t sats_used;float[7] dop;",
-        payload_len: 43,
-    },
-    Topic {
-        id: TopicId::NodeStatus,
-        name: "node_status",
-        format: "node_status:uint64_t timestamp;uint8_t source_node_id;uint8_t health;uint8_t mode;uint8_t online;uint32_t uptime_sec;uint16_t vendor_status;",
+        id: TopicId::DronecanNodeStatus,
+        name: "dronecan_node_status",
+        format: "dronecan_node_status:uint64_t timestamp;uint8_t source_node_id;uint8_t health;uint8_t mode;uint8_t online;uint32_t uptime_sec;uint16_t vendor_status;",
         payload_len: 18,
     },
     Topic {
         id: TopicId::CanStats,
-        name: "can_stats",
-        format: "can_stats:uint64_t timestamp;uint32_t[10] counters;",
+        name: "rust_can_stats",
+        format: "rust_can_stats:uint64_t timestamp;uint32_t[10] counters;",
         payload_len: 48,
     },
     Topic {
         id: TopicId::RuntimeHealth,
-        name: "runtime_health",
-        format: "runtime_health:uint64_t timestamp;uint8_t cpu_valid;uint16_t cpu_load_permille;uint8_t stack_valid;uint32_t stack_free_bytes;uint8_t schedule_valid;uint32_t release_miss;uint32_t deadline_miss;uint32_t logger_normal_dropped;uint32_t logger_event_dropped;uint32_t logger_high_water_bytes;",
+        name: "rust_runtime_health",
+        format: "rust_runtime_health:uint64_t timestamp;uint8_t cpu_valid;uint16_t cpu_load_permille;uint8_t stack_valid;uint32_t stack_free_bytes;uint8_t schedule_valid;uint32_t release_miss;uint32_t deadline_miss;uint32_t logger_normal_dropped;uint32_t logger_event_dropped;uint32_t logger_high_water_bytes;",
         payload_len: 37,
     },
     Topic {
-        id: TopicId::Event,
-        name: "event",
-        format: "event:uint64_t timestamp;uint8_t severity;uint16_t code;int32_t argument;uint32_t count;",
-        payload_len: 19,
-    },
-    Topic {
         id: TopicId::ParameterChange,
-        name: "parameter_change",
-        format: "parameter_change:uint64_t timestamp;uint16_t index;uint8_t kind;uint8_t dirty;uint8_t persisted;float value;",
+        name: "rust_parameter_change",
+        format: "rust_parameter_change:uint64_t timestamp;uint16_t index;uint8_t kind;uint8_t dirty;uint8_t persisted;float value;",
         payload_len: 17,
-    },
-    Topic {
-        id: TopicId::MavlinkStats,
-        name: "mavlink_stats",
-        format: "mavlink_stats:uint64_t timestamp;uint8_t link;uint32_t[4] counters;",
-        payload_len: 25,
     },
 ];
 
@@ -346,23 +318,61 @@ impl Default for Payload {
     }
 }
 
-/// Payload for the `imu_icm42688` data message, in the field order declared by
-/// its format string. The `valid` flag is fixed to one: the driver only records
-/// fully decoded samples, so an invalid row would never be produced here.
-pub fn imu_data_payload(now_us: u64, sample: Sample) -> Payload {
+pub fn sensor_accel_payload(report: SensorAccel) -> Payload {
+    sensor_payload(
+        report.timestamp_sample,
+        report.device_id,
+        [report.x, report.y, report.z, report.temperature],
+        report.error_count,
+        report.clip_counter,
+        report.samples,
+    )
+}
+
+pub fn sensor_gyro_payload(report: SensorGyro) -> Payload {
+    sensor_payload(
+        report.timestamp_sample,
+        report.device_id,
+        [report.x, report.y, report.z, report.temperature],
+        report.error_count,
+        report.clip_counter,
+        report.samples,
+    )
+}
+
+fn sensor_payload(
+    timestamp_sample: u64,
+    device_id: u32,
+    xyz_temperature: [f32; 4],
+    error_count: u32,
+    clip_counter: [u8; 3],
+    samples: u8,
+) -> Payload {
     let mut payload = Payload::new();
-    payload.push_u64(sample.sample_timestamp_us).unwrap();
-    payload.push_u32(sample.sequence).unwrap();
-    payload.push_u8(1).unwrap();
-    payload.push_u8(SOURCE_ID).unwrap();
-    payload.push_u32(sample.age_us(now_us)).unwrap();
-    for value in sample.gyro_rad_s {
+    payload.push_u64(timestamp_sample).unwrap();
+    payload.push_u32(device_id).unwrap();
+    for value in xyz_temperature {
         payload.push_f32(value).unwrap();
     }
-    for value in sample.accel_m_s2 {
-        payload.push_f32(value).unwrap();
+    payload.push_u32(error_count).unwrap();
+    payload.push(&clip_counter).unwrap();
+    payload.push_u8(samples).unwrap();
+    payload
+}
+
+pub fn actuator_armed_payload(report: ActuatorArmed) -> Payload {
+    let mut payload = Payload::new();
+    for value in [
+        report.armed,
+        report.prearmed,
+        report.ready_to_arm,
+        report.lockdown,
+        report.kill,
+        report.termination,
+        report.in_esc_calibration_mode,
+    ] {
+        payload.push_u8(u8::from(value)).unwrap();
     }
-    payload.push_f32(sample.temperature_c).unwrap();
     payload
 }
 
@@ -511,50 +521,15 @@ mod tests {
             assert!(!topic.name.is_empty());
             assert!(topic.format.starts_with(topic.name));
             assert!(topic.format.contains(":uint64_t timestamp;"));
-            assert!(topic.payload_len <= 256);
-            assert_eq!(topic.payload_len, size_of::<u64>() + fields_size(topic.format));
+            assert!(topic.payload_len + 5 <= crate::log_queue::RUNTIME_RECORD_LEN);
+            assert_eq!(
+                topic.payload_len,
+                size_of::<u64>() + fields_size(topic.format)
+            );
             assert!(format(topic.id).unwrap().as_bytes().len() <= MAX_RECORD_LEN);
             assert_eq!(subscription(topic.id).unwrap().as_bytes()[3], 0);
             assert!(!TOPICS[..index].iter().any(|other| other.name == topic.name));
         }
-    }
-
-    #[test]
-    fn imu_data_payload_matches_the_declared_wire_layout() {
-        let sample = Sample {
-            sample_timestamp_us: 0x1122_3344_5566_7788,
-            sequence: 0x89ab_cdef,
-            gyro_rad_s: [1.5, -2.5, 3.75],
-            accel_m_s2: [-0.25, 9.8, 0.0],
-            temperature_c: 36.5,
-            sensor_timestamp: 0,
-        };
-        let now_us = sample.sample_timestamp_us + 42;
-        let payload = imu_data_payload(now_us, sample);
-        assert_eq!(payload.as_bytes().len(), 46);
-        let bytes = payload.as_bytes();
-        let mut offset = 0;
-        assert_eq!(bytes[..offset + 8], sample.sample_timestamp_us.to_le_bytes());
-        offset += 8;
-        assert_eq!(bytes[offset..offset + 4], sample.sequence.to_le_bytes());
-        offset += 4;
-        assert_eq!(bytes[offset], 1);
-        offset += 1;
-        assert_eq!(bytes[offset], SOURCE_ID);
-        offset += 1;
-        assert_eq!(bytes[offset..offset + 4], 42_u32.to_le_bytes());
-        offset += 4;
-        for value in sample.gyro_rad_s {
-            assert_eq!(bytes[offset..offset + 4], value.to_le_bytes());
-            offset += 4;
-        }
-        for value in sample.accel_m_s2 {
-            assert_eq!(bytes[offset..offset + 4], value.to_le_bytes());
-            offset += 4;
-        }
-        assert_eq!(bytes[offset..offset + 4], sample.temperature_c.to_le_bytes());
-        offset += 4;
-        assert_eq!(offset, 46 + 1 - 1);
     }
 
     /// Sum of every field's size in a format string, after the leading name.
@@ -565,11 +540,12 @@ mod tests {
             .skip(1) // the leading "name:"
             .map(|field| {
                 let (ty, _name) = field.split_once(' ').expect("type name");
-                let (base, count) = ty
-                    .split_once('[')
-                    .map_or((ty, 1), |(base, suffix)| {
-                        (base, suffix.trim_end_matches(']').parse().expect("array count"))
-                    });
+                let (base, count) = ty.split_once('[').map_or((ty, 1), |(base, suffix)| {
+                    (
+                        base,
+                        suffix.trim_end_matches(']').parse().expect("array count"),
+                    )
+                });
                 element_size(base) * count
             })
             .sum()
@@ -584,22 +560,21 @@ mod tests {
             _ => panic!("unknown base type {base}"),
         }
     }
-}
 
     #[test]
     fn data_length_and_per_topic_monotonicity_are_enforced() {
         let mut encoder = DataEncoder::new();
-        let topic = TopicId::ArmingStatus;
-        let fields = [0; 5];
+        let topic = TopicId::ActuatorArmed;
+        let fields = [0; 7];
         let record = encoder.encode(topic, 100, &fields).unwrap();
-        assert_eq!(&record.as_bytes()[..5], &[15, 0, b'D', 3, 0]);
+        assert_eq!(&record.as_bytes()[..5], &[17, 0, b'D', 3, 0]);
         assert_eq!(&record.as_bytes()[5..13], &100_u64.to_le_bytes());
         assert_eq!(
             encoder.encode(topic, 99, &fields),
             Err(Error::TimestampRegression)
         );
         assert_eq!(
-            encoder.encode(topic, 101, &[0; 4]),
+            encoder.encode(topic, 101, &[0; 6]),
             Err(Error::InvalidLength)
         );
     }

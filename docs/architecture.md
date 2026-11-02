@@ -1,6 +1,6 @@
 # A3：M1 数据链架构
 
-日期：2026-11-01。基础 **A3 已由用户选定**。本轮只规定 IMU/AHRS、DroneCAN、ULog、USB/TELEM1、QGroundControl 消息与参数读/设所需边界；控制/INDI/NMPC/任务细节待更多硬件测试。所有数字是首轮测试提案，观测结果回填 [M1 验收单](m1-verification.md)。
+日期：2026-11-02。基础 **A3 已由用户选定**。本轮只规定 IMU/AHRS、DroneCAN、ULog、USB/TELEM1、QGroundControl 消息与参数读/设所需边界；控制/INDI/NMPC/任务细节待更多硬件测试。标准消息见[字段约定](message-contracts.md)，观测结果回填 [M1 验收单](m1-verification.md)。
 
 ## 1. 纯 Rust + Embassy
 
@@ -12,7 +12,7 @@
 | AHRS | 固定 `cybflight-core::mahony::Mahony<f32>` 的适配器；无 I/O，显式输入时间步长/数据/参数 |
 | DroneCAN | 有界 no_std Rust v0 编解码、重组和节点服务；由平台转换为经典 CAN 帧 |
 | 参数 | 一个静态注册表提供类型/范围/默认值/生效时机；USB、MAVLink、DroneCAN 与持久层共用 |
-| 日志 | 纯 Rust ULog 编码、有界非阻塞入口、独立存储任务；LoggerControl 统一 start/stop/sync/status/config |
+| 日志 | 纯 Rust ULog、PX4 标准测量/输出字段与独立诊断 topic；有界非阻塞入口、独立存储任务；LoggerControl 统一 start/stop/sync/status/config |
 | 通信 | 复用 rust-mavlink；USB CDC 和 TELEM1 共用消息/参数/`SERIAL_CONTROL` shell 逻辑，各自有队列与速率预算 |
 
 任务和时间采用 `embassy-executor` / `embassy-time`，tick 固定 **1 MHz**。板上应用无 C/C++ 运行库或 FFI；原 PX4 bootloader 为保留的恢复边界。`src/core` 放 no_std/host 核心，`src/drivers` 放硬件所有者，`src/comms` 放链路，`src/storage` 放 FRAM/参数/日志；启动、平台、诊断和故障入口留在 `src/` 根目录。
@@ -28,7 +28,7 @@ FDCAN → 有界帧队列 → DroneCAN → ESC/GNSS 快照 → ULog、USB、TELE
 USB / TELEM1 / DroneCAN 参数请求 → 单一注册表 → 实际值回显 / 变更事件
 ```
 
-- IMU 使用 **8 kHz gyro/accel ODR** 与 20 B 高分辨率 FIFO 包；水位为 8 包，约 1 kHz 唤醒并批量解码。AHRS 可消费全部 8 kHz，ULog 初始抽取 1 kHz，MAVLink 读取最新快照 20 Hz；不能用低速链路反压采样。
+- IMU 使用 **8 kHz gyro/accel ODR** 与 20 B 高分辨率 FIFO 包；水位为 8 包，约 1 kHz 唤醒并批量解码。AHRS 可消费全部 8 kHz，ULog 抽取后各写 1 kHz `sensor_accel` / `sensor_gyro`（单样本），MAVLink 读取最新快照 20 Hz；不能用低速链路反压采样。
 - 唯一 DRDY 为 PA10/EXTI15_10、CS PH5、供电 PF4。EXTI P0 handler 先保存单调时钟低 32 位，再唤醒 TIM7/P3 的 IMU task；任务按当前时间重建跨回绕时间戳，仍须用外部边沿测量真实 IRQ 延迟。
 - FIFO 按包序号/器件时间还原每样本时间，检测缺包、溢出和重复。AHRS 使用测得的 dt，不能只因任务被唤醒就假定得到一个新样本。
 - AHRS 输入有界队列初值 16 个样本；满时显式记录丢样/重同步，不追赶陈旧样本造成长时间占用。日志不与 AHRS 争抢同一个消费型 Channel。
@@ -56,6 +56,7 @@ USB / TELEM1 / DroneCAN 参数请求 → 单一注册表 → 实际值回显 / �
 | AHRS 导航系 | Cybflight 的 ENU/z-up 数学约定；M1 未观测绝对航向，水平轴仍是初始化的局部参考 |
 | 四元数 | 对外结构显式 `[w,x,y,z]`、body→world；与 nalgebra 使用命名分量转换，不转储内存 |
 | MAVLink | 按消息约定转换至 FRD/NED；IMU 静止时比力的符号、roll/pitch/yaw 方向须实测 |
+| PX4 标准消息 / ULog | 同样使用 FRD/NED；`timestamp` / `timestamp_sample` 与完整固定 `.msg` 字段一致，内部 DTO 元数据单列 |
 | GNSS | 原始 WGS84 经纬度、MSL/椭球高度、NED 速度及质量；M1 尚无融合位置/速度 |
 | 时间 | 单调 `u64` 微秒；sample、receive、publish/write 时刻分开。GNSS 源时间和时间标准单列，未同步不替代本地时钟 |
 | 有效性 | 有效/陈旧/无定位/未同步/相对 yaw 均显式；NaN/未知值不转成伪造的零测量 |
@@ -91,7 +92,7 @@ Embassy 在同一个 executor 内是协作调度；同步忙循环会阻塞该 e
 | DTCM / SRAM4 / backup | M1 暂无必需分配 | 不把 DMA 数组默认移入 DTCM；RTC bootloader 签名按原约定处理 |
 | flash | 应用仍为 0x08020000、1920 KiB 上限；M1 镜像目标 ≤1536 KiB | 含向量、代码、只读数据和 `.data` load image，打包器同步检查 |
 
-DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 D-cache 关闭；最终软件包 static RAM 为 231672 B、空余 226056 B，仍保留 M1 初始 192 KiB 余量目标，实物 SPI DMA/IDMA 可达性待验。
+DMA pool 采用经验证的 MPU non-cacheable 区或完整 clean/invalidate 规则，地址/长度按 32 B cache line 对齐，不共享含其他可变数据的 cache line。当前 D-cache 关闭；最近实测包 static RAM 为 231704 B，最新软件布局以 build.json 为准。M1 初始余量目标为 192 KiB，实物 SPI DMA/IDMA 可达性待验。
 
 Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌套和函数临时量都计入共享 CPU 栈。64 KiB 栈初值要求实测至少剩余 32 KiB，并通过水位/保护区检查；不能从 `.bss` 大小推断栈安全。P1 的 AXI 实际布局为447 KiB static allocation、独立1 KiB HardFault栈、64 KiB共享栈；当前 static 使用/空余以 [P1报告](acceptance/p1/README.md)为准，并非表中M1资源已分配。
 
@@ -114,7 +115,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | AHRS | 每新样本更新；单次 IMU/AHRS 快路径 ≤300 us，快照年龄 ≤2 ms；正常段无 NaN/无效四元数 |
 | 共享临界区 / logger producer | 每次全局屏蔽中断 ≤2 us；`try_record` ≤5 us；原目标不变，P1 masked-WFE等待未满足此项证明，进入采样前需调整idle并按原阈值实测，pending→服务延迟另记 |
 | CAN | M1 预算 33.028%；60% 持续压力下正常段无 RX 溢出；零命令年龄/间隔目标 ≤5 ms |
-| 日志 | 111062 B/s，含余量 138828 B/s；M1 5 分钟正常段零 dropout，SD 指标见日志文档 |
+| 日志 | 标准消息 M1 提案 164322 B/s，含余量 205403 B/s；固定槽缓冲按记录数预算，M1 5 分钟正常段零 dropout；见[日志预算](logging-budget.md) |
 | CPU / 栈 | 联合负载 CPU <50%；共享栈余量 ≥32 KiB，记录所有队列高水位 |
 
 用 DWT cycles/微秒时钟记录分布、最大值、样本数、deadline miss；USB 输出低频汇总，原始统计进入 ULog。报告“观测最大值”，不称为已经证明的 WCET。过载/断线注入单列时间段，验证计数和恢复；不可混进正常统计以掩盖丢样。

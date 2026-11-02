@@ -23,6 +23,8 @@ pub mod metrics;
 pub mod parameter_store;
 #[path = "core/parameters.rs"]
 pub mod parameters;
+#[path = "core/px4_messages.rs"]
+pub mod px4_messages;
 #[path = "core/ulog.rs"]
 pub mod ulog;
 #[path = "core/wall_clock.rs"]

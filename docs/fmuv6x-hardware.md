@@ -1,6 +1,6 @@
 # Pixhawk 6X Rev 3 硬件台账
 
-审查日期：2026-10-31。计划与进度见 [plan.md](../plan.md)、[TODO.md](../TODO.md)。
+审查日期：2026-10-31；状态更新：2026-11-02。计划与进度见 [plan.md](../plan.md)、[TODO.md](../TODO.md)。
 
 ## 来源与证据边界
 
@@ -108,7 +108,7 @@ H753实际选用的PAC文件为 `src/peripherals/rcc_h7rm0433.rs`（`src/chips/s
 | LSI处理 | RTC选择LSI时启用；其它情况下HAL不关闭继承的LSI | HAL `rcc/bd.rs:160-168,191-215` |
 | 回放附加MMIO | GPIOA..K=`0x58020000..0x58022800`，EXTI=`0x58000000`，DBGMCU=`0x5c001000` | NuttX `hardware/stm32h7x3xx_memorymap.h:184,201-211,227` |
 
-支持继承RTC关闭/LSE/LSI，以及兼容的LSE停用/振荡/旁路和四种原始驱动位值。HSE作为RTC源、BDRST已置位、RTCSEL/RTCEN不一致、停止LSE却选LSE或旁路的状态，在HAL前拒绝。普通/注入版之后按故障路径处理；Dump的panic保持停机。三版各132场景真实ELF回放通过，范围和限制见[备份域证据](acceptance/p1/20261031-backup-domain.md)。板上BDCR/CSR及HAL边界保持已通过[HIL](acceptance/p1/20261031-hil.md)，RTC日历走时未测。
+支持继承RTC关闭/LSE/LSI，以及兼容的LSE停用/振荡/旁路和四种原始驱动位值。HSE作为RTC源、BDRST已置位、RTCSEL/RTCEN不一致、停止LSE却选LSE或旁路的状态，在HAL前拒绝。普通/注入版之后按故障路径处理；Dump的panic保持停机。三版各132场景真实ELF回放通过，范围和限制见[备份域证据](acceptance/p1/20261031-backup-domain.md)。板上BDCR/CSR及HAL边界保持已通过[HIL](acceptance/p1/20261031-hil.md)；P1 当轮未测 RTC 日历，2026-11-02 LSE 走时/写后回读已通过[时间记录](time-sync.md#2026-11-02-实测结论)。
 
 ## Rev 3 传感器与总线
 
@@ -208,13 +208,13 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | LED/加热 | 保留PHY灯；PE3红故障/PE4绿1 Hz/PE5蓝启动开漏；PB10加热保持低；本板FMU灯目视项不适用 | `src/main.rs:46-72,118-147`；[HIL](acceptance/p1/20261031-hil.md#led适用范围) |
 | 软件 reboot/故障 | BKP0=b007b007复位；BKP16..31版本化CRC故障；HardFault先切1 KiB栈；共享wrapper匹配RTC/LSE，HAL后比较全部BKP及BDCR，不再补写BKP | `src/backup_domain.rs`、`src/fault.rs`、`src/core/fault_record.rs`；[故障审查](acceptance/p1/fault-review.md) |
 | FDCAN1 软件配置 | PD0/PD1，HSE 16 MHz，1 Mbit/s，采样点 87.5%；IT0/1=P2，TIM6_DAC I/O executor=P4；FIFO、单次发送、自动重传关闭 | `src/drivers/dronecan_can.rs`、`src/platform.rs`；[P4b-a 软件记录](acceptance/p4b-a/README.md)，电气/HIL 待 H-02/03 |
-| SPI2 IMU 软件配置 | ICM-42688-P；PI1/PI3/PI2、PH5 CS、PF4 power、PA10 EXTI；DMA1_CH2/CH3、24 MHz 请求、8 kHz ODR、8×20 B FIFO、YAW270；EXTI P0/DMA P1/TIM7 executor P3 | `src/core/icm42688.rs`、`src/drivers/imu.rs`、`src/main.rs`；[P4 软件记录](acceptance/p4/README.md)，ID/实际 SPI/速率/方向待实物 |
+| SPI2 IMU 软件配置 | ICM-42688-P；PI1/PI3/PI2、PH5 CS、PF4 power、PA10 EXTI；DMA1_CH2/CH3、24 MHz 请求、8 kHz ODR、8×20 B FIFO、YAW270；EXTI P0/DMA P1/TIM7 executor P3 | `src/core/icm42688.rs`、`src/drivers/imu.rs`、`src/main.rs`；[P4 记录](acceptance/p4/README.md)，ID/实际 SPI/短时计数通过，DRDY 仪器/60 s/方向和恢复待验 |
 | SDMMC2 软件配置 | PC13 默认低；显式 `!logger-start` 后高电平供电；PD6/PD7/PB14/PB15/PG11/PB4 四线、P7 IRQ、内部 IDMA、FAT 单写者 | `src/storage/sd_logger.rs`、`src/main.rs`；[PL-a 软件记录](acceptance/pl-a/README.md)，卡兼容/时延/故障待 H-04 |
 | TELEM1 软件配置 | UART7 RX PF6、TX PE8；115200 8N1、DMA1_CH0/CH1、Async 传输；独立序列/解析/节拍，RTS PF8/CTS PE10 未启用待 H-03 | `src/comms/mavlink_uart7.rs`、`src/main.rs`；[P2 软件记录](acceptance/p2/README.md)，线序/电平/流控待 H-03 |
 | 安装 bootloader 的识别 | 实测3185:0035、`PX4 BL FMU v6X.x`、协议v5、board ID=53；构建版本未知；独立QGC往返及普通回装通过 | [HIL](acceptance/p1/20261031-hil.md) |
 | QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION固件已就绪，连接/重连显示待 HIL 复核 | [QGC记录](qgc-notes.md)、[P2 软件记录](acceptance/p2/README.md) |
 
-P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。当前板载为 PL-b source=`021161d4c09a4b91`；CAN、SD、双链路和 IMU 的结果分别见对应 acceptance，未完成实物项仍按阶段验收。
+P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。最近实测板载为普通 Rust source=`81d6c1221048f08a`；RTC、正常 SD/短时 IMU 日志已有有限 HIL，新标准消息软件见[记录](acceptance/messages/README.md)，未完成实物项仍按阶段验收。
 
 ## 验收与后续待核实
 
@@ -230,4 +230,4 @@ P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptanc
 | SD 卡槽、卡型号/容量、卡检测和掉电行为 | 工程师提供卡；PL-a 实测，不以 PX4 配置替代 HAL/卡兼容性验证 |
 | TELEM1/直连接收机的线序、电平、流控/反相 | P2/P5b 按本板与所选设备核实 |
 
-P0、P1、P3a已完成；P4b-a、PL-a、P2、P4 软件门通过，实物待 H-02/03/04 与工程师操作，M1尚未验收。阶段状态见[TODO](../TODO.md)。
+P0、P1、P3a、RTC-01/TIME-01 已完成；P4b-a、PL-a、P2、P4 软件门通过，有限 HIL 已记录；完整实物门待 H-02/03/04 与工程师操作，M1 未开始。阶段状态见[TODO](../TODO.md)。

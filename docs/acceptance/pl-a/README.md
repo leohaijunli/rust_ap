@@ -2,6 +2,8 @@
 
 日期：2026-11-02。**LOG-A01～04 与 LoggerControl/MAVLink Console 软件开发通过；实物 SD 的正常 start/stop/下载/解析已做有限 HIL，受控断电、缺卡/拔卡与时延边界仍待 H-04，PL-a 尚未关闭。P4b-a 依赖也仍未放行。**
 
+原软件/实物结果按下表保留；新软件使用 9 个已接入 topic，其中 IMU/输出状态为标准 PX4 schema，见[消息记录](../messages/README.md)。restart 原有通过标记缺直接证据引用，先补录已有结果。
+
 ## 已通过
 
 | 检查 | 结果 |

@@ -1,14 +1,14 @@
 # M1：首个集成目标与验收单
 
-日期：2026-11-01。**A3 已选定；P4b-a、PL-a、P2、P4 软件门通过，本板集中 HIL 尚未开始。** M1 是一次真实设备数据链验证，随后依据硬件结果细化其他功能。
+日期：2026-11-02。**A3 已选定；P4b-a、PL-a、P2、P4 软件门通过，IMU/日志/RTC 有限 HIL 已记录，M1 联合验收未开始。** 当前范围与必要测试以 [plan.md](../plan.md) 为准。
 
 ## 1. 用户确定的目标
 
 1. `embassy-stm32` 驱动唯一 **SPI2 ICM-42688-P**，验证 8 kHz ODR、8 包 FIFO 批处理和 1 kHz 日志抽取。
 2. 纯 Rust AHRS，优先固定 Cybflight Mahony 的 gyro/accel 模式；姿态方向/新鲜度可验证，yaw 明确为相对值。
 3. DroneCAN 节点服务、4 个 Vimdrones Nano 的状态和全零命令、H-RTK Rover DroneCAN GNSS。
-4. 纯 Rust **ULog 板载 SD 记录**，包含 IMU/AHRS、CAN/ESC/GNSS、参数与系统事件。
-5. **USB CDC 与 TELEM1** 提供对应 MAVLink 消息。
+4. 纯 Rust **ULog 板载 SD 记录**，使用标准 PX4 测量/状态消息，包含 IMU/AHRS、CAN/ESC/GNSS、参数与系统事件。
+5. **USB CDC 与 TELEM1** 提供对应标准 MAVLink 消息；映射见[消息约定](message-contracts.md)。
 6. **上游 QGroundControl 实际连接、Inspector 消息检查、参数页读取/设置**；标准 PARAM_REQUEST_LIST/READ/SET/VALUE，全表/索引/范围/回显/双链路一致性。
 
 全程使用原 PX4 bootloader/应用边界，先完成 [QGC 官方 PX4 往返恢复](recovery.md)。M1 保持 disarmed、四槽零 RawCommand、ArmingStatus=0。
@@ -47,7 +47,7 @@
 
 | 验证 | 操作与通过证据 |
 | --- | --- |
-| IMU | 记录至少 5 分钟静止和六面/转动数据；分别核对 8 kHz 样本、约 1 kHz FIFO 批次与 1 kHz ULog，DRDY/读出延迟、FIFO/丢样、SI 单位和 YAW270 方向符合阈值 |
+| IMU | 复用 5 分钟联合记录及 P4 六面/转动结果；分别核对 8 kHz 样本、约 1 kHz FIFO 批次与各 1 kHz `sensor_accel` / `sensor_gyro`，DRDY/读出延迟、FIFO/丢样、SI 单位和 YAW270 方向符合阈值 |
 | AHRS | 转动板子并比较 QGC 与 ULog；静止倾角/收敛/四元数范数正确，过期/异常数据显式无效 |
 | DroneCAN | 独立 GUI/pydronecan 对拍节点/ESC/GNSS；确认只有零命令/DISARMED，测负载/时间/丢帧 |
 | QGC USB | 实际上游 QGC 建立连接；Inspector 查看心跳/状态、`HIGHRES_IMU`、姿态、ESC、GPS 的值和更新率 |
@@ -58,7 +58,7 @@
 | 故障与恢复 | 分段注入 CAN/GNSS 断线、USB/UART 重连/慢消费者、慢卡/缺卡；采样不被通信/存储阻塞，错误计数与日志区间可对应 |
 | 资源 | 原始时序分布、CPU、栈/队列高水位和 deadline miss；正常段达到初始预算，异常段单列 |
 
-`tools/check_mavlink.py` 当前检查 demo 的两项只读参数和协议基线；MAV/PARAM 阶段须扩展消息与读/设检查，再作为 M1 工具。Python 向量回读、离线构建或 QGC 截图单独都不能证明整条链已验收。
+`tools/check_mavlink.py` 与 `tools/p3a_parameters.py` 已覆盖当前参数/协议路径，复用已有结果；新增数据源再扩展相应检查。M1 必须保留真实联合运行证据。
 
 ## 5. 回填结论
 

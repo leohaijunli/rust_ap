@@ -1,6 +1,6 @@
 # M1 ULog 与 SD 初始预算
 
-日期：2026-11-01。用户首目标中的 `ulogger` 按 **纯 Rust ULog 写入器**落实设计。LOG-A01～04 与控制 API 软件门已通过，实物 LOG-A05 待 H-04；结果见 [PL-a 记录](acceptance/pl-a/README.md)。
+日期：2026-11-02。用户首目标中的 `ulogger` 按 **纯 Rust ULog 写入器**落实设计。软件门与实物正常路径有限 HIL 已通过，LOG-A05 故障门待 H-04；结果见 [PL-a 记录](acceptance/pl-a/README.md)。
 
 ## 1. 格式与存储选择
 
@@ -13,33 +13,35 @@
 
 ULog 使用显式小端编码：16 B 文件头、格式/订阅/版本信息、参数快照、DATA 和 dropout/event 记录。DATA 开销为 3 B 消息头 + 2 B msg_id，即 **payload + 5 B**。字段类型/顺序/长度须定义清楚，不能转储 Rust struct 或其 padding。格式规范参考 [ULog file format](https://docs.px4.io/main/en/dev_log/ulog_file_format.html)；LOG-A01 固定实际解析器版本，验证完整/截断/损坏样本。
 
-文件包含本工程/上游 commit、板信息、配置、单位/坐标约定、完整参数快照、参数变化与易失/已保存状态。自定义 topic 可被 pyulog 解析，不自动代表 PX4 专用分析页面理解这些 topic。
+文件包含本工程/消息定义 commit、板信息、配置、单位/坐标约定、完整参数快照、参数变化与易失/已保存状态。标准测量消息遵循 [PX4 字段约定](message-contracts.md)，原始协议和本项目诊断使用独立前缀。
 
 ## 2. M1 topic 预算
 
-以下为拟定线格式的 payload 上限，不是 Rust `size_of`；编码实现完成后逐项校验。单位为 B/s，Hz 为所有实例合计。
+以下为 M1 payload 上限，不是 Rust `size_of`；未接入的数据源在各阶段复核。标准 IMU/输出状态已有编码，其余标准消息随真实数据源接入。单位为 B/s，Hz 为所有实例合计。
 
 | Topic | payload 最大 B | Hz | 含 ULog DATA 开销 B/s |
 | --- | ---: | ---: | ---: |
-| `imu_icm42688`（8 kHz 采集每 8 样本记录 1 个） | 56 | 1000 | 61000 |
-| `ahrs` | 64 | 250 | 17250 |
-| `motor_command_4_slots`（全零） | 40 | 400 | 18000 |
-| `arming_status`（DISARMED） | 24 | 10 | 290 |
-| `esc_status` | 40 | 200 | 9000 |
-| `gnss_fix` | 256 | 5 | 1305 |
-| `gnss_auxiliary` | 64 | 1 | 69 |
-| `node_status` | 20 | 16 | 400 |
-| `can_stats` | 80 | 10 | 850 |
-| `runtime_health` | 64 | 10 | 690 |
+| `sensor_accel`（8 kHz 采集每 8 样本记录 1 个） | 44 | 1000 | 49000 |
+| `sensor_gyro`（同一采样时刻） | 44 | 1000 | 49000 |
+| `vehicle_attitude` | 49 | 250 | 13500 |
+| `vehicle_angular_velocity` | 40 | 250 | 11250 |
+| `dronecan_raw_command`（四槽全零） | 40 | 400 | 18000 |
+| `actuator_armed`（disarmed） | 15 | 10 | 200 |
+| `esc_status`（汇总四个 ESC；352 B 为上限） | 352 | 50 | 17850 |
+| `sensor_gps` | 256 | 5 | 1305 |
+| `dronecan_gnss_auxiliary` | 64 | 1 | 69 |
+| `dronecan_node_status` | 20 | 16 | 400 |
+| `rust_can_stats` | 80 | 10 | 850 |
+| `rust_runtime_health` | 64 | 10 | 690 |
 | `events_allowance` | 96 | 10 | 1010 |
-| `parameter_change` | 48 | 20 | 1060 |
-| `mavlink_stats`（USB/TELEM1） | 64 | 2 | 138 |
-| **总计** | | | **111062** |
-| **加 25% 格式/事件/余量** | | | **138828** |
+| `rust_parameter_change` | 48 | 20 | 1060 |
+| `rust_mavlink_stats`（USB/TELEM1） | 64 | 2 | 138 |
+| **总计** | | | **164322** |
+| **加 25% 格式/事件/余量** | | | **205403** |
 
-30 分钟原始预算约 **200 MB**，加余量约 250 MB；首轮卡需有足够空闲空间。启动格式/参数快照突发预算另限 32 KiB，开始正常记录前确认头部完成。参数变更事件超过 20 次/s 时限速或合并，并明确统计；不得无限生成日志事件。
+M1 5 分钟原始预算约 **49 MB**，加余量约 62 MB；卡需有足够空闲空间。启动格式/参数快照突发预算另限 32 KiB，开始正常记录前确认头部完成。参数变更事件超过 20 次/s 时限速或合并，并明确统计；不得无限生成日志事件。
 
-`gnss_fix` 的 256 B 预算包含时间、经纬度/高度/速度、状态与一种受限协方差表示。若展开 Fix2 内两套最大协方差或加入 ECEF 细节，必须分 topic/重算，不能悄悄超长。M1 不记录另外两颗 IMU，也不预分配控制/规划 topic。
+`sensor_gps` 的 256 B 上限用于完整标准字段；Fix2 原始协方差/ECEF 若需独立记录，必须另算可选诊断预算。当前 `dronecan_esc_status` 每条 37 B、四节点合计最高 200 Hz，标准 ESC 汇总接入后该原始诊断默认按需启用，避免重复常驻流量。M1 不记录另外两颗 IMU。
 
 复算命令：
 
@@ -47,16 +49,17 @@ ULog 使用显式小端编码：16 B 文件头、格式/订阅/版本信息、�
 python3 tools/p0/budgets.py --profile m1
 ```
 
-结果见 [budget-m1.json](acceptance/p0/budget-m1.json)。旧的全系统探索 profile（含 mag/baro/RTCM/MPC/path 预留）为 142793 B/s，保留在 `budget-default.json`；它不是当前首目标的需求。
+上面的命令复算当前标准消息预算；[P0 budget-m1.json](acceptance/p0/budget-m1.json) 保留历史自定义 schema 的 111062 B/s 结果。旧的全系统探索 profile 为 142793 B/s，保留在 `budget-default.json`。
 
 ## 3. 缓冲、调度与 SD 能力边界
 
 - 当前为单一 **136 KiB** MPSC 固定槽队列，普通记录准入上限严格保留至少 **8 KiB** 事件容量；运行时最大记录 124 B。生产者只做有界 `try_record`，不调用 SD/FAT。
+- 当前已接入的 9 个 topic 均小于 124 B；后续标准 `esc_status` 汇总超过此上限，接入前须调整固定记录/队列布局并重新核验 RAM、编码及准入，不能直接放入现有队列。
 - 单一 LoggerControl 状态机提供 start/stop/sync/status/apply_config；stop 先切 Stopping 阻止新记录，再清空队列、对齐 staging、flush file/fs、释放 FAT 所有权并拉低 PC13。错误态也允许重新 start，新会话始终创建新文件。
 - sync 周期运行时范围 100–10000 ms，默认 1000 ms；修改只影响后续同步，不改变 ULog schema 或数据采样率。USB 原始控制台、MAVLink Console 和标准 logging commands 共用该状态机。
 - 普通记录入口目标 ≤5 us；关全局中断区每次 ≤2 us。大块编码/复制/SD 等待均在临界区外；错误计数更新不会递归产生日志。
 - 写入 staging **32 KiB**，32 B 对齐；定义区与每次 sync 用兼容未知消息补齐到 512 B，保持块地址/长度对齐。当前位于 AXI、D-cache 关闭，IDMA 可达性仍须实测。
-- 初始流量上限 **256000 B/s**；128 KiB 环可吸收约 **512 ms** 完全无写进展。按当前含余量流量约可缓冲 944 ms；这不是无限慢卡保证。
+- 初始流量上限 **256000 B/s**。当前是固定槽而非紧凑字节环：1024 槽中普通记录最多 960 槽，每条 IMU 样本占两槽。M1 提案共 3034 条/s，保守按全部记录计算约 **316 ms** 无消费窗口；不能用 128 KiB/字节率声称更长缓冲，后续改变槽布局须重算。
 - 当前 M1 验收复用 5 分钟联合运行并要求正常段零 dropout；卡资格仍可另做 30 分钟观察。持续有效吞吐目标 ≥512000 B/s，32 KiB 写入 p99 ≤50 ms、观测最大 ≤250 ms。
 - 记录环高水位 75% 报警并停用可选 trace；满时丢记录、计数与记录缺口，采样任务继续。事件区也有上限，重复错误合并计数；磁盘写失败保留 USB/遥测诊断。
 

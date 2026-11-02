@@ -74,15 +74,22 @@ def main():
         ("mpc_debug_future", 128, 50), ("path_future", 128, 20),
     ]
     if args.profile == "m1":
-        deferred = {"state_estimate", "rate_debug", "mag", "baro",
-                    "rtcm_status", "mpc_debug_future", "path_future"}
-        topics = [row for row in topics if row[0] not in deferred]
-        topics.extend([("ahrs", 64, 250), ("parameter_change", 48, 20),
-                       ("mavlink_stats", 64, 2)])
+        topics = [
+            ("sensor_accel", 44, 1000), ("sensor_gyro", 44, 1000),
+            ("vehicle_attitude", 49, 250), ("vehicle_angular_velocity", 40, 250),
+            ("dronecan_raw_command", 24 + 4 * args.esc_slots, args.command_hz),
+            ("actuator_armed", 15, args.arming_hz),
+            ("esc_status", 352, args.status_hz),
+            ("sensor_gps", 256, args.fix_hz), ("dronecan_gnss_auxiliary", 64, 1),
+            ("dronecan_node_status", 20, 16), ("rust_can_stats", 80, 10),
+            ("rust_runtime_health", 64, 10), ("events_allowance", 96, 10),
+            ("rust_parameter_change", 48, 20), ("rust_mavlink_stats", 64, 2),
+        ]
     logs = [{"topic": name, "payload_max_bytes": size, "hz_total": rate,
              "ulog_data_bytes_per_second": (size + 5) * rate}
             for name, size, rate in topics]
     log_rate = sum(row["ulog_data_bytes_per_second"] for row in logs)
+    record_rate = sum(row["hz_total"] for row in logs)
     result = {
         "scope": "proposed budgets; record adopted test values and validate in HIL",
         "assumptions": vars(args) | {"can_bitrate": 1_000_000,
@@ -97,8 +104,13 @@ def main():
         "log_topics": logs, "log_bytes_per_second": log_rate,
         "log_with_25_percent_margin": math.ceil(log_rate * 1.25),
         "normal_ring_bytes": 128 * 1024, "event_reserve_bytes": 8 * 1024,
-        "ring_seconds_at_256000_bytes_per_second": 128 * 1024 / 256000,
     }
+    if args.profile == "m1":
+        result.update({"log_records_per_second": record_rate,
+                       "normal_ring_slots": 960,
+                       "conservative_ring_seconds": 960 / record_rate})
+    else:
+        result["ring_seconds_at_256000_bytes_per_second"] = 128 * 1024 / 256000
     print(json.dumps(result, indent=2))
 
 

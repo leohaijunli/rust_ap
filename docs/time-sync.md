@@ -54,7 +54,7 @@
 
 ## 3. GNSS 接入方案（P4b-g 起）
 
-1. **数据来源**：H-RTK DroneCAN（SKU12059）解析后形成与 PX4 `sensor_gps` 等价的快照：`time_utc_usec`、`fix_type`、`eph`、`timestamp`。不引入 uORB/FFI。
+1. **数据来源**：H-RTK DroneCAN（SKU12059）解析后形成固定 PX4 标准 `sensor_gps` 快照，授时使用 `time_utc_usec`、`fix_type`、`eph`、`timestamp`；完整字段遵循[消息约定](message-contracts.md)。
 2. **采纳条件**（全部满足才写入）：
    - `fix_type >= 3`（3D fix），且 `time_utc_usec` 落在 2020-01-01～2099-12-31；
    - 样本新鲜（`now - timestamp < 1 s`），且 `eph` 在可用范围内（阈值在 P4b-g 测试前固定）。

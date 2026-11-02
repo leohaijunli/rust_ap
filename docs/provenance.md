@@ -1,6 +1,6 @@
 # 来源与复用台账
 
-日期：2026-11-01。用户允许公开发布与 GPL 来源复用；最终板上飞控应用为纯 Rust + Embassy。下面区分实际工程依赖、评估候选和 host 参考，固定版本不等于已接入固件。
+日期：2026-11-02。用户允许公开发布与 GPL 来源复用；最终板上飞控应用为纯 Rust + Embassy。下面区分实际工程依赖、评估候选和 host 参考，固定版本不等于已接入固件。
 
 ## 1. 固定版本与许可证据
 
@@ -15,6 +15,7 @@
 | static_cell | 2.1.1 | MIT OR Apache-2.0；P1静态raw executor初始化，Cargo.lock已同步 |
 | [PX4 板级参考](https://github.com/PX4/PX4-Autopilot) | `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause 顶层；板级/bootloader 源码参考 |
 | PX4 uploader 来源树 | `a2be9197b57b2d065e4c47ca7fc5b7565ee07282` | host 上传工具，使用其文件许可；与板级参考分开固定 |
+| PX4 标准消息 | 同一 v1.17.0 `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause；`msg/{SensorAccel,SensorGyro,ActuatorArmed}.msg` 字段与 Rust 数据边界/ULog，副本及 LICENSE 在 `tools/px4_msgs/` |
 | [NuttX](https://github.com/PX4/NuttX) | `fb2fadf6f599c1406f052db013efd00a2518e72c` | Apache-2.0 + NOTICE/文件级来源；时钟/IRQ 配置参考 |
 | PX4 uploader工作树内NuttX | `9304289d9f2b304c6835c9d39c131648c5f804c2` | 本轮启动断言/PWR/RCC/内存映射及RTC/LSE修订差异参考；保留其文件级来源，不与v1.17子模块混用 |
 | [ST CMSIS H7](https://github.com/STMicroelectronics/cmsis-device-h7) | v1.10.4，`faccfec37f82f7a1319c21638111b0f7335de7fe` | Apache-2.0（`LICENSE.md`）；`Include/stm32h753xx.h` Copyright (c) 2019 STMicroelectronics；仅核对SCUEN定义，未拷入/链接C头文件 |
@@ -62,6 +63,7 @@
 | `src/core/ulog.rs`、`src/core/log_queue.rs`、`src/storage/sd_logger.rs`、`examples/ulog_fixture.rs`、`tools/check_ulog.py` | 本项目 PL-a 实现；ULog 线格式对照固定 PX4 v1.17 文档，FAT 使用上述固定 MIT 栈，pyulog 只作 host 互操作检查 |
 | `src/core/logger.rs`、`src/comms/usb_console.rs`、`src/comms/mavlink_core.rs` | 本项目 LoggerControl 与 MAVLink Console；使用 common.xml `SERIAL_CONTROL`/`MAV_CMD_LOGGING_START/STOP`，通过固定 rust-mavlink 生成类型接入，不实现任意 shell 或引入 OS/FFI |
 | `src/core/icm42688.rs`、`src/core/config.rs`、`src/drivers/imu.rs` | 本项目 P4 纯 Rust/Embassy 实现；寄存器地址、20 B high-resolution FIFO、复位/配置/水位/周期回读流程对照固定 PX4 `d6f12ad…` 的 `src/drivers/imu/invensense/icm42688p/{InvenSense_ICM42688P_registers.hpp,ICM42688P.cpp,ICM42688P.hpp}`（BSD-3-Clause）。本项目采用 8 kHz ODR、YAW270/FLU、独立 fan-out 与 Embassy API，未链接或拷入 C++ 驱动 |
+| `src/core/px4_messages.rs`、`src/core/ulog.rs`、`tools/px4_msgs/`、fixture/检查工具 | 标准字段适配上述固定 `.msg`；本项目显式编码和 FRD 转换，保留 BSD-3-Clause 许可。DeviceId 对照同 commit 的 `Device.hpp`、`nuttx/SPI.cpp`、`drv_sensor.h`、FMUv6X `spi.cpp` 与 `spi_hw_description.h`；裁剪判据参考 `PX4Accelerometer.cpp` / `PX4Gyroscope.cpp` 的单样本 99.9% 满量程规则，未移植 FIFO 平均或 uORB 运行时 |
 | `tools/enter_bootloader.py`、`tools/test_enter_bootloader.py`、`tools/firmware.sh` | 本项目 host 上传入口；复用应用既有 `!bootloader` 协议和原 PX4 uploader，不修改或替换 bootloader |
 | `.opencode/skills/`、`AGENTS.md` | 工程师要求安装并应用的 clean-code / code-simplifier 项目适配；固定来源、改动与许可见[技能说明](ai-coding-skills.md) |
 

@@ -2,6 +2,8 @@
 
 日期：2026-11-02。**SENS-01 的身份/基础链路、USB `HIGHRES_IMU` 及短时实物 ULog 已做有限 HIL；六面、60 s 长时、校准与故障恢复尚未通过，P4 未关闭。**
 
+新软件的标准 `sensor_accel` / `sensor_gyro` 字段与检查见[消息记录](../messages/README.md)；以下固件/hash 和旧 `imu_icm42688` HIL 保留历史绑定，新 schema 的实物核对并入下一次 P4 必验记录。
+
 ## 已通过
 
 | 检查 | 结果 |
