@@ -74,7 +74,7 @@ impl<'d> ParameterManager<'d> {
     pub fn set(&self, id: Id, value: f32) -> Result<bool, parameters::Error> {
         let changed = self.values.borrow_mut().set(id, value)?;
         if changed {
-            v6x_rust_led::log_config::apply(id);
+            v6x_rust_led::log_config::apply(id, self.get(id));
             crate::sd_logger::record_parameter(
                 embassy_time::Instant::now().as_micros(),
                 id as u16,
@@ -84,6 +84,15 @@ impl<'d> ParameterManager<'d> {
             );
         }
         Ok(changed)
+    }
+
+    /// Push every LOG_* parameter's current RAM value into the logging policy.
+    fn apply_log_config(&self) {
+        for definition in parameters::REGISTRY {
+            if definition.name.starts_with("LOG_") {
+                v6x_rust_led::log_config::apply(definition.id, self.get(definition.id));
+            }
+        }
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -105,6 +114,7 @@ impl<'d> ParameterManager<'d> {
         }
         if result.is_ok() {
             self.log_all();
+            self.apply_log_config();
         }
         result
     }
@@ -134,7 +144,6 @@ impl<'d> ParameterManager<'d> {
             slots: records.map(|record| record.map(|_| ())),
             last_error: None,
         });
-        v6x_rust_led::log_config::refresh_all();
         Ok(load)
     }
 

@@ -7,7 +7,7 @@
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
-use crate::parameters::{Id, REGISTRY};
+use crate::parameters::Id;
 
 /// Logging groups that map the logged topics to the enable/rate parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,38 +63,44 @@ impl State {
 
 static STATE: State = State::new();
 
-/// Reload a group from the registry (defaults) and clear its limiter.
-fn refresh(group: Group) {
-    let enabled = definition_value(group.enable()) != 0.0;
+/// Reset a group to its parameter default and clear its limiter.
+fn refresh_default(group: Group) {
+    let enabled = group.enable().definition().default != 0.0;
     STATE.enabled[group as usize].store(u8::from(enabled), Ordering::Relaxed);
     let period = group
         .rate()
-        .map_or(0, |id| rate_period_us(definition_value(id)));
+        .map_or(0, |id| rate_period_us(id.definition().default));
     STATE.period_us[group as usize].store(period, Ordering::Relaxed);
-    critical_section::with(|section| {
-        *STATE.last_us.borrow(section).borrow_mut() = [0; GROUP_COUNT];
-    });
-}
-
-fn definition_value(id: Id) -> f32 {
-    REGISTRY
-        .iter()
-        .find(|entry| entry.id == id)
-        .map_or(id.definition().default, |entry| entry.default)
+    clear_last(group);
 }
 
 const fn rate_period_us(rate_hz: f32) -> u32 {
     (1_000_000.0 / rate_hz) as u32
 }
 
-/// Apply a registry change; no-op for unrelated parameters.
-pub fn apply(id: Id) {
-    if let Some(group) = group_for(id) {
-        refresh(group);
-    }
+fn clear_last(group: Group) {
+    critical_section::with(|section| {
+        let mut lasts = STATE.last_us.borrow(section).borrow_mut();
+        lasts[group as usize] = 0;
+    });
 }
 
-/// Apply every group from the registry. Called once at startup and on load/save.
+/// Apply a registry value (the parameter's current RAM value) to its group.
+/// The caller passes the actual value so the setting takes effect immediately.
+pub fn apply(id: Id, value: f32) {
+    let Some(group) = group_for(id) else {
+        return;
+    };
+    if group.enable() == id {
+        STATE.enabled[group as usize].store(u8::from(value != 0.0), Ordering::Relaxed);
+    } else if group.rate() == Some(id) {
+        let period = rate_period_us(value).max(1);
+        STATE.period_us[group as usize].store(period, Ordering::Relaxed);
+    }
+    clear_last(group);
+}
+
+/// Apply every group default. Called once at startup before parameters load.
 pub fn refresh_all() {
     for group in [
         Group::Imu,
@@ -103,7 +109,7 @@ pub fn refresh_all() {
         Group::Health,
         Group::Event,
     ] {
-        refresh(group);
+        refresh_default(group);
     }
 }
 
@@ -144,6 +150,7 @@ pub fn enabled(group: Group) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parameters::REGISTRY;
 
     #[test]
     fn registry_groups_cover_the_logged_sources() {
@@ -168,5 +175,33 @@ mod tests {
         }
         assert_eq!(rate_period_us(200.0), 5_000);
         assert_eq!(rate_period_us(10.0), 100_000);
+    }
+
+    #[test]
+    fn apply_takes_effect_on_enable_and_rate() {
+        refresh_all();
+        // Defaults: IMU enabled at 200 Hz -> 5000 us period, last starts at 0.
+        assert!(!rate(Group::Imu, 1_000));
+        assert!(rate(Group::Imu, 5_000));
+        assert!(!rate(Group::Imu, 5_100));
+        assert!(rate(Group::Imu, 10_000));
+
+        // Disabling rejects every sample.
+        apply(Id::LogEnImu, 0.0);
+        assert!(!rate(Group::Imu, 2_000_000));
+
+        // Re-enabling and lowering the rate: the first sample after apply logs,
+        // then the next is rejected until the longer 50 Hz period (20 ms) elapses.
+        apply(Id::LogEnImu, 1.0);
+        apply(Id::LogImuHz, 50.0);
+        assert!(rate(Group::Imu, 3_000_000));
+        assert!(!rate(Group::Imu, 3_000_000 + 10_000));
+        assert!(rate(Group::Imu, 3_000_000 + 20_000));
+
+        // Event groups only honor enable.
+        apply(Id::LogEnEvent, 0.0);
+        assert!(!enabled(Group::Event));
+        apply(Id::LogEnEvent, 1.0);
+        assert!(enabled(Group::Event));
     }
 }
