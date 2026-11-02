@@ -38,6 +38,9 @@ mod parameter_manager;
 #[cfg(not(feature = "fault-dump"))]
 mod platform;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/rtc.rs"]
+mod rtc;
+#[cfg(not(feature = "fault-dump"))]
 #[path = "storage/sd_logger.rs"]
 mod sd_logger;
 #[cfg(not(feature = "fault-dump"))]
@@ -125,6 +128,7 @@ fn main() -> ! {
 #[cfg(not(feature = "fault-dump"))]
 fn application_main() -> ! {
     let p = platform::init();
+    rtc::init();
     static EXECUTOR: StaticCell<Executor> = StaticCell::new();
     // Embassy executor 0.9.1's Cortex-M thread pender uses usize::MAX -> SEV.
     // Keep its wake protocol while adding a measured idle loop.

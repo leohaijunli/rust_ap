@@ -2,6 +2,8 @@
 
 use core::mem::size_of;
 
+use crate::icm42688::{Sample, SOURCE_ID};
+
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 512;
 pub const TOPIC_COUNT: usize = 13;
@@ -344,6 +346,26 @@ impl Default for Payload {
     }
 }
 
+/// Payload for the `imu_icm42688` data message, in the field order declared by
+/// its format string. The `valid` flag is fixed to one: the driver only records
+/// fully decoded samples, so an invalid row would never be produced here.
+pub fn imu_data_payload(now_us: u64, sample: Sample) -> Payload {
+    let mut payload = Payload::new();
+    payload.push_u64(sample.sample_timestamp_us).unwrap();
+    payload.push_u32(sample.sequence).unwrap();
+    payload.push_u8(1).unwrap();
+    payload.push_u8(SOURCE_ID).unwrap();
+    payload.push_u32(sample.age_us(now_us)).unwrap();
+    for value in sample.gyro_rad_s {
+        payload.push_f32(value).unwrap();
+    }
+    for value in sample.accel_m_s2 {
+        payload.push_f32(value).unwrap();
+    }
+    payload.push_f32(sample.temperature_c).unwrap();
+    payload
+}
+
 fn parameter(name: &str, prefix: &[u8], value: &[u8; 4]) -> Result<Record, Error> {
     validate_name(name)?;
     let key_len = prefix.len() + name.len();
@@ -490,11 +512,79 @@ mod tests {
             assert!(topic.format.starts_with(topic.name));
             assert!(topic.format.contains(":uint64_t timestamp;"));
             assert!(topic.payload_len <= 256);
+            assert_eq!(topic.payload_len, size_of::<u64>() + fields_size(topic.format));
             assert!(format(topic.id).unwrap().as_bytes().len() <= MAX_RECORD_LEN);
             assert_eq!(subscription(topic.id).unwrap().as_bytes()[3], 0);
             assert!(!TOPICS[..index].iter().any(|other| other.name == topic.name));
         }
     }
+
+    #[test]
+    fn imu_data_payload_matches_the_declared_wire_layout() {
+        let sample = Sample {
+            sample_timestamp_us: 0x1122_3344_5566_7788,
+            sequence: 0x89ab_cdef,
+            gyro_rad_s: [1.5, -2.5, 3.75],
+            accel_m_s2: [-0.25, 9.8, 0.0],
+            temperature_c: 36.5,
+            sensor_timestamp: 0,
+        };
+        let now_us = sample.sample_timestamp_us + 42;
+        let payload = imu_data_payload(now_us, sample);
+        assert_eq!(payload.as_bytes().len(), 46);
+        let bytes = payload.as_bytes();
+        let mut offset = 0;
+        assert_eq!(bytes[..offset + 8], sample.sample_timestamp_us.to_le_bytes());
+        offset += 8;
+        assert_eq!(bytes[offset..offset + 4], sample.sequence.to_le_bytes());
+        offset += 4;
+        assert_eq!(bytes[offset], 1);
+        offset += 1;
+        assert_eq!(bytes[offset], SOURCE_ID);
+        offset += 1;
+        assert_eq!(bytes[offset..offset + 4], 42_u32.to_le_bytes());
+        offset += 4;
+        for value in sample.gyro_rad_s {
+            assert_eq!(bytes[offset..offset + 4], value.to_le_bytes());
+            offset += 4;
+        }
+        for value in sample.accel_m_s2 {
+            assert_eq!(bytes[offset..offset + 4], value.to_le_bytes());
+            offset += 4;
+        }
+        assert_eq!(bytes[offset..offset + 4], sample.temperature_c.to_le_bytes());
+        offset += 4;
+        assert_eq!(offset, 46 + 1 - 1);
+    }
+
+    /// Sum of every field's size in a format string, after the leading name.
+    fn fields_size(format: &str) -> usize {
+        format
+            .split(';')
+            .filter(|field| !field.is_empty())
+            .skip(1) // the leading "name:"
+            .map(|field| {
+                let (ty, _name) = field.split_once(' ').expect("type name");
+                let (base, count) = ty
+                    .split_once('[')
+                    .map_or((ty, 1), |(base, suffix)| {
+                        (base, suffix.trim_end_matches(']').parse().expect("array count"))
+                    });
+                element_size(base) * count
+            })
+            .sum()
+    }
+
+    fn element_size(base: &str) -> usize {
+        match base {
+            "int8_t" | "uint8_t" | "bool" | "char" => 1,
+            "int16_t" | "uint16_t" => 2,
+            "int32_t" | "uint32_t" | "float" => 4,
+            "int64_t" | "uint64_t" | "double" => 8,
+            _ => panic!("unknown base type {base}"),
+        }
+    }
+}
 
     #[test]
     fn data_length_and_per_topic_monotonicity_are_enforced() {

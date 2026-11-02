@@ -112,6 +112,11 @@ pub async fn handle(
                 ..Default::default()
             }));
         }
+        MavMessage::SYSTEM_TIME(data) => {
+            // QGC broadcasts UTC once a second. Only a plausible UNIX time is
+            // accepted, and equal values are skipped inside the RTC driver.
+            crate::rtc::set_unix_usec(data.time_unix_usec);
+        }
         MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_PREFLIGHT_STORAGE => {
             let result = if data.param1 == 1.0 {
                 parameters.save(crate::OUTPUT_STATE).await.map(|_| ())
@@ -235,7 +240,8 @@ pub fn system_status() -> MavMessage {
 
 pub fn system_time() -> MavMessage {
     MavMessage::SYSTEM_TIME(SYSTEM_TIME_DATA {
-        time_unix_usec: 0,
+        // 0 means "UTC unknown"; QGC then falls back to boot time.
+        time_unix_usec: crate::rtc::valid_unix().map_or(0, |seconds| seconds * 1_000_000),
         time_boot_ms: embassy_time::Instant::now().as_millis() as u32,
     })
 }

@@ -1,6 +1,6 @@
 # P4 ICM-42688-P 软件验收
 
-日期：2026-11-01。**SENS-01 的身份/基础链路及 USB `HIGHRES_IMU` 已做有限 HIL；六面、长时、ULog、校准与故障恢复尚未通过，P4 未关闭。**
+日期：2026-11-02。**SENS-01 的身份/基础链路、USB `HIGHRES_IMU` 及短时实物 ULog 已做有限 HIL；六面、60 s 长时、校准与故障恢复尚未通过，P4 未关闭。**
 
 ## 已通过
 
@@ -31,8 +31,9 @@
 | 短时计数 | 两次 `!imu` 间样本 `1146992→1195640`，host 窗口 6.019719 s，观测 8081.441 Hz；串口命令窗口/器件时钟误差未剥离，不据此关闭速率项 |
 | 健康 | 第二次快照 transfer_errors=0、decode_errors=0、fifo_resets=1（初始化 flush）、ahrs_dropped=0、latest_age_us=950 |
 | MAVLink | `tools/check_mavlink.py` 全部通过；`HIGHRES_IMU` 静止快照 accel=`(0.141,-0.362,-9.944) m/s²`、gyro=`(-0.0016,0.0035,-0.0172) rad/s`、temperature=`34.54°C` |
+| 短时 ULog（2026-11-02） | source=`81d6c1221048f08a` 的板上日志由 MAVLink 下载并经 pyulog 1.3.0 解析；`imu_icm42688` 有 2686 条/2.652 s（约 1012.5 Hz），`gyro_rad_s[0..2]`、`accel_m_s2[0..2]` 均存在且为有限实数，文件无 corruption |
 
-本轮只证明该板短时可识别和产生合理静止数据；host 计数窗口不是外部仪器 ODR/DRDY 测量，单一姿态不能确认 YAW270/六面方向，也没有完成校准。
+本轮只证明该板短时可识别、产生合理静止数据并写入自定义 `imu_icm42688` topic；host 计数窗口不是外部仪器 ODR/DRDY 测量，2.652 s 日志不能替代 60 s 稳态检查，单一姿态也不能确认 YAW270/六面方向或校准。
 
 ## 与 PX4 参考的边界
 

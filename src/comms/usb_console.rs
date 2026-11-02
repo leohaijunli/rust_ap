@@ -23,6 +23,7 @@ pub(crate) fn status(phy: &RefCell<Lan8742<'_>>, eth_power: &Output<'_>) -> Resp
         pwr.usb33rdy(),
         eth_power.is_set_high()
     );
+    let _ = crate::rtc::write_diagnostics(&mut response, "RTC");
     let _ = phy.borrow_mut().write_diagnostics(&mut response);
     response.finish();
     response
@@ -33,7 +34,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
     let _ = match command {
         Command::Help => writeln!(
             response,
-            "COMMANDS help status platform metrics fault fram params dronecan imu logger logger start logger stop logger sync logger config <100..10000>"
+            "COMMANDS help status platform metrics fault fram params dronecan imu logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
         ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
         Command::Metrics => crate::diagnostics::write_diagnostics(&mut response),
@@ -60,6 +61,15 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
             "config",
             crate::sd_logger::apply_config(v6x_rust_led::logger::Config { sync_period_ms }),
         ),
+        Command::Time => crate::rtc::write_diagnostics(&mut response, "RTC"),
+        Command::TimeSet(seconds) => {
+            let ok = crate::rtc::set_unix_seconds(seconds);
+            let _ = writeln!(response, "TIME_SET ok={ok} unix={seconds}");
+            crate::rtc::write_diagnostics(&mut response, "RTC")
+        }
+        Command::TimeSetInvalid => {
+            writeln!(response, "ERR time expects unix seconds or YYYY-MM-DDTHH:MM:SSZ")
+        }
         _ => writeln!(response, "ERR unsupported-report"),
     };
     response.finish();
@@ -79,6 +89,7 @@ pub(crate) async fn mavlink_report(
         Command::Status => {
             let mut response = Response::new();
             let _ = crate::platform::write_diagnostics(&mut response);
+            let _ = crate::rtc::write_diagnostics(&mut response, "RTC");
             let _ = crate::imu::write_diagnostics(&mut response);
             let _ = crate::sd_logger::write_diagnostics(&mut response);
             response.finish();
@@ -235,6 +246,9 @@ pub(crate) enum Command {
     LoggerStop,
     LoggerSync,
     LoggerConfig(u32),
+    Time,
+    TimeSet(u64),
+    TimeSetInvalid,
     #[cfg(feature = "fault-injection")]
     Panic,
     #[cfg(feature = "fault-injection")]
@@ -282,6 +296,7 @@ impl CommandLine {
                     b"!param-load" => Some(Command::ParamLoad),
                     b"!dronecan" | b"dronecan" => Some(Command::DroneCan),
                     b"!imu" | b"imu" => Some(Command::Imu),
+                    b"!time" | b"time" => Some(Command::Time),
                     #[cfg(feature = "fault-injection")]
                     b"!panic" => Some(Command::Panic),
                     #[cfg(feature = "fault-injection")]
@@ -292,6 +307,14 @@ impl CommandLine {
                         .and_then(|address| core::str::from_utf8(address).ok())
                         .and_then(|address| u16::from_str_radix(address, 16).ok())
                         .map(Command::FramRead)
+                        .or_else(|| {
+                            line.strip_prefix(b"!time set ").map(|value| {
+                                core::str::from_utf8(value)
+                                    .ok()
+                                    .and_then(v6x_rust_led::wall_clock::parse_set_value)
+                                    .map_or(Command::TimeSetInvalid, Command::TimeSet)
+                            })
+                        })
                         .or_else(|| match v6x_rust_led::logger::parse_console(line)? {
                             v6x_rust_led::logger::ConsoleCommand::Status => Some(Command::Logger),
                             v6x_rust_led::logger::ConsoleCommand::Start => {

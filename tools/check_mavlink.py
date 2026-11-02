@@ -20,6 +20,8 @@ from pymavlink.dialects.v20 import common as mav2
 import decode_fault_dump
 
 DEFAULT_WAIT = 10.0
+# 2020-01-01T00:00:00Z; earlier RTC dates are reported as "unknown" by design.
+MIN_PLAUSIBLE_UNIX_US = 1_577_836_800 * 1_000_000
 
 
 class PortNotReady(RuntimeError):
@@ -261,6 +263,11 @@ def check(link, expected_version, source_id=None):
     second = receive(link, "SYSTEM_TIME")
     assert second.time_boot_ms > first.time_boot_ms
     print(f"MCU boot time advances: {first.time_boot_ms} -> {second.time_boot_ms} ms")
+    # The RTC may still hold a pre-2020 date when no GNSS/GCS time has arrived,
+    # so 0 is valid; anything else must look like a UNIX epoch stamp.
+    for message in (first, second):
+        assert message.time_unix_usec == 0 or message.time_unix_usec >= MIN_PLAUSIBLE_UNIX_US, message
+    print(f"SYSTEM_TIME.time_unix_usec={first.time_unix_usec} us")
 
     request(link, 105)
     imu = receive(link, "HIGHRES_IMU")
@@ -279,6 +286,10 @@ def check(link, expected_version, source_id=None):
     logger = console_command(link, "logger status")
     assert "LOGGER schema=2" in logger and "sync_period_ms=1000" in logger, logger
     print("MAVLink console logger status: PASS")
+    rtc = console_command(link, "!time")
+    assert "RTC schema=3" in rtc and "ticking=true" in rtc, rtc
+    assert "counting=true" in rtc and "prescaler_ok=true" in rtc, rtc
+    print(f"MAVLink console RTC status: {rtc.strip()}")
     print("MAVLink wire checks: PASS")
 
 

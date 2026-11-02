@@ -25,6 +25,8 @@ pub mod parameter_store;
 pub mod parameters;
 #[path = "core/ulog.rs"]
 pub mod ulog;
+#[path = "core/wall_clock.rs"]
+pub mod wall_clock;
 
 pub mod build_info {
     include!(concat!(env!("OUT_DIR"), "/build_info.rs"));

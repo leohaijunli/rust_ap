@@ -447,19 +447,24 @@ Open the Rust CDC port with a serial terminal or `pyserial`:
 - `!fault`: CRC-validated retained record; `!fault-clear` explicitly clears it.
 - `!dronecan`: FDCAN register/error counters, bounded transport counters, node
   discovery, and trusted/candidate ESC status.
+- `!time` / `!time set <unix|ISO8601>`: RTC source, calendar progression and
+  bounded write/read-back; see [时间基准](docs/time-sync.md).
 - `!logger`: ULog queue, SD/FAT state, bytes, flushes, errors, sync period and high-water mark.
-- `!logger-start` / `!logger-stop`: start a new SD/FAT file, or drain the queue,
-  align/write staging, flush file/filesystem and power the card off. Start may be used again.
-- `!logger-sync`: request an immediate file/filesystem flush.
-- `!logger-config <100..10000>`: set the runtime sync period in milliseconds.
+- `!logger-start` / `!logger start` (stop/sync accept the same two forms):
+  start a new SD/FAT file, or drain the queue, align/write staging, flush file/filesystem
+  and power the card off. Start may be used again.
+- `!logger-config <100..10000>` / `!logger config <…>`: set the runtime sync period in milliseconds.
   The default firmware leaves SD power off so a missing or abnormal card cannot affect boot.
 - `!panic` / `!hardfault`: **only** in `fault-injection` builds, never in the normal package.
 
 QGroundControl **Analyze Tools → MAVLink Console** uses the same bounded command parser
-through `SERIAL_CONTROL_DEV_SHELL`. Commands omit `!`, for example `help`, `status`,
-`imu`, `logger status`, `logger start`, `logger sync`, `logger stop`, and
-`logger config 500`. Standard `MAV_CMD_LOGGING_START`/`STOP` call the same state
-machine; commands invalid for the current state are rejected instead of silently succeeding.
+through `SERIAL_CONTROL_DEV_SHELL`. Both prefixes work, for example `help`, `status`,
+`imu`, `!logger start`, `logger stop`, and `!logger config 500`. Start/stop state
+transitions, accepted-vs-recording semantics and failure modes are documented in
+[日志控制](docs/logging-control.md). Standard `MAV_CMD_LOGGING_START`/`STOP` call the same
+state machine; commands invalid for the current state are rejected instead of silently succeeding.
+Raw gyro and accelerometer fields are stored in the custom ULog topic `imu_icm42688`,
+not PX4's `sensor_gyro` / `sensor_accel` names.
 
 Engineer-run captures (close QGC and all other readers first):
 

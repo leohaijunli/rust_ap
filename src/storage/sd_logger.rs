@@ -12,7 +12,9 @@ use embassy_stm32::time::Hertz;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{with_timeout, Duration, Instant, Timer};
-use embedded_fatfs::{Error as FatError, FileSystem, FsOptions};
+use embedded_fatfs::{
+    Date, DateTime, Error as FatError, FileSystem, FsOptions, Time, TimeProvider,
+};
 use embedded_io_async::{Read, Seek, SeekFrom, Write};
 use embedded_partitions::mbr::Scheme;
 use v6x_rust_led::log_queue::{Class, Logger};
@@ -22,6 +24,7 @@ use v6x_rust_led::logger::{
 };
 use v6x_rust_led::parameters::{Kind, REGISTRY};
 use v6x_rust_led::ulog::{self, DataEncoder, TopicId, TOPICS};
+use v6x_rust_led::wall_clock::Utc;
 
 use crate::parameter_manager::ParameterManager;
 
@@ -287,20 +290,12 @@ pub fn record_imu(timestamp_us: u64, sample: v6x_rust_led::icm42688::Sample) {
     if !ready() {
         return;
     }
-    let mut payload = ulog::Payload::new();
-    payload.push_u64(sample.sample_timestamp_us).unwrap();
-    payload.push_u32(sample.sequence).unwrap();
-    payload.push_u8(1).unwrap();
-    payload.push_u8(v6x_rust_led::icm42688::SOURCE_ID).unwrap();
-    payload.push_u32(sample.age_us(timestamp_us)).unwrap();
-    for value in sample.gyro_rad_s {
-        payload.push_f32(value).unwrap();
-    }
-    for value in sample.accel_m_s2 {
-        payload.push_f32(value).unwrap();
-    }
-    payload.push_f32(sample.temperature_c).unwrap();
-    record(TopicId::Imu, Class::Normal, timestamp_us, &payload);
+    record(
+        TopicId::Imu,
+        Class::Normal,
+        timestamp_us,
+        &ulog::imu_data_payload(timestamp_us, sample),
+    );
 }
 
 pub fn record_esc_status(
@@ -516,10 +511,13 @@ where
     IO: Read + Write + Seek,
 {
     let link = first_request.link;
-    let filesystem = with_timeout(INIT_TIMEOUT, FileSystem::new(storage, FsOptions::new()))
-        .await
-        .map_err(|_| (link, LogError::Mount))?
-        .map_err(|_| (link, LogError::Mount))?;
+    let filesystem = with_timeout(
+        INIT_TIMEOUT,
+        FileSystem::new(storage, FsOptions::new().time_provider(WallClock)),
+    )
+    .await
+    .map_err(|_| (link, LogError::Mount))?
+    .map_err(|_| (link, LogError::Mount))?;
     let root = filesystem.root_dir();
     let mut next_request = Some(first_request);
     loop {
@@ -587,7 +585,7 @@ where
                                     num_logs,
                                     last_log_num,
                                     size: entry.len().min(u64::from(u32::MAX)) as u32,
-                                    time_utc: 0,
+                                    time_utc: entry_time_utc(&entry),
                                 },
                             )
                             .await
@@ -677,14 +675,69 @@ where
     entry.is_file() && is_ulog_name(entry.short_file_name_as_bytes())
 }
 
+/// FAT directory timestamps come from the RTC. A calendar that is not set (or
+/// outside the DOS 1980..=2107 range) falls back to 1980-01-01 so recording
+/// still works; `LOG_ENTRY.time_utc` then reports 0 for that file.
+#[derive(Clone, Copy, Debug)]
+struct WallClock;
+
+impl TimeProvider for WallClock {
+    fn get_current_date(&self) -> Date {
+        fat_date_time().date
+    }
+
+    fn get_current_date_time(&self) -> DateTime {
+        fat_date_time()
+    }
+}
+
+fn fat_date_time() -> DateTime {
+    crate::rtc::now()
+        .filter(|utc| utc.is_fat_range())
+        .map(|utc| {
+            DateTime::new(
+                Date::new(utc.year, u16::from(utc.month), u16::from(utc.day)),
+                Time::new(
+                    u16::from(utc.hour),
+                    u16::from(utc.minute),
+                    u16::from(utc.second),
+                    0,
+                ),
+            )
+        })
+        .unwrap_or_else(|| DateTime::new(Date::new(1980, 1, 1), Time::new(0, 0, 0, 0)))
+}
+
+fn entry_time_utc<IO, TP, OCC>(entry: &embedded_fatfs::DirEntry<'_, IO, TP, OCC>) -> u32
+where
+    IO: embedded_fatfs::ReadWriteSeek,
+    OCC: embedded_fatfs::OemCpConverter,
+{
+    let modified = entry.modified();
+    Utc::new(
+        modified.date.year,
+        u8::try_from(modified.date.month).unwrap_or(0),
+        u8::try_from(modified.date.day).unwrap_or(0),
+        u8::try_from(modified.time.hour).unwrap_or(0),
+        u8::try_from(modified.time.min).unwrap_or(0),
+        u8::try_from(modified.time.sec).unwrap_or(0),
+    )
+    .and_then(Utc::plausible_unix)
+    .and_then(|seconds| u32::try_from(seconds).ok())
+    .unwrap_or(0)
+}
+
 async fn run_filesystem<IO>(storage: &mut IO, parameters: &ParameterManager<'_>) -> Result<(), u8>
 where
     IO: Read + Write + Seek,
 {
-    let filesystem = with_timeout(INIT_TIMEOUT, FileSystem::new(storage, FsOptions::new()))
-        .await
-        .map_err(|_| 6)?
-        .map_err(|_| 6)?;
+    let filesystem = with_timeout(
+        INIT_TIMEOUT,
+        FileSystem::new(storage, FsOptions::new().time_provider(WallClock)),
+    )
+    .await
+    .map_err(|_| 6)?
+    .map_err(|_| 6)?;
     let root = filesystem.root_dir();
     let mut file_name = [0; 12];
     let mut selected = None;

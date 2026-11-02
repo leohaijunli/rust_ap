@@ -1,6 +1,6 @@
 # PL-a ULog / SD 软件验收
 
-日期：2026-11-01。**LOG-A01～04 与 LoggerControl/MAVLink Console 软件开发通过；LOG-A05 与实物 SD 验收待 H-04，PL-a 尚未关闭。P4b-a 依赖也仍未放行。**
+日期：2026-11-02。**LOG-A01～04 与 LoggerControl/MAVLink Console 软件开发通过；实物 SD 的正常 start/stop/下载/解析已做有限 HIL，受控断电、缺卡/拔卡与时延边界仍待 H-04，PL-a 尚未关闭。P4b-a 依赖也仍未放行。**
 
 ## 已通过
 
@@ -19,7 +19,7 @@
 | 软件检查 | fmt、普通/注入/Dump target Clippy、host Clippy、42 项 Rust 测试；pyulog 完整/截断检查；17 项编译时钟谓词 |
 | release/打包 | Linux Rust 1.99.1；source=`4c18e2081a0874b5`；raw/padded=`335368/335392 B`；static RAM=`215560 B`、空余 `242168 B`；布局/向量/ELF/bin/PX4 一致 |
 
-原 PL-a 普通 `.px4` SHA-256：`02c3c74a1a7fd1c54de939c8bbeb724b8dfac8ca6be34b1f7e2333b8eb7a849c`。当前板载 P4 开发包已包含更新后的 logger API，但本轮仍未 start logger 或访问 SD 卡；最终产物以 P4/后续验收记录为准。
+原 PL-a 普通 `.px4` SHA-256：`02c3c74a1a7fd1c54de939c8bbeb724b8dfac8ca6be34b1f7e2333b8eb7a849c`。2026-11-02 复验包 source=`81d6c1221048f08a`：`!logger start` 进入 status=2，字节持续增长且 errors=0；stop 后 status=0、flushes=4。最新文件 198656 B 经 `LOG_REQUEST_*` 完整下载，pyulog 解析 2686 条 `imu_icm42688` 数据且无 corruption；`LOG_ENTRY.time_utc=1700000004`。该结果只覆盖正常路径，不替代下列故障测试。
 
 ## 集中硬件测试
 

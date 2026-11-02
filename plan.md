@@ -46,7 +46,7 @@
 - DMA 缓冲按控制器可访问 RAM 放置；D-cache 使用明确的 MPU 或 clean/invalidate 策略。不能把全部 RAM 当作连续 DMA 内存。
 - FRAM 先只读识别并备份原内容。参数采用版本/CRC/原子提交，持久写入只在 disarmed 且输出关闭时执行；内部 flash 方案须明确升级擦除与导出/恢复。
 - DroneCAN RawCommand 数组按 `esc_index`，不是 node ID 排列；撤销输出时清除待发非零帧，恢复不自动解锁。
-- 控制、参数和各链路使用同一真源与单一输出仲裁。细节见[架构](docs/architecture.md)、[DroneCAN](docs/dronecan-notes.md)、[日志预算](docs/logging-budget.md)。
+- 控制、参数和各链路使用同一真源与单一输出仲裁。细节见[架构](docs/architecture.md)、[DroneCAN](docs/dronecan-notes.md)、[日志预算](docs/logging-budget.md)、[日志控制](docs/logging-control.md)。
 - 估计器不直接访问外设或链路：输入为带 source/sequence/sample time/valid/age 的 DTO，输出为 `Watch<EstimatorState>` 最新快照；Mahony/EKF2 通过同一接口选择，配置只在显式 reset/apply 边界生效。
 
 ## 4. 仅保留必要测试
@@ -160,6 +160,16 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 5. **数值验证**：用同一固定输入分别运行 PX4 v1.17.0 参考核心和 Rust 版本，按状态、创新、方差及拒绝/复位事件对拍；容差在测试前固定。未通过 replay、边界失败路径和实际 GNSS HIL 前，不称为“等价 EKF2”。
 6. **许可/来源**：逐文件记录 PX4/ECL 原路径、commit、BSD-3-Clause 版权与 Rust 修改点；不复制 uORB 消息定义作为内部 API，不链接 PX4 C++。
 
+### 时间基准与 GNSS 授时
+
+1. **范围**：RTC 只服务日志 UTC、QGC 命名和 `SYSTEM_TIME` 遥测；控制与估计仍用 TIM2 单调时间，不依赖墙上时钟。
+2. **驱动约束**：PAC 直写 RTC/BDCR，不置 `BDRST`、不覆盖已是可信日期的日历；清 `RSF` 前解锁 WPR，日历快照固定为 `SSR → TR → DR`；同时验证 SSR 边沿与日历秒递增。必要时 `LSEDRV=HIGH` 重启 LSE，最后回退 LSI 并关闭失效的 LSE，避免下次启动等待 `LSERDY`。
+3. **精度**：LSE 晶振约 ±20 ppm；LSI 约 ±5%，只作后备，必须由 GNSS 周期校准（偏差 ≥1 s 或每 60 s）。
+4. **GNSS 授时（P4b-g）**：解析 H-RTK 的 `time_utc_usec`，仅 fix ≥3 且样本新鲜时采纳，按 PX4 的 5 s 阈值写 RTC；优先级 GNSS > 地面站 `SYSTEM_TIME` > 继承值。
+5. **不做**：不回填已关闭日志的日期/名称，不修改 ULog 内部 boot 相对时间戳。
+
+详情见 [时间基准方案](docs/time-sync.md)。
+
 ## 7. M1 后续
 
 | 阶段 | 目标与必要验收 | 依赖 |
@@ -187,7 +197,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | --- | --- | --- |
 | H-02 | ESC 固件/参数、node ID/esc_index、电机位置/旋向 | P4b-a/b |
 | H-03 | CAN 适配器/端口/供电/终端，以及 TELEM1 UART7 适配器、线序、电平、波特率/流控 | CAN 上板、P2/P3 |
-| H-04 | SD 卡、记录/sync/允许丢失窗口 | PL-a |
+| H-04 | 当前 SD 卡型号/布局、记录时延/sync/允许丢失窗口，以及断电和缺卡/拔卡故障 | PL-a |
 | H-06 | 台架限幅/时限、撤销及停转判据 | P5a |
 | H-07 | RC/UART、电源监测、预检与故障策略 | P5b |
 | H-08 | GNSS 坐标/杆臂、精度与降级指标 | P6c/d |
@@ -197,6 +207,6 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 ## 9. 记录与交付
 
 - `TODO.md` 只列状态、下一步和依赖；`docs/acceptance/` 保存结果与原始证据引用，已测结果可跨任务复用。
-- 硬件资料：[台账](docs/fmuv6x-hardware.md)；来源/许可：[porting-notes](docs/porting-notes.md)、[provenance](docs/provenance.md)；设计：[architecture](docs/architecture.md)、[dronecan-notes](docs/dronecan-notes.md)、[logging-budget](docs/logging-budget.md)。
+- 硬件资料：[台账](docs/fmuv6x-hardware.md)；来源/许可：[porting-notes](docs/porting-notes.md)、[provenance](docs/provenance.md)；设计：[architecture](docs/architecture.md)、[dronecan-notes](docs/dronecan-notes.md)、[logging-budget](docs/logging-budget.md)、[logging-control](docs/logging-control.md)、[time-sync](docs/time-sync.md)。
 - 早期[恢复操作单](docs/recovery.md)、[P1 操作单](docs/acceptance/p1/bring-up.md)、[M1 操作单](docs/m1-verification.md)保留为参考；当前必验范围以本计划为准。
 - 本轮损坏文档的原始副本已保存到 HIL 证据中的 `recovery/push-prep-restart-damage/`；源码和工具 hash 与已通过的软件基线一致。

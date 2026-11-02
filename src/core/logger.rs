@@ -61,12 +61,15 @@ pub enum ConsoleCommand {
 
 pub fn parse_console(line: &[u8]) -> Option<ConsoleCommand> {
     match line {
-        b"!logger" | b"logger" | b"logger status" => Some(ConsoleCommand::Status),
-        b"!logger-start" | b"logger start" => Some(ConsoleCommand::Start),
-        b"!logger-stop" | b"logger stop" => Some(ConsoleCommand::Stop),
-        b"!logger-sync" | b"logger sync" => Some(ConsoleCommand::Sync),
+        b"!logger" | b"logger" | b"logger status" | b"!logger status" => {
+            Some(ConsoleCommand::Status)
+        }
+        b"!logger-start" | b"!logger start" | b"logger start" => Some(ConsoleCommand::Start),
+        b"!logger-stop" | b"!logger stop" | b"logger stop" => Some(ConsoleCommand::Stop),
+        b"!logger-sync" | b"!logger sync" | b"logger sync" => Some(ConsoleCommand::Sync),
         _ => line
             .strip_prefix(b"!logger-config ")
+            .or_else(|| line.strip_prefix(b"!logger config "))
             .or_else(|| line.strip_prefix(b"logger config "))
             .and_then(|value| core::str::from_utf8(value).ok())
             .and_then(|value| value.parse().ok())
@@ -205,9 +208,18 @@ mod tests {
     #[test]
     fn console_commands_and_state_transitions_are_explicit() {
         assert_eq!(parse_console(b"logger start"), Some(ConsoleCommand::Start));
+        assert_eq!(parse_console(b"!logger start"), Some(ConsoleCommand::Start));
         assert_eq!(parse_console(b"!logger-stop"), Some(ConsoleCommand::Stop));
+        assert_eq!(parse_console(b"!logger stop"), Some(ConsoleCommand::Stop));
+        assert_eq!(parse_console(b"!logger sync"), Some(ConsoleCommand::Sync));
         assert_eq!(
             parse_console(b"logger config 250"),
+            Some(ConsoleCommand::Config(Config {
+                sync_period_ms: 250
+            }))
+        );
+        assert_eq!(
+            parse_console(b"!logger config 250"),
             Some(ConsoleCommand::Config(Config {
                 sync_period_ms: 250
             }))
