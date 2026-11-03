@@ -244,6 +244,55 @@ pub fn record_usb_send() {
     USB_FRAMES.fetch_add(1, Ordering::Relaxed);
 }
 
+/// Pure-software virtual frame: enqueue a synthetic DroneCAN NodeStatus frame
+/// through the same gates as a frame read off the CAN2 bus. This exercises the
+/// bridge's permitted/session/filter checks and its USB forwarding with no CAN
+/// hardware attached, so a disconnected bus can still be validated end to end.
+///
+/// The frame matches the NodeStatus shape `check_mavcan.py` recognizes (node 0,
+/// `health_ok`), so the injected frame is also visible to the Python check.
+pub fn inject_virtual_frame() -> Result<(), InjectError> {
+    const NODE_STATUS_ID: u32 = EXTENDED_FLAG | (341u32 << 8); // uavcan.protocol.NodeStatus
+    let frame = Frame::from_wire(
+        NODE_STATUS_ID,
+        8,
+        [0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xc0],
+    )
+    .map_err(|_| InjectError::Frame)?;
+    let now_us = Instant::now().as_micros();
+    let epoch = SESSION.lock(|session| {
+        let session = session.borrow();
+        if permitted() && session.active_peer(now_us).is_some() {
+            if session.accepts_filter(frame) {
+                Some(session.epoch())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    });
+    match epoch {
+        Some(epoch) => OUTBOUND
+            .try_send(QueuedFrame {
+                frame,
+                epoch,
+                timestamp_us: now_us,
+            })
+            .map_err(|_| InjectError::QueueFull),
+        None => Err(InjectError::Inactive),
+    }
+}
+
+/// Result of injecting a virtual frame; used by the console to report why a
+/// frame was not queued.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InjectError {
+    Frame,
+    Inactive,
+    QueueFull,
+}
+
 fn from_hal(frame: HalFrame) -> Option<Frame> {
     let id = match frame.id() {
         CanId::Extended(id) => EXTENDED_FLAG | id.as_raw(),
