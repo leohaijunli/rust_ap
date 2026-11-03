@@ -1,0 +1,5 @@
+menuconfig DRIVERS_POWER_MONITOR_INA219
+	bool "INA219 power monitor"
+	default n
+	---help---
+		Enable the INA219 power monitor driver.

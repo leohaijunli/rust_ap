@@ -34,7 +34,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
     let _ = match command {
         Command::Help => writeln!(
             response,
-            "COMMANDS help status platform metrics fault fram params dronecan imu ina219 logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
+            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu ina219 logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
         ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
         Command::Metrics => crate::diagnostics::write_diagnostics(&mut response),
@@ -45,6 +45,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::Fault => crate::fault::write_diagnostics(&mut response),
         Command::FaultClear => writeln!(response, "FAULT_CLEAR ok={}", crate::fault::clear()),
         Command::DroneCan => dronecan.write_diagnostics(&mut response),
+        Command::MavCan => crate::mavcan::write_diagnostics(&mut response),
         Command::Imu => crate::imu::write_diagnostics(&mut response),
         Command::Ina219 => crate::ina219::write_diagnostics(&mut response),
         Command::Logger => crate::sd_logger::write_diagnostics(&mut response),
@@ -241,6 +242,7 @@ pub(crate) enum Command {
     ParamSave,
     ParamLoad,
     DroneCan,
+    MavCan,
     Imu,
     Ina219,
     Logger,
@@ -297,6 +299,7 @@ impl CommandLine {
                     b"!param-save" => Some(Command::ParamSave),
                     b"!param-load" => Some(Command::ParamLoad),
                     b"!dronecan" | b"dronecan" => Some(Command::DroneCan),
+                    b"!mavcan" | b"mavcan" => Some(Command::MavCan),
                     b"!imu" | b"imu" => Some(Command::Imu),
                     b"!ina219" | b"ina219" => Some(Command::Ina219),
                     b"!time" | b"time" => Some(Command::Time),

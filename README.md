@@ -469,6 +469,8 @@ Open the Rust CDC port with a serial terminal or `pyserial`:
 - `!fault`: CRC-validated retained record; `!fault-clear` explicitly clears it.
 - `!dronecan`: FDCAN register/error counters, bounded transport counters, node
   discovery, and trusted/candidate ESC status.
+- `!mavcan`: CAN2 forwarding session, CAN/USB counters, and hardware registers;
+  see [MAVCAN setup and checks](docs/mavcan.md).
 - `!ina219`: I2C3 address probe/adoption, configuration, calibration, measurement counters and A/V/W;
   the standard MAVLink values stop on I/O/conversion failure or stale data.
 - `!time` / `!time set <unix|ISO8601>`: RTC source, calendar progression and

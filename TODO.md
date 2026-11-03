@@ -11,6 +11,16 @@
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
+## 当前优先工作 — MAVCAN
+
+工程师要求先完成飞控 MAVCAN passthrough，再开发 GPS；范围与必要检查见 [CAN-BRD](plan.md#can-brd-当前范围)。
+
+- [x] 固定并核对 VimDrones `7bfe9963` / pydronecan `092d09cb` 协议：经典 DroneCAN 用 `CAN_FRAME`（386）、`MAV_CMD_CAN_FORWARD`（32000）握手，ID bit31=扩展、bit30=RTR。
+- [ ] **进行中**：修正 CAN2/FDCAN2（PB12/PB13）桥接，补全总线/目标/长度校验、转发租约、过滤、固定队列、超时取消及 USB 会话清理。
+- [ ] MAVCAN 核心/协议测试、fmt/Clippy、普通固件构建与资源核对。
+- [ ] 烧录后核对 CAN2 双向互通、关闭/超时恢复和 DroneCAN GUI 节点可见；SLCAN codec 保留，当前不接入。
+- [ ] 局部简化审视、更新真实验收结果并提交推送。
+
 ## 已确认范围
 
 - [x] **D-A3 / D-RUST / D-EMBASSY**：当前工程 + Rust/Embassy + 按需复用固定 Cybflight 算法。
@@ -38,11 +48,11 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 - [x] **MSG-01 标准消息软件检查**：`sensor_accel` / `sensor_gyro`、`actuator_armed` 与固定 PX4 定义对齐；fmt/Clippy、4 项受影响核心用例、pyulog 与普通打包/布局通过，软件 source=`c2f3128aecc8a70b`。[记录](docs/acceptance/messages/README.md)；实物核对并入 P4 下一次必验记录。
 - [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
 - [ ] **PL-a / LOG-A01～05**：LOG-A01～04 及 LoggerControl/MAVLink Console 软件门已通过；实物正常 start/stop、MAVLink 下载和 pyulog 解析已通过；restart 先补录已有通过结果的直接证据，H-04 仍待受控断电恢复、缺卡/拔卡和时延边界。[证据](docs/acceptance/pl-a/README.md)；P4b-a 未关闭，不放行依赖阶段。
-- [ ] **P4b-g / GNSS-01～03**：H-RTK 身份、Fix2/Auxiliary、有效性与日志。依赖 P4b-a、PL-a、H-10。
+- [ ] **P4b-g / GNSS-01～03**：GPS 已接 CAN1；MAVCAN 收口后接入 H-RTK Fix2/Auxiliary、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志并实测。CAN2 桥不自动转发 CAN1。阶段依赖 P4b-a、PL-a、H-10。
 - [ ] **P2 / MAV-01～03**：USB/TELEM1 双链路、QGC 连接/重连及版本显示；MAV-01 软件门已通过，待 H-03 与工程师接线做双链路/重连实测。[证据](docs/acceptance/p2/README.md)。依赖 P1、P3a。
 - [ ] **P3 / PARAM-01～02**：软件/工具路径已由 P3a/P2 就绪；待 P2 闭合与 H-03 接线后做双链路一致性、合法/非法值回显及保存重启读回。依赖 P3a、P2。
 - [ ] **P4 / SENS-01～04**：软件门、实物 WHO_AM_I/SPI/短时 8 kHz 计数、USB `HIGHRES_IMU` 与旧 `imu_icm42688` 短时 1 kHz ULog 已通过；待 DRDY 仪器测量、60 s 标准 `sensor_accel` / `sensor_gyro` 日志、六面方向、校准与故障恢复。[证据](docs/acceptance/p4/README.md)。依赖 P1、P3a、PL-a。
-- [ ] **P4p / PWR-01～04**：INA219 I2C3、探测/采样/超时恢复已实现；`source=b2e70b0ecc7ab844` 实测单条 `DEBUG_VECT`（`name=INA219`、`x=V/y=A/z=W`）约 9.98 Hz，Windows QGC Inspector x/y/z 同显已确认；ULog `rust_current_sensor` 干净短日志约 9.975 Hz 无 dropout。日志参数 `LOG_EN_*`/`LOG_*_HZ` 曾不生效（apply 读 REGISTRY 默认而非 RAM 值），已在 `9d7c9b5` 修复并板载核对：设 `LOG_IMU_HZ=50`→回读 50.0、`LOG_EN_IMU=0`→回读 0.0，恢复默认 200/1 通过；IMU 200 Hz。全量负载日志 4 dropout/5685 条普通丢样为 SD 吞吐落后（队列满）的既有日志吞吐问题，并入 PL-a/M1。实测总线约 0.92 V，需确认支路供电/接线；精度与断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
+- [ ] **P4p / PWR-01～04**：INA219 单条 V/A/W、Windows Inspector 同显和短时 ULog 已通过。日志参数默认值读取 bug 已修复并验证参数回显；实际停录/变速、保存后掉电恢复仍待验。全量日志曾出现 dropout，队列满原因需进一步定位。参考负载精度、支路供电和断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
 - [ ] **P6a / EST-01～02**：Mahony AHRS、姿态日志/QGC 方向；相对 yaw。依赖 P4、P2、PL-a。
 - [ ] **P7 / TEL-01～02**：随真实数据源补遥测与速率控制。依赖相应数据源、P2。
 - [ ] **M1-01～02**：一次 5 分钟数据链联合运行，核对数据、日志和资源；零命令/DISARMED。依赖以上阶段。
@@ -63,7 +73,6 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 
 - [ ] **P6b→P6c→P6d→P6e→P6f→P6g**：模式→GNSS 融合/导航→路径→影子回退→INDI/NMPC/轨迹→任务协议；依赖详见计划。
 - [ ] **P3b / P8 / BACK-01～03**：元数据、按需外设/冗余和发布自动化。
-- [ ] **CAN-BRD（新增）**：DroneCAN ↔ CAN 总线 MAVCAN 调试桥。工程师确认 GUI 经 `mavcan:`（MAVLink CANFD_FRAME）把飞控当 USB-CAN 适配器（参考 VimDrones/MAVCAN_Bridge）；用 **FDCAN2（PB12/PB13）** 独立收发器（与 FDCAN1 各走各自收发器）。驱动 `src/drivers/mavcan.rs` 已实现并编译通过：FDCAN2 io_task + USB 收发分流（CANFD_FRAME 进 mavlink_usb）。SLCAN 编解码 `src/core/slcan.rs` 保留备选。待烧录核对（USB 分流、节点可见）。[plan.md](../plan.md#7-M1-后续)。
 
 ## 待补硬件输入
 

@@ -2,8 +2,8 @@
 
 use core::cell::RefCell;
 
-use embassy_futures::join::join3;
-use embassy_futures::select::{select, Either};
+use embassy_futures::join::join;
+use embassy_futures::select::{select, select3, Either3};
 use embassy_stm32::gpio::Output;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
@@ -52,6 +52,7 @@ impl<'a> UsbSessionEvents<'a> {
     }
 
     fn restart(&mut self) {
+        crate::mavcan::stop();
         self.generation = self.generation.wrapping_add(1);
         self.session.sender().send(self.generation);
     }
@@ -87,11 +88,12 @@ pub async fn run<'d, D: Driver<'d>>(
     let mut rx_reset = session.receiver().unwrap();
     tx_reset.get().await;
     rx_reset.get().await;
-    join3(
+    join(
         async {
             loop {
                 // Poll reset first: never begin a fresh write for an old session.
                 select(tx_reset.changed(), transmit(&mut sender, &replies)).await;
+                crate::mavcan::stop();
                 replies.clear();
             }
         },
@@ -109,13 +111,6 @@ pub async fn run<'d, D: Driver<'d>>(
                     ),
                 )
                 .await;
-            }
-        },
-        async {
-            // Forward FDCAN2 MAVCAN frames (CANFD_FRAME) into the USB TX path.
-            loop {
-                let message = crate::mavcan::OUTBOUND.receive().await;
-                replies.send(Outbound::Message(message)).await;
             }
         },
     )
@@ -136,6 +131,7 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
             mavlink_core::autopilot_version(),
         ] {
             if send_message(sender, &mut sequence, &message).await.is_err() {
+                crate::mavcan::stop();
                 continue 'connection;
             }
         }
@@ -145,8 +141,16 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
 
         loop {
             let next_wakeup = next_imu.min(next_heartbeat).min(next_power);
-            let result = match select(Timer::at(next_wakeup), replies.receive()).await {
-                Either::First(()) => {
+            // Timers and command replies precede CAN traffic, so a busy bridge
+            // cannot starve heartbeats or fill the command-reply queue.
+            let result = match select3(
+                Timer::at(next_wakeup),
+                replies.receive(),
+                crate::mavcan::OUTBOUND.receive(),
+            )
+            .await
+            {
+                Either3::First(()) => {
                     let now = Instant::now();
                     let mut result = Ok(());
                     if now >= next_imu {
@@ -185,13 +189,13 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
                     }
                     result
                 }
-                Either::Second(Outbound::Message(message)) => {
+                Either3::Second(Outbound::Message(message)) => {
                     send_message(sender, &mut sequence, &message).await
                 }
-                Either::Second(Outbound::Console(response)) => {
+                Either3::Second(Outbound::Console(response)) => {
                     write_transfer(sender, response.as_bytes()).await
                 }
-                Either::Second(Outbound::Bootloader { console_ack }) => {
+                Either3::Second(Outbound::Bootloader { console_ack }) => {
                     if console_ack {
                         let _ = with_timeout(
                             Duration::from_millis(100),
@@ -203,7 +207,7 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
                     crate::fault::reboot_to_bootloader();
                 }
                 #[cfg(feature = "fault-injection")]
-                Either::Second(Outbound::InjectFault { hard }) => {
+                Either3::Second(Outbound::InjectFault { hard }) => {
                     let _ = with_timeout(
                         Duration::from_millis(100),
                         write_transfer(sender, b"OK fault-injection\n"),
@@ -215,8 +219,20 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
                     }
                     panic!("P1 panic injection");
                 }
+                Either3::Third(queued) => {
+                    if let Some(message) = crate::mavcan::outbound_message(queued) {
+                        let result = send_message(sender, &mut sequence, &message).await;
+                        if result.is_ok() {
+                            crate::mavcan::record_usb_send();
+                        }
+                        result
+                    } else {
+                        Ok(())
+                    }
+                }
             };
             if result.is_err() {
+                crate::mavcan::stop();
                 break;
             }
         }
@@ -330,6 +346,7 @@ async fn receive<'d, D: Driver<'d>>(
                 }
             }
         }
+        crate::mavcan::stop();
     }
 }
 
@@ -346,9 +363,19 @@ async fn handle_message(
         handle_log_request(request, replies).await;
         return;
     }
-    // MAVCAN bridge: forward USB CANFD_FRAME frames to FDCAN2.
-    if crate::mavcan::handle_message(&decoded.message) {
-        return;
+    match crate::mavcan::handle_message(decoded.header, &decoded.message) {
+        crate::mavcan::Outcome::ForwardAck(result) => {
+            replies
+                .send(Outbound::Message(mavlink_core::command_ack(
+                    &decoded.header,
+                    MavCmd::MAV_CMD_CAN_FORWARD,
+                    result,
+                )))
+                .await;
+            return;
+        }
+        crate::mavcan::Outcome::Handled => return,
+        crate::mavcan::Outcome::Unhandled => {}
     }
     match decoded.message {
         MavMessage::SERIAL_CONTROL(data) => {

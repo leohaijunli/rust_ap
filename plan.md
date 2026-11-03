@@ -68,6 +68,7 @@
 | P6a-e / EKF2 | 固定 PX4 输入的 Rust/PX4 数值回放；状态/协方差有限、对称及有界；延迟缓冲、陈旧/跳变/拒绝/复位与 Mahony 回退；实际 GNSS 融合另验 |
 | P4b-a / P4b-g | 关键单/多帧及 CRC/超时向量；实物节点/ESC 索引、零输出、GNSS 字段与定位；一次断线后状态失效/恢复 |
 | PL-a | 一份日志经独立解析器读出；一次受控写入中断电并检查可恢复记录；一次缺卡或 I/O 故障，采样保持运行 |
+| CAN-BRD / MAVCAN | host 校验经典帧 ID/标志/DLC、转发会话/过滤；普通构建与资源核对；板载 CMD_CAN_FORWARD 握手、CAN2 节点双向收发和一次关闭/超时恢复，复用同次 USB 心跳确认 |
 | M1 | **一次 5 分钟额定联合运行**：IMU→AHRS、CAN、SD、USB/TELEM1、QGC 同时工作；复用该记录核对速率、丢样、队列、CPU/栈及日志 |
 | P5 / P6 非零输出 | 必须覆盖授权/撤销、过期命令、丢 RC/ESC、总线失效及停转；实际控制需台架/系留和实时性验证 |
 
@@ -202,7 +203,14 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P6f / INDI-01、NMPC-01、TRAJ-01 | 辨识、INDI/NMPC/轨迹；有界求解与过期/NaN 回退 | P6e、H-09 |
 | P6g / MISSION-01～02 | MAVLink 任务上传/执行/完成，复用参数和日志协议 | P6f、P2/P3、PL-b |
 | P3b / P8 / BACK-01～03 | 元数据、按需外设/冗余、发布自动化 | 实际需求确认后 |
-| CAN-BRD / 新增 | DroneCAN 调试桥：MAVCAN（MAVLink CANFD_FRAME）经 USB CDC，飞控当 USB-CAN 适配器（参考 VimDrones/MAVCAN_Bridge）；FDCAN2（PB12/PB13）独立收发器，与 FDCAN1 各走各自收发器（PX4 board.h 注释 “CAN1/CAN2 各连收发器”）。驱动已实现并编译通过；待烧录核对 USB 分流与节点可见 | 确认 GUI 与连接方式后 |
+| CAN-BRD / 新增 | 飞控 MAVCAN passthrough：USB MAVLink ↔ CAN2/FDCAN2（PB12/PB13、1 Mbit/s 经典 CAN）；按 VimDrones/pydronecan 核对 CAN_FRAME、CAN_FORWARD 和过滤协议，详见下文 | 当前优先收口，CAN2 节点/接线由工程师配合 |
+
+### CAN-BRD 当前范围
+
+- 固定参考 VimDrones `7bfe9963bbbe42309f3b1d0851f6a138552ce7f6` 与 pydronecan `092d09cb9e6b115e262efe4cb42f7b65e6054f26`；纯 Rust/Embassy 复用 USB MAVLink 收发循环。SLCAN 保留未接入状态。
+- `MAV_CMD_CAN_FORWARD`（32000）参数 1=2 开 CAN2、0 关闭；单客户端租约 5 s，pydronecan 每秒续约。`CAN_FRAME`（386）中的 bus=1，ID bit31=扩展、bit30=RTR；经典帧 0–8 B，非法 ID/长度和 CANFD_FRAME 拒绝而不截断。
+- `CAN_FILTER_MODIFY`（388）bus=2，按 ID 的第 2/3 字节过滤；replace/add/remove、最多 32 个 ID。收发使用固定容量队列，关闭/USB 重置/租约过期清理旧会话；TX 有界等待与硬件取消，disarmed 且输出关闭才允许桥接。
+- GPS 当前接 CAN1；CAN2 桥只能查看 CAN2 物理总线。GUI 自行解码透传的 DroneCAN；飞控侧 Fix2/Auxiliary、GPS_RAW_INT 与 sensor_gps 日志仍按后续 P4b-g 验收。
 
 远期接口和指标在 M1 硬件结果后细化。控制与估计算法不直接驱动外设；输出必须经同一仲裁。同步求解不能仅靠 async timeout 声称有时限；保留 Mahony 可运行基线、独立过期检测和 EKF2 明确回退。
 

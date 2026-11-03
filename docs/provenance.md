@@ -23,7 +23,8 @@
 | [DroneCAN DSDL](https://github.com/dronecan/DSDL) | `b4653c7abc3c47cb31b16efa24ea755232774756` | MIT；本轮固定协议定义 |
 | [umi-eng/dronecan-rust](https://github.com/umi-eng/dronecan-rust) | `0f5ffc906aa4527e57b8db343a7f133874eece27` | MPL-2.0；host 缺陷探针依赖，未作为合格板上栈采用 |
 | [David-OConnor/dronecan](https://github.com/David-OConnor/dronecan) | `06ee0c35d204b46dcac5152ef299b4e507a8b9b2` | 本轮未找到许可证文件；仅调研，取用前须查明授权 |
-| [pydronecan](https://github.com/dronecan/pydronecan) | `092d09cb9e6b115e262efe4cb42f7b65e6054f26`，1.0.27 | MIT；host 独立参考向量 |
+| [pydronecan](https://github.com/dronecan/pydronecan) | `092d09cb9e6b115e262efe4cb42f7b65e6054f26`，1.0.27 | MIT；host 独立参考向量与 MAVCAN 握手/帧/过滤协议参考 |
+| [VimDrones MAVCAN_Bridge](https://github.com/VimDrones/MAVCAN_Bridge) | `7bfe9963bbbe42309f3b1d0851f6a138552ce7f6` | `Core/Src/main.c` 标注 Copyright (c) 2025 Vimdrones / All rights reserved；仅核对公开协议，未复制或链接其源码 |
 | [dronecan_dsdlc](https://github.com/dronecan/dronecan_dsdlc) | `431170fa4bfe2212b516b8f33bdc796267907f1c` | LGPLv3 工具、MIT 生成输出例外；C host 对拍候选，尚未运行 |
 | PX4 内置 pydronecan / DSDL | `19fdf2e5b383243ccdb1094edae0603cf11469e8` / `993be80a62ec957c01fb41115b83663959a49f46` | 旧 MIT 参考；不与本轮生成输入混用 |
 | [AM32](https://github.com/am32-firmware/AM32) | `86cf1e55e56c7e7e622d01ba6855905504f15105` | GPLv3；外接 ESC 行为参考，未构建/刷写 ESC |
@@ -61,6 +62,7 @@
 | `.github/workflows/p1.yml`、`docs/acceptance/p1/` | 本项目软件检查及工程师授权的HIL/恢复证据；P1必验项通过，远程CI状态未查询 |
 | `src/storage/fram.rs`、`src/core/parameters.rs`、`src/core/parameter_store.rs`、`src/storage/parameter_manager.rs`、`tools/fram_backup.py`、`tools/p3a_parameters.py` | 本项目 P3a 实现：按 FM25V02A 厂商规格（`001-90865 Rev. *I`）和固定 PX4 `ramtron.c` 的 8 位/MODE3/两字节地址约定独立编写，未拷入驱动代码 |
 | `src/core/dronecan/`、`src/drivers/dronecan_can.rs` | 本项目 P4b-a 独立实现；协议字段/签名对照固定 MIT DSDL、P0 pydronecan 向量及 MIT libcanard 状态机，未复制候选 Rust 栈；板级适配使用现有 Embassy MIT/Apache-2.0 API |
+| `src/core/mavcan.rs`、`src/drivers/mavcan.rs`、USB 接线与 `tools/check_mavcan.py` | 本项目独立实现；对照固定 VimDrones/pydronecan 和 MAVLink common 字段。HAL/PAC 保留纯 Rust；Classic TX header 按 H753 寄存器语义编码，规避 Embassy 0.5.0 的非零 DLC RTR 丢失及无界 abort；[接口/复测](mavcan.md) |
 | `src/core/ulog.rs`、`src/core/log_queue.rs`、`src/storage/sd_logger.rs`、`examples/ulog_fixture.rs`、`tools/check_ulog.py` | 本项目 PL-a 实现；ULog 线格式对照固定 PX4 v1.17 文档，FAT 使用上述固定 MIT 栈，pyulog 只作 host 互操作检查 |
 | `src/core/logger.rs`、`src/comms/usb_console.rs`、`src/comms/mavlink_core.rs` | 本项目 LoggerControl 与 MAVLink Console；使用 common.xml `SERIAL_CONTROL`/`MAV_CMD_LOGGING_START/STOP`，通过固定 rust-mavlink 生成类型接入，不实现任意 shell 或引入 OS/FFI |
 | `src/core/icm42688.rs`、`src/core/config.rs`、`src/drivers/imu.rs` | 本项目 P4 纯 Rust/Embassy 实现；寄存器地址、20 B high-resolution FIFO、复位/配置/水位/周期回读流程对照固定 PX4 `d6f12ad…` 的 `src/drivers/imu/invensense/icm42688p/{InvenSense_ICM42688P_registers.hpp,ICM42688P.cpp,ICM42688P.hpp}`（BSD-3-Clause）。本项目采用 8 kHz ODR、YAW270/FLU、独立 fan-out 与 Embassy API，未链接或拷入 C++ 驱动 |

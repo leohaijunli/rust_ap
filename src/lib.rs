@@ -21,6 +21,8 @@ pub mod log_config;
 pub mod log_queue;
 #[path = "core/logger.rs"]
 pub mod logger;
+#[path = "core/mavcan.rs"]
+pub mod mavcan;
 #[path = "core/metrics.rs"]
 pub mod metrics;
 #[path = "core/parameter_store.rs"]
