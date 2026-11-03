@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-03。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；实物集中待 H-02/03/04、QGC GUI 目视与工程师操作，GNSS 授时和 M1 未开始。**
+更新：2026-11-03。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 为下一步；实物集中待 H-02/03/04、QGC GUI 目视与工程师操作，GNSS 授时和 M1 未开始。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md)
 
 ## 执行规则
@@ -18,8 +18,8 @@
 - [x] 固定并核对 VimDrones `7bfe9963` / pydronecan `092d09cb` 协议：经典 DroneCAN 用 `CAN_FRAME`（386）、`MAV_CMD_CAN_FORWARD`（32000）握手，ID bit31=扩展、bit30=RTR。
 - [x] 修正 CAN2/FDCAN2（PB12/PB13）桥接，补全总线/目标/长度校验、转发租约、过滤、固定队列、超时取消及 USB 会话清理。[证据](docs/acceptance/mavcan/README.md)
 - [x] MAVCAN 核心/协议测试、fmt/Clippy、普通固件构建与资源核对（source=`a2b91d35630180da`）。
-- [x] **烧录核对 CAN2→USB 经典 `CAN_FRAME` 转发通过**（`usb_frames=10`，匿名 Allocation 请求），**DroneCAN GUI 节点可见性仍待确认**：节点无静态 ID，需 GUI allocator 分配后才显示；USB→CAN2 出向待分配后验证。SLCAN 保留，未接入。
-- [ ] **下一步**：GUI allocator 分配 node ID 后核对节点/名称可见与出向 GetNodeInfo；随后收口 CAN-BRD 并进入 P4b-g GPS。
+- [x] **烧录核对 CAN2→USB 经典 `CAN_FRAME` 转发通过**（`usb_frames=10`，匿名 Allocation 请求），**DroneCAN GUI 节点可见性与数据通过**：工程师修正 GUI bus number（CAN2=bus 2）后，GPS 节点在 GUI 中可见且数据正常显示；Allocation 分配与出向 GetNodeInfo 已验证，`tx_frames` 递增确认双向收发。MAVCAN（CAN2）已收口。SLCAN 保留，未接入。
+- [ ] **下一步 P4b-g / GNSS-01～03**：MAVCAN 已收口。接入 H-RTK Fix2/Auxiliary、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志并实测。阶段依赖 P4b-a、PL-a、H-10。GPS 当前经 MAVCAN 在 GUI 中可见（CAN2），DroneCAN 数据解析待 P4b-g 实现。
 
 ## 已确认范围
 

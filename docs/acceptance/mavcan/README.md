@@ -1,6 +1,6 @@
 # MAVCAN：USB ↔ CAN2 桥接
 
-日期：2026-11-03。**修复已验证：经典 CAN 帧现经 `CAN_FRAME`（386）正确从 CAN2 转发到 USB；动态节点 ID 分配请求已可见。GUI 节点可见性仍待工程师确认。** 范围与必验见 [CAN-BRD](../../../plan.md#can-brd-当前范围)，接口与复测见 [mavcan.md](../../mavcan.md)。
+日期：2026-11-03。**修复已验证：经典 CAN 帧现经 `CAN_FRAME`（386）正确从 CAN2 转发到 USB；动态节点 ID 分配请求已可见。GUI 节点可见性与数据已由工程师确认通过。** 范围与必验见 [CAN-BRD](../../../plan.md#can-brd-当前范围)，接口与复测见 [mavcan.md](../../mavcan.md)。
 
 ## 原问题（工程师报告：DroneCAN GUI 无消息）
 
@@ -39,11 +39,11 @@ source=`a2b91d35630180da`。
 
 ## 待工程师确认
 
-- **DroneCAN GUI 节点可见性未通过**：GUI 打开、连接 Rust CDC（MAVCAN、bus 2）后仍未显示节点。原因：CAN2 上目前只看到匿名 Allocation 请求（`983cd500`），GPS/ESC 尚无静态 node ID，需要 GUI 的 Dynamic Node ID Allocation server 分配 ID 后节点才会广播 NodeStatus 并显示名称。
-- USB→CAN2 出向（GetNodeInfo / Allocation 响应）尚未端到端验证：`tx_received=0`，因为还没给节点分配 ID 后发起请求。GUI 分配 ID 的过程即会测试出向路径。
+- **DroneCAN GUI 节点可见性已通过**：工程师确认 GPS 节点在 GUI 中可见且数据正常显示。关键点：**GUI 需选择正确的 bus number（CAN2 对应 bus 2）**。选择错误时 GUI 发送的 `CAN_FORWARD param1` 与固件不匹配（固件只接受 2），导致会话无法建立、节点不可见。修正 bus 配置后，Dynamic Node ID Allocation 正常分配、节点广播 NodeStatus 并显示名称。
+- USB→CAN2 出向（GetNodeInfo / Allocation 响应）已通过：GUI 分配 node ID 的过程即验证了出向路径，`tx_frames` 递增确认 CAN2 双向收发。
 - 若节点期望静态 ID，需按 H-02/H-10 核对 GPS/ESC 的 node ID 配置；`!mavcan` 可在会话内核对 `rx_frames`/`usb_frames`/`tx_*` 与 `psr/ecr`。
 
 ## 记录与下一步
 
-- 本次提交推送包含全部 MAVCAN 修复与验证工具；GUI 节点可见性与出向 GetNodeInfo 为未关闭项，随 GUI/节点 ID 确认后收口。
-- GPS MAVLink（P4b-g，`GPS_RAW_INT`/`sensor_gps`）仍待本阶段关闭与 H-10 后接入，未在本轮实现。
+- 本次提交推送包含全部 MAVCAN 修复与验证工具；GUI 节点可见性与出向 GetNodeInfo 已通过，MAVCAN（CAN2）收口。
+- GPS MAVLink（P4b-g，`GPS_RAW_INT`/`sensor_gps`）下一步接入，见 H-10。
