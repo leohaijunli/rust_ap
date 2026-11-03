@@ -211,6 +211,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 - `MAV_CMD_CAN_FORWARD`（32000）参数 1=2 开 CAN2、0 关闭；单客户端租约 5 s，pydronecan 每秒续约。`CAN_FRAME`（386）中的 bus=1，ID bit31=扩展、bit30=RTR；经典帧 0–8 B，非法 ID/长度和 CANFD_FRAME 拒绝而不截断。
 - `CAN_FILTER_MODIFY`（388）bus=2，按 ID 的第 2/3 字节过滤；replace/add/remove、最多 32 个 ID。收发使用固定容量队列，关闭/USB 重置/租约过期清理旧会话；TX 有界等待与硬件取消，disarmed 且输出关闭才允许桥接。
 - GPS 当前接 CAN1；CAN2 桥只能查看 CAN2 物理总线。GUI 自行解码透传的 DroneCAN；飞控侧 Fix2/Auxiliary、GPS_RAW_INT 与 sensor_gps 日志仍按后续 P4b-g 验收。
+- 修复已验证：source=`a2b91d35630180da` 经典 `CAN_FRAME` 从 CAN2→USB 转发通过（`usb_frames=10`，匿名 Allocation 请求），握手/关闭/会话生效。[记录](docs/acceptance/mavcan/README.md)。**GUI 节点可见性待确认**：节点无静态 ID，需 GUI allocator 分配；出向 GetNodeInfo 待分配后验证。
 
 远期接口和指标在 M1 硬件结果后细化。控制与估计算法不直接驱动外设；输出必须经同一仲裁。同步求解不能仅靠 async timeout 声称有时限；保留 Mahony 可运行基线、独立过期检测和 EKF2 明确回退。
 

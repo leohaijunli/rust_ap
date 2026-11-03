@@ -16,10 +16,10 @@
 工程师要求先完成飞控 MAVCAN passthrough，再开发 GPS；范围与必要检查见 [CAN-BRD](plan.md#can-brd-当前范围)。
 
 - [x] 固定并核对 VimDrones `7bfe9963` / pydronecan `092d09cb` 协议：经典 DroneCAN 用 `CAN_FRAME`（386）、`MAV_CMD_CAN_FORWARD`（32000）握手，ID bit31=扩展、bit30=RTR。
-- [ ] **进行中**：修正 CAN2/FDCAN2（PB12/PB13）桥接，补全总线/目标/长度校验、转发租约、过滤、固定队列、超时取消及 USB 会话清理。
-- [ ] MAVCAN 核心/协议测试、fmt/Clippy、普通固件构建与资源核对。
-- [ ] 烧录后核对 CAN2 双向互通、关闭/超时恢复和 DroneCAN GUI 节点可见；SLCAN codec 保留，当前不接入。
-- [ ] 局部简化审视、更新真实验收结果并提交推送。
+- [x] 修正 CAN2/FDCAN2（PB12/PB13）桥接，补全总线/目标/长度校验、转发租约、过滤、固定队列、超时取消及 USB 会话清理。[证据](docs/acceptance/mavcan/README.md)
+- [x] MAVCAN 核心/协议测试、fmt/Clippy、普通固件构建与资源核对（source=`a2b91d35630180da`）。
+- [x] **烧录核对 CAN2→USB 经典 `CAN_FRAME` 转发通过**（`usb_frames=10`，匿名 Allocation 请求），**DroneCAN GUI 节点可见性仍待确认**：节点无静态 ID，需 GUI allocator 分配后才显示；USB→CAN2 出向待分配后验证。SLCAN 保留，未接入。
+- [ ] **下一步**：GUI allocator 分配 node ID 后核对节点/名称可见与出向 GetNodeInfo；随后收口 CAN-BRD 并进入 P4b-g GPS。
 
 ## 已确认范围
 
