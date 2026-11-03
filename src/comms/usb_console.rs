@@ -34,7 +34,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
     let _ = match command {
         Command::Help => writeln!(
             response,
-            "COMMANDS help status platform metrics fault fram params dronecan mavcan mavcan inject imu ina219 logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
+            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu ina219 logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
         ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
         Command::Metrics => crate::diagnostics::write_diagnostics(&mut response),
@@ -46,10 +46,6 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::FaultClear => writeln!(response, "FAULT_CLEAR ok={}", crate::fault::clear()),
         Command::DroneCan => dronecan.write_diagnostics(&mut response),
         Command::MavCan => crate::mavcan::write_diagnostics(&mut response),
-        Command::MavCanInject => {
-            let result = crate::mavcan::inject_virtual_frame();
-            writeln!(response, "MAVCAN_INJECT ok={}", result.is_ok())
-        }
         Command::Imu => crate::imu::write_diagnostics(&mut response),
         Command::Ina219 => crate::ina219::write_diagnostics(&mut response),
         Command::Logger => crate::sd_logger::write_diagnostics(&mut response),
@@ -247,7 +243,6 @@ pub(crate) enum Command {
     ParamLoad,
     DroneCan,
     MavCan,
-    MavCanInject,
     Imu,
     Ina219,
     Logger,
@@ -305,7 +300,6 @@ impl CommandLine {
                     b"!param-load" => Some(Command::ParamLoad),
                     b"!dronecan" | b"dronecan" => Some(Command::DroneCan),
                     b"!mavcan" | b"mavcan" => Some(Command::MavCan),
-                    b"!mavcan inject" | b"mavcan inject" => Some(Command::MavCanInject),
                     b"!imu" | b"imu" => Some(Command::Imu),
                     b"!ina219" | b"ina219" => Some(Command::Ina219),
                     b"!time" | b"time" => Some(Command::Time),

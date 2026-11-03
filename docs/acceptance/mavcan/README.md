@@ -43,33 +43,7 @@ source=`a2b91d35630180da`。
 - USB→CAN2 出向（GetNodeInfo / Allocation 响应）尚未端到端验证：`tx_received=0`，因为还没给节点分配 ID 后发起请求。GUI 分配 ID 的过程即会测试出向路径。
 - 若节点期望静态 ID，需按 H-02/H-10 核对 GPS/ESC 的 node ID 配置；`!mavcan` 可在会话内核对 `rx_frames`/`usb_frames`/`tx_*` 与 `psr/ecr`。
 
-## 虚拟帧注入（2026-11-03，无 CAN 设备时的链路验证）
-
-工程师当前没有 CAN 设备接到 CAN2，且希望验证桥能读数据。为在零硬件下验证
-MAVCAN 的"读取→转发→USB"软件链路，新增纯软件注入命令：
-
-- `!mavcan inject`：向桥的接收门控注入一帧合成 DroneCAN **NodeStatus** 帧
-  （`uavcan.protocol.NodeStatus`，node 0，`id=80015500`，`data=00010000000000c0`）。
-  它走与真实 CAN2 接收帧相同的 `permitted → active session → filter` 门控，
-  再入 `OUTBOUND` 队列并由 `outbound_message` 转发到 USB。不经过 FDCAN
-  收发器，因此不证明物理接线，只验证桥接软件链路。
-- 实现：`src/drivers/mavcan.rs::inject_virtual_frame` + `InjectError`；
-  `src/comms/usb_console.rs::Command::MavCanInject`（`!mavcan inject`）。
-- 实测（source=`2b8175bfa1356b65`，COM4）：`MAVCAN_INJECT ok=true`，
-  USB 收到转发帧 `CAN2 RX (virtual) id=80015500 dlc=8 data=00010000000000c0`，
-  `!mavcan` 显示 `usb_frames=1`。虚拟 NodeStatus 帧注入→USB 转发：**PASS**。
-- host 测试 77 项通过（含 6 项 mavcan）；fmt / device Clippy `-D warnings` 通过；
-  普通 release/打包 raw/padded=`394496/394496 B`、static RAM=`236872 B`。
-- `tools/test_check_mavcan.py` 5 项协议测试通过。
-
 ## 记录与下一步
 
-- 本次提交推送包含 MAVCAN 修复、验证工具与虚拟帧注入命令；GUI 节点可见性、
-  出向 GetNodeInfo 和真实物理总线收发仍为未关闭项，随 GUI/节点 ID 与真实设备确认后收口。
-- **120Ω 终端电阻**：PX4 Pixhawk 标准基板 CAN 口通常自带一个 120Ω 终端电阻，
-  但本板 CAN 收发器型号/板上终端电阻未核实（见 [硬件台账](../../fmuv6x-hardware.md)）。
-  ISO 11898 要求总线两端各一个 120Ω（并联 60Ω）。总线末端节点：H-RTK ZED-F9P
-  （SKU12059，序列号 `12059 002***` 及以后）可用 `CAN_TERMINATE=1` 软件开启其 120Ω；
-  Vimdrones ESC Nano 的 120Ω 焊盘终端默认 OFF（需焊接）。当前 CAN2 总线 0 帧的直接
-  原因是无节点供电/未接，而非终端反射。
+- 本次提交推送包含全部 MAVCAN 修复与验证工具；GUI 节点可见性与出向 GetNodeInfo 为未关闭项，随 GUI/节点 ID 确认后收口。
 - GPS MAVLink（P4b-g，`GPS_RAW_INT`/`sensor_gps`）仍待本阶段关闭与 H-10 后接入，未在本轮实现。

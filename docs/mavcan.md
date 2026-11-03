@@ -30,12 +30,6 @@ CAN2 保持正常接收/ACK，透传由会话控制。USB 出队再次核对会�
 
 随后在 DroneCAN GUI 连接该 Rust CDC、MAVCAN、bus 2，核对节点及名称可见。GUI 节点名称用于确认完整 GetNodeInfo 解码；脚本的响应帧证明 CAN2 双向收发。
 
-**没有 CAN 设备时**，可用纯软件虚拟帧验证桥的读取/转发链路：
-`!mavcan inject` 向桥的接收门控注入一帧合成 DroneCAN NodeStatus 帧并转发到 USB
-（走真实接收相同的 permitted/session/filter 门控，但不经过 FDCAN 收发器，因此不证明物理接线）。
-`tools/check_mavcan.py` 可观察到该虚拟 `CAN_FRAME`；实测 source=`2b8175bfa1356b65` 通过。
-真实物理总线仍须接入并供电节点后由工程师验收。
-
 `!mavcan`（也可通过 MAVLink Console 发送 `mavcan`）提供诊断：
 
 - `ready=false` / `registers_ok=false`：CAN2 初始化、时钟、模式或消息 RAM 配置异常。
