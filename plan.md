@@ -31,7 +31,7 @@
 
 | 模块 | 首版范围 |
 | --- | --- |
-| IMU | ICM-42688-P 的 ID、DRDY/FIFO/DMA；8 kHz ODR、8 包批处理、1 kHz ULog、时间戳、SI 单位、方向及基础校准 |
+| IMU | ICM-42688-P 的 ID、DRDY/FIFO/DMA；8 kHz ODR、8 包批处理、200 Hz ULog（`LOG_IMU_HZ` 默认）、时间戳、SI 单位、方向及基础校准 |
 | 支路电流 | 工程师新增 INA219/SEN0291：独立 I2C3 插座，0x44（A0=0/A1=1）并自动探测、10 mΩ、±8 A；10 Hz 采样，先用单条标准 `DEBUG_VECT` 同时显示 V/A/W |
 | AHRS | 统一 `AttitudeEstimator` API 下先接 Mahony gyro/accel 姿态、角速度与有效性；yaw 为相对航向。EKF2 不作为 M1 前置，位置融合归后续 P6a-e/P6c |
 | DroneCAN | 节点发现/服务、ESC 映射与 Status、零命令、H-RTK Fix2/Auxiliary；优先静态 ID，仅设备必需时增加 DNA |
@@ -64,7 +64,7 @@
 | P1 bring-up | 普通版启动/source/心跳/disarmed、平台与备份域、一次 60 s 时序采集、正常重启及受控故障恢复、独立 QGC 往返；本轮已测项直接复用 |
 | P3a 参数存储 | 参数合法性和 CRC/中断提交的 host 用例；一次实际保存/掉电重启，读回有效状态；核对升级处理策略 |
 | P2 / P3 协议 | USB/TELEM1 各连接一次，双链路同时工作并重连一次；全量读表、按名/索引读取、合法与非法设值各一例、保存后重启读回 |
-| P4 / P6a | host 单位/FIFO/坐标/陈旧数据用例；实物 ID、8 kHz ODR/1 kHz 批次与日志、六面方向和静态采样；USB/TELEM1 `HIGHRES_IMU`；QGC 转动确认姿态 |
+| P4 / P6a | host 单位/FIFO/坐标/陈旧数据用例；实物 ID、8 kHz ODR/1 kHz 批次与 200 Hz 日志、六面方向和静态采样；USB/TELEM1 `HIGHRES_IMU`；QGC 转动确认姿态 |
 | P6a-e / EKF2 | 固定 PX4 输入的 Rust/PX4 数值回放；状态/协方差有限、对称及有界；延迟缓冲、陈旧/跳变/拒绝/复位与 Mahony 回退；实际 GNSS 融合另验 |
 | P4b-a / P4b-g | 关键单/多帧及 CRC/超时向量；实物节点/ESC 索引、零输出、GNSS 字段与定位；一次断线后状态失效/恢复 |
 | PL-a | 一份日志经独立解析器读出；一次受控写入中断电并检查可恢复记录；一次缺卡或 I/O 故障，采样保持运行 |
@@ -154,7 +154,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 1. **P3 软件/工具就绪**：P3a 已实现统一参数注册表、合法性校验、原子保存和掉电读回；P2 共享 MAVLink 核心已提供 `PARAM_REQUEST_LIST/READ/SET/VALUE` 与存储命令。`tools/check_mavlink.py`、`tools/p3a_parameters.py` 已覆盖全表、名称/索引、合法/非法设值及保存读回，不重复实现协议。
 2. **P3 实物待验**：P2 闭合且 H-03 接线后，一条链路设值、另一条链路读回同一当前值，再复用既有保存/掉电读回路径；通过后关闭 PARAM-01/02。
 3. **P4 软件门通过**：`src/core/icm42688.rs` 与 `src/core/config.rs` 提供寄存器策略、8 kHz 高分辨率 FIFO 解码、SI 单位、YAW270/FLU→FRD、陈旧判断与配置 API；`src/drivers/imu.rs` 接 SPI2 DMA1_CH2/3、PF4/PH5、PA10 EXTI、复位/回读/FIFO 恢复和周期寄存器核对。
-4. **P4 fan-out**：AHRS 使用按需启用的 16 槽有界队列，满时丢弃积压并从最新样本重同步；ULog 每 8 样本各记录一个标准 `sensor_accel` / `sensor_gyro`（各 1 kHz、FRD/SI、`samples=1`，不是 8 样本平均）；USB/TELEM1 各 20 Hz `HIGHRES_IMU`，慢消费者不反压采样。标准消息软件检查见[记录](docs/acceptance/messages/README.md)，新 schema 随下一次 P4 必验记录核对实物。
+4. **P4 fan-out**：AHRS 使用按需启用的 16 槽有界队列，满时丢弃积压并从最新样本重同步；ULog 按 `LOG_IMU_HZ`（默认 200 Hz，每 40 样本各记录一个）记录标准 `sensor_accel` / `sensor_gyro`（FRD/SI、`samples=1`，不是 8 样本平均）；USB/TELEM1 各 20 Hz `HIGHRES_IMU`，慢消费者不反压采样。标准消息软件检查见[记录](docs/acceptance/messages/README.md)，新 schema 随下一次 P4 必验记录核对实物。
 5. **P4 有限 HIL**：普通包已由原 bootloader 上传/校验；WHO_AM_I=`0x47`、SPI=24 MHz、短时约 8.08 kHz、错误计数 0，USB `HIGHRES_IMU` 合理。旧 `imu_icm42688` 有 2686 条/2.652 s、约 1012.5 Hz、无 corruption；仍待 DRDY 仪器测量、60 s 日志、六面 YAW270、校准与故障恢复，不关闭 SENS-01～04。详情见 [P4 记录](docs/acceptance/p4/README.md)。
 
 ### EKF2 后续移植约束

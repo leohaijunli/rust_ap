@@ -40,7 +40,7 @@ the H-03 wiring. The USB side now runs in the P4 image. See [P2 evidence](docs/a
 **P4 software is ready:** the Embassy SPI2 ICM-42688-P path uses an 8 kHz
 high-resolution FIFO, bounded AHRS fan-out and 20 Hz `HIGHRES_IMU`
 on both MAVLink links. Current software records standard PX4 `sensor_accel` and
-`sensor_gyro` at 1 kHz each, plus `actuator_armed`; see the
+`sensor_gyro` at 200 Hz each (`LOG_IMU_HZ` default), plus `actuator_armed`; see the
 [message contracts](docs/message-contracts.md). WHO_AM_I/SPI/short static USB
 telemetry and the previous custom IMU ULog passed; six-face, 60-second standard
 logs, calibration and fault recovery remain. See

@@ -29,7 +29,7 @@ FDCAN → 有界帧队列 → DroneCAN → ESC/GNSS 快照 → ULog、USB、TELE
 USB / TELEM1 / DroneCAN 参数请求 → 单一注册表 → 实际值回显 / 变更事件
 ```
 
-- IMU 使用 **8 kHz gyro/accel ODR** 与 20 B 高分辨率 FIFO 包；水位为 8 包，约 1 kHz 唤醒并批量解码。AHRS 可消费全部 8 kHz，ULog 抽取后各写 1 kHz `sensor_accel` / `sensor_gyro`（单样本），MAVLink 读取最新快照 20 Hz；不能用低速链路反压采样。
+- IMU 使用 **8 kHz gyro/accel ODR** 与 20 B 高分辨率 FIFO 包；水位为 8 包，约 1 kHz 唤醒并批量解码。AHRS 可消费全部 8 kHz，ULog 按 `LOG_IMU_HZ`（默认 200 Hz）抽取后各写 `sensor_accel` / `sensor_gyro`（单样本），MAVLink 读取最新快照 20 Hz；不能用低速链路反压采样。
 - 唯一 DRDY 为 PA10/EXTI15_10、CS PH5、供电 PF4。EXTI P0 handler 先保存单调时钟低 32 位，再唤醒 TIM7/P3 的 IMU task；任务按当前时间重建跨回绕时间戳，仍须用外部边沿测量真实 IRQ 延迟。
 - FIFO 按包序号/器件时间还原每样本时间，检测缺包、溢出和重复。AHRS 使用测得的 dt，不能只因任务被唤醒就假定得到一个新样本。
 - AHRS 输入有界队列初值 16 个样本；满时显式记录丢样/重同步，不追赶陈旧样本造成长时间占用。日志不与 AHRS 争抢同一个消费型 Channel。
@@ -38,7 +38,7 @@ USB / TELEM1 / DroneCAN 参数请求 → 单一注册表 → 实际值回显 / �
 
 ### 调参/SDK 层（`config`）
 
-为了让设置、调参和换算法不经改驱动/改 HAL，lib 已提供单一 `v6x_rust_led::config`。它是 no_std、无 I/O、host 可测的纯逻辑层：**校验配置并输出驱动与算法可直接使用的值**，不自己持存储或外设。当前运行配置为 8 kHz ODR、1 kHz ULog、±16 g、±2000 dps、YAW270 和 Mahony；运行时参数映射待保存格式与实物结果确认后加入。
+为了让设置、调参和换算法不经改驱动/改 HAL，lib 已提供单一 `v6x_rust_led::config`。它是 no_std、无 I/O、host 可测的纯逻辑层：**校验配置并输出驱动与算法可直接使用的值**，不自己持存储或外设。当前运行配置为 8 kHz ODR、200 Hz ULog（`LOG_IMU_HZ` 默认，1–1000 Hz 可调）、±16 g、±2000 dps、YAW270 和 Mahony；运行时参数映射待保存格式与实物结果确认后加入。
 
 - 职责边界：只做"参数值 → 驱动/算法配置"的映射与校验。SPI/DRDY/EXTI 等平台细节不在本层；寄存器协议仍在设备层（embedded-hal 边界）。
 - 接口形态：`Config::imu()` 返回 `ImuConfig { odr_hz, log_rate_hz, accel_fsr_g, gyro_fsr_dps, rotation, stale_after_us }`；`Config::algorithm()` 返回 `Algorithm::Mahony`，供后续 AHRS 适配器读取。
@@ -111,7 +111,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | 指标 | 初始目标 / 记录方式 |
 | --- | --- |
 | 板上单调时基 | 对比 host/仪器至少 60 s，漂移目标 ≤0.1%；记录观测窗口和测量误差 |
-| IMU ODR | 8 kHz 采集、8 包 FIFO 批、约 1 kHz 任务唤醒；分别记录采集/批次/1 kHz 日志率，偏差目标 ≤1% |
+| IMU ODR | 8 kHz 采集、8 包 FIFO 批、约 1 kHz 任务唤醒；分别记录采集/批次/200 Hz 日志率（`LOG_IMU_HZ`），偏差目标 ≤1% |
 | DRDY 打点抖动 | <10 us，需外部边沿/输入捕获对照；纯任务时间戳只能给内部延迟证据 |
 | DRDY→样本发布 | 观测最大 ≤500 us；正常段零 FIFO 溢出/丢样/倒退时间戳 |
 | AHRS | 每新样本更新；单次 IMU/AHRS 快路径 ≤300 us，快照年龄 ≤2 ms；正常段无 NaN/无效四元数 |

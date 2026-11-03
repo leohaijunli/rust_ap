@@ -4,7 +4,7 @@
 
 ## 1. 用户确定的目标
 
-1. `embassy-stm32` 驱动唯一 **SPI2 ICM-42688-P**，验证 8 kHz ODR、8 包 FIFO 批处理和 1 kHz 日志抽取。
+1. `embassy-stm32` 驱动唯一 **SPI2 ICM-42688-P**，验证 8 kHz ODR、8 包 FIFO 批处理和 200 Hz 日志抽取（`LOG_IMU_HZ` 默认）。
 2. 纯 Rust AHRS，优先固定 Cybflight Mahony 的 gyro/accel 模式；姿态方向/新鲜度可验证，yaw 明确为相对值。
 3. DroneCAN 节点服务、4 个 Vimdrones Nano 的状态和全零命令、H-RTK Rover DroneCAN GNSS。
 4. 纯 Rust **ULog 板载 SD 记录**，使用标准 PX4 测量/状态消息，包含 IMU/AHRS、CAN/ESC/GNSS、参数与系统事件。
@@ -47,7 +47,7 @@
 
 | 验证 | 操作与通过证据 |
 | --- | --- |
-| IMU | 复用 5 分钟联合记录及 P4 六面/转动结果；分别核对 8 kHz 样本、约 1 kHz FIFO 批次与各 1 kHz `sensor_accel` / `sensor_gyro`，DRDY/读出延迟、FIFO/丢样、SI 单位和 YAW270 方向符合阈值 |
+| IMU | 复用 5 分钟联合记录及 P4 六面/转动结果；分别核对 8 kHz 样本、约 1 kHz FIFO 批次与各 200 Hz `sensor_accel` / `sensor_gyro`（`LOG_IMU_HZ`），DRDY/读出延迟、FIFO/丢样、SI 单位和 YAW270 方向符合阈值 |
 | AHRS | 转动板子并比较 QGC 与 ULog；静止倾角/收敛/四元数范数正确，过期/异常数据显式无效 |
 | DroneCAN | 独立 GUI/pydronecan 对拍节点/ESC/GNSS；确认只有零命令/DISARMED，测负载/时间/丢帧 |
 | QGC USB | 实际上游 QGC 建立连接；Inspector 查看心跳/状态、`HIGHRES_IMU`、姿态、ESC、GPS 的值和更新率 |
