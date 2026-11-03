@@ -126,7 +126,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 
 ## 6. QGC、MAVLink 与参数
 
-**上游 QGroundControl 连接、Inspector 消息检查和参数页读/设是 M1 必验项。** 历史 q-MAG/MagGCS 连接不能替代。心跳 `autopilot` 为 `MAV_AUTOPILOT_PX4`：QGC 只在 PX4 身份下把机载日志保存为 `.ulg`，其余身份保存为 `.bin`（内容同为 ULog）。不声明 `MAV_PROTOCOL_CAPABILITY_FTP`，日志仍走 `LOG_REQUEST_LIST/DATA/END` 消息通道；能力位只声明已支持的功能。
+**上游 QGroundControl 连接、Inspector 消息检查和参数页读/设是 M1 必验项。** 历史 q-MAG/MagGCS 连接不能替代。心跳 `autopilot` 为 `MAV_AUTOPILOT_PX4`：QGC 只在 PX4 身份下把机载日志保存为 `.ulg`，其余身份保存为 `.bin`（内容同为 ULog）。不声明 `MAV_PROTOCOL_CAPABILITY_FTP`，日志仍走 `LOG_REQUEST_LIST/DATA/END` 消息通道；能力位只声明已支持的功能。`FILE_TRANSFER_PROTOCOL` 只用于 QGC 5.0.3 的参数分组元数据下载（见下节），不提供日志或任意文件访问。
 
 | 消息 | 首轮默认速率 / 条件 |
 | --- | --- |
@@ -139,6 +139,8 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | GPS_RAW_INT | 按收到的 GNSS，目标 5 Hz；GPS 无定位也如实表示 |
 | AUTOPILOT_VERSION、PARAM_VALUE、STATUSTEXT | 请求/变化触发；队列/发送速率受限 |
 | SERIAL_CONTROL（SHELL） | QGC MAVLink Console；有界行缓冲与分片响应，logger/诊断命令，不提供任意内存或 OS shell |
+| COMPONENT_METADATA（397） | 响应 `MAV_CMD_REQUEST_MESSAGE` param1=397；静态 `uri` 与 `file_crc` |
+| FILE_TRANSFER_PROTOCOL（110） | 只读元数据虚拟路径 `component_metadata/{general,parameters}.json`；不开放真实文件系统 |
 
 USB 与 TELEM1 分别维护 MAVLink 序列号、RX 解析器、发送队列和 stream rate。首轮 TELEM1 候选 115200、8N1：线速上限 11520 B/s，发送总额先限 70%（8064 B/s），常规遥测目标 ≤6000 B/s，余量供参数回复；USB 常规限 32000 B/s。超过请求预算返回明确结果，不积压旧遥测。更高波特率根据实际接线/USB-UART 设备测试后采用。
 
@@ -147,10 +149,20 @@ MAVLink Console 使用 `SERIAL_CONTROL_DEV_SHELL`，只解析固定命令（`hel
 参数契约：
 
 1. 名称 ≤16 ASCII 且唯一；REAL32 对外，整数/枚举必须精确可逆；拒绝 NaN/Inf、越界、非整数枚举和只读写入。
-2. `PARAM_REQUEST_LIST` 限速发送完整表，`param_count/index` 稳定；`PARAM_REQUEST_READ` 支持名称/索引。
-3. `PARAM_SET` 校验后应用并回显 **实际值**；失败回显保留值并有原因。两条链路访问同一表，重复设置幂等，节点/总线配置按明确的重启/生效时机处理。
-4. 当前值、待保存值与保存成功分开；持久化只有 disarmed 且输出关闭时允许。P3a 已只读识别/备份 FRAM 并确定双槽布局；内部 flash 会受原 bootloader 应用擦除影响。
+2. `PARAM_REQUEST_LIST` 的回复受 `Reply` 4 槽缓冲限制（与 FTP 突发帧共用），每次返回前 4 条并给出稳定的 `param_count/index`；地面站按缺失索引补请求（QGC 自动进行），`PARAM_REQUEST_READ` 按名称或索引返回任意一条。
+3. `PARAM_SET` 校验后应用并回显 **实际值**；失败回显保留值并有原因。合法修改在 disarmed 且输出关闭时立即按 P3a 双槽原子写入 FRAM（地面站不需要额外保存动作）；输出活跃时只改 RAM 并回 `PARAM_SET: RAM only` 警告。两条链路访问同一表，重复设置幂等，节点/总线配置按明确的重启/生效时机处理。
+4. 当前值、待保存值与保存成功分开；持久化只有 disarmed 且输出关闭时允许。`!param-save`、`MAV_CMD_PREFLIGHT_STORAGE`(param1=1) 仍可显式保存且幂等。P3a 已只读识别/备份 FRAM 并确定双槽布局；内部 flash 会受原 bootloader 应用擦除影响。
 5. QGC 参数页加独立 pymavlink 脚本检查全表、按名/索引访问、合法/非法设置、双链路一致性、掉电后的实际保存结果。QGC 元数据和专有校准向导不是 M1 的参数协议前置。
+
+### QGC 参数分组元数据（COMPONENT_METADATA + MAVFTP）
+
+QGC 5.0.3 只有在收到 `COMPONENT_METADATA` 并下载到 `parameters.json` 后才显示参数分组名；分组由文件里的 `group` 字段决定，不需要改参数名前缀。
+
+- 请求路径：`MAV_CMD_REQUEST_MESSAGE` param1=397 → `COMPONENT_METADATA`（`uri=mftp:///component_metadata/general.json`、`file_crc`=该文件 CRC32）→ 地面站用 MAVFTP `OpenFileRO`/`BurstReadFile` 取文件 → `general.json` 的 `metadataTypes` 中 `type=1` 指向 `parameters.json` 及其 `fileCrc`。
+- `src/core/component_metadata.rs` 以 `&'static str` 常量保存两份 JSON（无堆），`fileCrc` 用编译期 CRC-32/IEEE `const fn` 计算；host 测试校验条目数与注册表一致、类型/范围/默认值一致、`LOG_*` 全部归入 `SDLog`、`general.json` 的 `fileCrc` 与 `parameters.json` 实际 CRC 相等。
+- `src/core/mavftp.rs` 是无堆只读服务：仅 `OpenFileRO`/`ReadFile`/`BurstReadFile`/`TerminateSession`/`ResetSessions`，单会话，每请求最多 4 帧（`BURST_FRAMES` 与 `Reply::CAPACITY` 由常量断言绑定），未知路径回 `FILE_NOT_FOUND`，越界读回 `EOF`。`uri` 归一化兼容 QGC 产生的 `//component_metadata/<file>`。
+- 虚拟路径之外的真实文件一律不可达；元数据静态、随固件版本变化，CRC 也随之变化。
+- 分组当前为 `SDLog`（9 个 `LOG_*`）、`System`（`MAV_SYS_ID`）、`Status`（`LINK_LED_HZ`）。新增参数时元数据测试会因条目数或字段不符而失败，必须同步更新。
 
 ### P3a 参数 API 与存储契约
 

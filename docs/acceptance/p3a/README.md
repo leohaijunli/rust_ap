@@ -61,6 +61,37 @@ schema=`8f0cb108`、FRAM 仍为 FM25V02A。结论：**FRAM 写入与启动加载
 本次为软件重启（完整 MCU 复位后从 FRAM 读回），未重复 2026-10-31 的物理拔电；
 FRAM 非易失，复位读回已证明数据落在介质而非 RAM。
 
+## 参数分组元数据（2026-11-03）
+
+工程师要求参数在 QGC 中按 “SDLog” 分组显示。实现选择 QGC 元数据通路（不改参数名前缀）：
+`MAV_CMD_REQUEST_MESSAGE`(397) → `COMPONENT_METADATA` → MAVFTP 只读下载
+`component_metadata/general.json` → `parameters.json`，其中 9 个 `LOG_*` 的 `group=SDLog`。
+设计见[架构中的元数据小节](../../architecture.md#qgc-参数分组元数据component_metadata--mavftp)。
+
+同轮把 `PARAM_SET` 改为 disarmed 且输出关闭时立即写 FRAM（此前只改 RAM），
+因此地面站改值后不再需要显式保存；输出活跃时只改 RAM 并回
+`PARAM_SET: RAM only; save blocked while outputs active`。本轮实测：
+仅发一次 `PARAM_SET LINK_LED_HZ=4.0` 后即 `storage=Stored valid=true dirty=false slot=0 generation=3`。
+
+板载实测 source=`c88f30f929842543`，raw/padded=`398000/398016 B`，static RAM=`236872 B`，
+共用栈未触达 `36972 B`（`STACK untouched_bytes=36972 guard_ok=true`，保持 ≥32 KiB 判据）。
+脚本 `metadata_check.py` / `metadata_error_check.py` 结果：
+
+| 检查 | 结果 |
+| --- | --- |
+| 397 → `COMPONENT_METADATA` | `uri=mftp:///component_metadata/general.json`、`file_crc=143886823` |
+| MAVFTP 打开 `///component_metadata/general.json` | ACK、会话号非 0、`size=4` 返回 159 B 长度 |
+| 突发读 general.json | 159 B，CRC32=`0x089389e7`，与 `file_crc` 一致 |
+| general.json 内 `type=1` | `uri=mftp:///component_metadata/parameters.json`、`fileCrc=69351959` |
+| 突发读 parameters.json | CRC32 与 `fileCrc` 一致；11 条参数；分组 `SDLog`/`Status`/`System` |
+| `SDLog` 成员 | `LOG_EN_IMU`、`LOG_IMU_HZ`、`LOG_EN_INA`、`LOG_INA_HZ`、`LOG_EN_CAN`、`LOG_CAN_HZ`、`LOG_EN_HEALTH`、`LOG_HEALTH_HZ`、`LOG_EN_EVENT` |
+| 不存在路径 | NAK、`size=1`、错误码 10、`seq`=请求+1 |
+| 按索引读全部 11 条 | 全部返回，`LINK_LED_HZ=4.0`（自动保存后的 FRAM 值） |
+
+QGC 5.0.3 参数页的 “SDLog” 分组呈列需工程师目视确认；无头环境无法验证 GUI。
+验证脚本使用 pymavlink 2.4.49，该版本尚无 397 命名，故按 MAVLink2 原始帧解析
+`COMPONENT_METADATA`；QGC 5.0.3 自带完整定义，已验证 uri 与 CRC 两项关键字段正确。
+
 ## 中断与局部审视
 
 主机重启后两次出现 CDC 正常枚举但零数据：`install-read-only/`、`install-parameters/` 均在 prepare 的心跳检查停止，未发 reboot、未刷写。工程师 USB 拔插后各安装成功；无数据现象根因未确认，不能仅凭描述符判定应用健康，后续归 P2。

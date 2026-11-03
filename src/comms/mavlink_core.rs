@@ -1,8 +1,13 @@
 //! Transport-agnostic MAVLink message logic shared by the USB CDC and TELEM1 links.
 
+use core::cell::RefCell;
+
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::blocking_mutex::Mutex;
 use mavlink::common::*;
 use mavlink::{MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion, Message};
 
+use v6x_rust_led::mavftp;
 use v6x_rust_led::parameters::{Id, COUNT, REGISTRY};
 
 use crate::parameter_manager::ParameterManager;
@@ -10,6 +15,10 @@ use v6x_rust_led::logger::{LogError, LogRequest, LogResponse};
 
 pub const SYSTEM_ID: u8 = Id::MavSysId.definition().default as u8;
 pub const COMPONENT_ID: u8 = 1;
+
+/// Ground stations only hold one FTP session; both links share it.
+static FTP: Mutex<CriticalSectionRawMutex, RefCell<mavftp::Server>> =
+    Mutex::new(RefCell::new(mavftp::Server::new()));
 
 /// Decoded inbound frame plus the header it arrived with.
 pub struct Decoded {
@@ -19,14 +28,17 @@ pub struct Decoded {
 
 /// Replies produced for one inbound request, plus whether a reboot is pending.
 pub struct Reply {
-    messages: [Option<MavMessage>; 4],
+    messages: [Option<MavMessage>; Self::CAPACITY],
     count: usize,
     pub reboot: bool,
 }
 
 impl Reply {
+    /// One burst of FTP frames must fit without being dropped.
+    pub const CAPACITY: usize = 4;
+
     pub const EMPTY: Self = Self {
-        messages: [const { None }; 4],
+        messages: [const { None }; Self::CAPACITY],
         count: 0,
         reboot: false,
     };
@@ -45,6 +57,8 @@ impl Reply {
             .filter_map(Option::take)
     }
 }
+
+const _: () = assert!(mavftp::BURST_FRAMES <= Reply::CAPACITY);
 
 /// Handle one inbound message, filling `reply` with the messages to send back.
 // Keep PING and command 520 for ground stations using the older discovery flow.
@@ -66,7 +80,18 @@ pub async fn handle(
     }
 
     match message {
+        MavMessage::FILE_TRANSFER_PROTOCOL(data) => {
+            if data.target_network == 0 {
+                let mut responses = mavftp::Responses::new();
+                FTP.lock(|ftp| ftp.borrow_mut().handle(&data.payload, &mut responses));
+                for frame in responses.frames() {
+                    reply.push(file_transfer(header, frame));
+                }
+            }
+        }
         MavMessage::PARAM_REQUEST_LIST(_) => {
+            // The reply buffer holds only part of the registry, so the ground
+            // station has to ask for the missing indices, which QGC does.
             for entry in REGISTRY {
                 reply.push(parameter(parameters, entry.id));
             }
@@ -83,17 +108,27 @@ pub async fn handle(
         }
         MavMessage::PARAM_SET(data) => {
             if let Some(id) = data.param_id.to_str().ok().and_then(Id::from_name) {
-                let error = if data.param_type == MavParamType::MAV_PARAM_TYPE_REAL32 {
+                let outcome = if data.param_type == MavParamType::MAV_PARAM_TYPE_REAL32 {
                     parameters
                         .set(id, data.param_value)
-                        .err()
-                        .map(|error| error.message())
+                        .map_err(|error| error.message())
                 } else {
-                    Some("PARAM_SET: expected REAL32")
+                    Err("PARAM_SET: expected REAL32")
                 };
                 reply.push(parameter(parameters, id));
-                if let Some(error) = error {
-                    reply.push(parameter_warning(error));
+                match outcome {
+                    // Ground stations expect a changed value to survive a power
+                    // cycle, so persist it right away when storage allows. Only
+                    // disarmed vehicles with outputs closed may write FRAM.
+                    Ok(true) => {
+                        if parameters.save(crate::OUTPUT_STATE).await.is_err() {
+                            reply.push(parameter_warning(
+                                "PARAM_SET: RAM only; save blocked while outputs active",
+                            ));
+                        }
+                    }
+                    Ok(false) => {}
+                    Err(error) => reply.push(parameter_warning(error)),
                 }
             }
         }
@@ -175,6 +210,8 @@ pub async fn handle(
                     105 => highres_imu(),
                     148 => Some(autopilot_version()),
                     253 => Some(status_text()),
+                    // QGC asks for this before it can show parameter groups.
+                    397 => Some(component_metadata()),
                     _ => None,
                 },
                 MavCmd::MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES => Some(autopilot_version()),
@@ -332,6 +369,27 @@ pub fn parameter_warning(text: &'static str) -> MavMessage {
         severity: MavSeverity::MAV_SEVERITY_WARNING,
         text: text.into(),
         ..Default::default()
+    })
+}
+
+/// One FTP frame addressed back to the requesting ground station.
+pub fn file_transfer(header: MavHeader, frame: &mavftp::Frame) -> MavMessage {
+    let mut payload = [0u8; mavftp::PAYLOAD_LEN];
+    frame.encode(&mut payload);
+    MavMessage::FILE_TRANSFER_PROTOCOL(FILE_TRANSFER_PROTOCOL_DATA {
+        target_network: 0,
+        target_system: header.system_id,
+        target_component: header.component_id,
+        payload,
+    })
+}
+
+/// Advertise the static metadata file QGC fetches with MAVLink FTP.
+pub fn component_metadata() -> MavMessage {
+    MavMessage::COMPONENT_METADATA(COMPONENT_METADATA_DATA {
+        time_boot_ms: embassy_time::Instant::now().as_millis() as u32,
+        file_crc: v6x_rust_led::component_metadata::GENERAL_CRC,
+        uri: v6x_rust_led::component_metadata::GENERAL_URI.into(),
     })
 }
 

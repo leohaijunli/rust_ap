@@ -5,6 +5,8 @@
 #[cfg(test)]
 extern crate std;
 
+#[path = "core/component_metadata.rs"]
+pub mod component_metadata;
 #[path = "core/config.rs"]
 pub mod config;
 #[path = "core/dronecan/mod.rs"]
@@ -23,6 +25,8 @@ pub mod log_queue;
 pub mod logger;
 #[path = "core/mavcan.rs"]
 pub mod mavcan;
+#[path = "core/mavftp.rs"]
+pub mod mavftp;
 #[path = "core/metrics.rs"]
 pub mod metrics;
 #[path = "core/parameter_store.rs"]
