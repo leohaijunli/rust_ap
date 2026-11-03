@@ -302,10 +302,14 @@ pub fn record_arming_status(timestamp_us: u64) {
     );
 }
 
-pub fn record_imu(timestamp_us: u64, sample: v6x_rust_led::icm42688::Sample, error_count: u32) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Imu, timestamp_us) {
+/// Rate-limit on the reconstructed sample timestamp so the 8-sample FIFO
+/// batches cannot alias the limiter to batch boundaries; the record keeps the
+/// publish time as `timestamp` and the sample time as `timestamp_sample`.
+pub fn record_imu(sample: v6x_rust_led::icm42688::Sample, error_count: u32) {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Imu, sample.sample_timestamp_us) {
         return;
     }
+    let timestamp_us = Instant::now().as_micros();
     let accel = SensorAccel::from_sample(timestamp_us, sample, error_count);
     let gyro = SensorGyro::from_sample(timestamp_us, sample, error_count);
     record(

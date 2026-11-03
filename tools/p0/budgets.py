@@ -75,7 +75,7 @@ def main():
     ]
     if args.profile == "m1":
         topics = [
-            ("sensor_accel", 44, 1000), ("sensor_gyro", 44, 1000),
+            ("sensor_accel", 44, 200), ("sensor_gyro", 44, 200),
             ("vehicle_attitude", 49, 250), ("vehicle_angular_velocity", 40, 250),
             ("dronecan_raw_command", 24 + 4 * args.esc_slots, args.command_hz),
             ("actuator_armed", 15, args.arming_hz),

@@ -117,7 +117,7 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 | AHRS | 每新样本更新；单次 IMU/AHRS 快路径 ≤300 us，快照年龄 ≤2 ms；正常段无 NaN/无效四元数 |
 | 共享临界区 / logger producer | 每次全局屏蔽中断 ≤2 us；`try_record` ≤5 us；原目标不变，P1 masked-WFE等待未满足此项证明，进入采样前需调整idle并按原阈值实测，pending→服务延迟另记 |
 | CAN | M1 预算 33.028%；60% 持续压力下正常段无 RX 溢出；零命令年龄/间隔目标 ≤5 ms |
-| 日志 | 标准消息 M1 提案 164322 B/s，含余量 205403 B/s；固定槽缓冲按记录数预算，M1 5 分钟正常段零 dropout；见[日志预算](logging-budget.md) |
+| 日志 | 标准消息 M1 提案 85922 B/s，含余量 107403 B/s（IMU 按 `LOG_IMU_HZ` 默认 200 Hz）；固定槽缓冲按记录数预算，M1 5 分钟正常段零 dropout；见[日志预算](logging-budget.md) |
 | CPU / 栈 | 联合负载 CPU <50%；共享栈余量 ≥32 KiB，记录所有队列高水位 |
 
 用 DWT cycles/微秒时钟记录分布、最大值、样本数、deadline miss；USB 输出低频汇总，原始统计进入 ULog。报告“观测最大值”，不称为已经证明的 WCET。过载/断线注入单列时间段，验证计数和恢复；不可混进正常统计以掩盖丢样。

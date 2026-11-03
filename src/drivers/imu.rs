@@ -231,7 +231,7 @@ fn publish(sample: Sample) {
         .load(Ordering::Relaxed)
         .saturating_add(STATE.decode_errors.load(Ordering::Relaxed))
         .saturating_add(STATE.drdy_timeouts.load(Ordering::Relaxed));
-    crate::sd_logger::record_imu(Instant::now().as_micros(), sample, error_count);
+    crate::sd_logger::record_imu(sample, error_count);
 }
 
 fn reconstruct_timestamp(now: u64) -> u64 {
