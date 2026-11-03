@@ -53,7 +53,8 @@ fn main() {
     };
     for path in files {
         println!("cargo:rerun-if-changed={}", path.display());
-        hash(path.to_str().expect("UTF-8 source path").as_bytes());
+        // Posix separators keep the identity identical across host platforms.
+        hash(path.to_string_lossy().replace('\\', "/").as_bytes());
         hash(&[0]);
         hash(&fs::read(path).expect("read source"));
         hash(&[0]);

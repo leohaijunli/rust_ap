@@ -27,12 +27,15 @@ def sha256(path):
 
 
 def source_identity(root, features=()):
-    paths = sorted(
-        [root / name for name in (
+    # Sort by the relative posix path so the order matches build.rs's
+    # case-sensitive PathBuf ordering on every host platform.
+    paths = [
+        root / name for name in (
             "Cargo.toml", "Cargo.lock", "build.rs", "memory.x",
             "rust-toolchain.toml", ".cargo/config.toml",
-        )] + [p for p in (root / "src").rglob("*") if p.is_file()]
-    )
+        )
+    ] + [p for p in (root / "src").rglob("*") if p.is_file()]
+    paths.sort(key=lambda p: p.relative_to(root).as_posix())
     identity = 0xCBF29CE484222325
     for path in paths:
         data = path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes() + b"\0"

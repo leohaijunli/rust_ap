@@ -38,6 +38,12 @@ pub fn type_info(metadata: &Metadata) -> Option<TypeInfo> {
         TransferKind::Message {
             data_type_id: ARMING_STATUS_ID,
         } => (ARMING_STATUS_SIGNATURE, 1),
+        TransferKind::Message {
+            data_type_id: super::gnss::GNSS_FIX2_ID,
+        } => (super::gnss::GNSS_FIX2_SIGNATURE, 221),
+        TransferKind::Message {
+            data_type_id: super::gnss::GNSS_AUXILIARY_ID,
+        } => (super::gnss::GNSS_AUXILIARY_SIGNATURE, 16),
         TransferKind::Service {
             service_id: GET_NODE_INFO_ID,
             request,

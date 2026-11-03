@@ -92,6 +92,48 @@ pub struct ActuatorArmed {
     pub in_esc_calibration_mode: bool,
 }
 
+/// Fixed SensorGps.msg contract; built by the P4b-g process_fix2 flow.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SensorGps {
+    pub timestamp: u64,
+    pub timestamp_sample: u64,
+    pub device_id: u32,
+    pub latitude_deg: f64,
+    pub longitude_deg: f64,
+    pub altitude_msl_m: f64,
+    pub altitude_ellipsoid_m: f64,
+    pub s_variance_m_s: f32,
+    pub c_variance_rad: f32,
+    pub fix_type: u8,
+    pub eph: f32,
+    pub epv: f32,
+    pub hdop: f32,
+    pub vdop: f32,
+    pub noise_per_ms: i32,
+    pub automatic_gain_control: u16,
+    pub jamming_state: u8,
+    pub jamming_indicator: i32,
+    pub spoofing_state: u8,
+    pub authentication_state: u8,
+    pub vel_m_s: f32,
+    pub vel_n_m_s: f32,
+    pub vel_e_m_s: f32,
+    pub vel_d_m_s: f32,
+    pub cog_rad: f32,
+    pub vel_ned_valid: bool,
+    pub timestamp_time_relative: i32,
+    pub time_utc_usec: u64,
+    pub satellites_used: u8,
+    pub system_error: u32,
+    pub heading: f32,
+    pub heading_offset: f32,
+    pub heading_accuracy: f32,
+    pub rtcm_injection_rate: f32,
+    pub selected_rtcm_instance: u8,
+    pub rtcm_crc_failed: bool,
+    pub rtcm_msg_used: u8,
+}
+
 fn clipping(vector: [f32; 3], range: f32) -> [u8; 3] {
     // PX4's single-sample publisher marks saturation at 99.9% of full scale.
     vector.map(|value| u8::from(value.abs() >= range * 0.999))

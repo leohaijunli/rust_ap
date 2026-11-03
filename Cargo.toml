@@ -5,6 +5,9 @@ edition = "2021"
 description = "Rust/Embassy platform bring-up and timing diagnostics for the FMUv6X STM32H753"
 publish = false
 
+[dependencies]
+libm = "0.2.15"
+
 [features]
 default = []
 fault-injection = []

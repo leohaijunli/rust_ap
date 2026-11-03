@@ -121,6 +121,9 @@ pub async fn run<'d, D: Driver<'d>>(
 async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Replies) -> ! {
     const IMU_PERIOD: Duration = Duration::from_millis(50);
     const POWER_PERIOD: Duration = Duration::from_micros(v6x_rust_led::ina219::SAMPLE_PERIOD_US);
+    // PX4 streams GPS_RAW_INT at the GNSS update rate; 5 Hz covers H-RTK.
+    const GPS_PERIOD: Duration = Duration::from_millis(200);
+    const GPS_NO_FIX_PERIOD: Duration = Duration::from_secs(1);
     let mut sequence = 0u8;
     'connection: loop {
         sender.wait_connection().await;
@@ -138,9 +141,11 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
         let mut next_heartbeat = Instant::now() + Duration::from_secs(1);
         let mut next_imu = Instant::now() + IMU_PERIOD;
         let mut next_power = Instant::now() + POWER_PERIOD;
+        let mut next_gps = Instant::now() + GPS_PERIOD;
+        let mut next_gps_no_fix = Instant::now() + GPS_NO_FIX_PERIOD;
 
         loop {
-            let next_wakeup = next_imu.min(next_heartbeat).min(next_power);
+            let next_wakeup = next_imu.min(next_heartbeat).min(next_power).min(next_gps);
             // Timers and command replies precede CAN traffic, so a busy bridge
             // cannot starve heartbeats or fill the command-reply queue.
             let result = match select3(
@@ -164,6 +169,22 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
                             result = send_message(sender, &mut sequence, &message).await;
                         }
                         next_power = now + POWER_PERIOD;
+                    }
+                    if result.is_ok() && now >= next_gps {
+                        if let Some(message) = mavlink_core::gps_raw_int() {
+                            result = send_message(sender, &mut sequence, &message).await;
+                            next_gps_no_fix = now + GPS_NO_FIX_PERIOD;
+                        } else if now >= next_gps_no_fix {
+                            // PX4: one NO_GPS frame per second after data stops.
+                            result = send_message(
+                                sender,
+                                &mut sequence,
+                                &mavlink_core::gps_raw_int_no_fix(),
+                            )
+                            .await;
+                            next_gps_no_fix = now + GPS_NO_FIX_PERIOD;
+                        }
+                        next_gps = now + GPS_PERIOD;
                     }
                     if result.is_ok() && now >= next_heartbeat {
                         ticks = ticks.wrapping_add(1);

@@ -3,11 +3,11 @@
 use core::mem::size_of;
 
 use crate::ina219::Measurement;
-use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro};
+use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorGps, SensorGyro};
 
 pub const FILE_HEADER_LEN: usize = 16;
-pub const MAX_RECORD_LEN: usize = 512;
-pub const TOPIC_COUNT: usize = 10;
+pub const MAX_RECORD_LEN: usize = 800;
+pub const TOPIC_COUNT: usize = 11;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -25,6 +25,7 @@ pub enum TopicId {
     RuntimeHealth = 7,
     ParameterChange = 8,
     CurrentSensor = 9,
+    SensorGps = 10,
 }
 
 pub struct Topic {
@@ -94,6 +95,12 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
         name: "rust_current_sensor",
         format: "rust_current_sensor:uint64_t timestamp;uint64_t timestamp_sample;float voltage_v;float current_a;float power_w;",
         payload_len: 28,
+    },
+    Topic {
+        id: TopicId::SensorGps,
+        name: "sensor_gps",
+        format: "sensor_gps:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;double latitude_deg;double longitude_deg;double altitude_msl_m;double altitude_ellipsoid_m;float s_variance_m_s;float c_variance_rad;uint8_t fix_type;float eph;float epv;float hdop;float vdop;int32_t noise_per_ms;uint16_t automatic_gain_control;uint8_t jamming_state;int32_t jamming_indicator;uint8_t spoofing_state;uint8_t authentication_state;float vel_m_s;float vel_n_m_s;float vel_e_m_s;float vel_d_m_s;float cog_rad;uint8_t vel_ned_valid;int32_t timestamp_time_relative;uint64_t time_utc_usec;uint8_t satellites_used;uint32_t system_error;float heading;float heading_offset;float heading_accuracy;float rtcm_injection_rate;uint8_t selected_rtcm_instance;uint8_t rtcm_crc_failed;uint8_t rtcm_msg_used;",
+        payload_len: 147,
     },
 ];
 
@@ -305,6 +312,10 @@ impl Payload {
         self.push(&value.to_bits().to_le_bytes())
     }
 
+    pub fn push_f64(&mut self, value: f64) -> Result<(), Error> {
+        self.push(&value.to_bits().to_le_bytes())
+    }
+
     pub fn push(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let end = self.len + bytes.len();
         if end > self.bytes.len() {
@@ -394,6 +405,56 @@ pub fn current_sensor_payload(measurement: Measurement) -> Payload {
     ] {
         payload.push_f32(value).unwrap();
     }
+    payload
+}
+
+/// Fixed SensorGps.msg field order (payload starts at timestamp_sample; the
+/// leading timestamp is written by the logger).
+pub fn sensor_gps_payload(report: SensorGps) -> Payload {
+    let mut payload = Payload::new();
+    payload.push_u64(report.timestamp_sample).unwrap();
+    payload.push_u32(report.device_id).unwrap();
+    payload.push_f64(report.latitude_deg).unwrap();
+    payload.push_f64(report.longitude_deg).unwrap();
+    payload.push_f64(report.altitude_msl_m).unwrap();
+    payload.push_f64(report.altitude_ellipsoid_m).unwrap();
+    payload.push_f32(report.s_variance_m_s).unwrap();
+    payload.push_f32(report.c_variance_rad).unwrap();
+    payload.push_u8(report.fix_type).unwrap();
+    for value in [report.eph, report.epv, report.hdop, report.vdop] {
+        payload.push_f32(value).unwrap();
+    }
+    payload.push_i32(report.noise_per_ms).unwrap();
+    payload.push_u16(report.automatic_gain_control).unwrap();
+    payload.push_u8(report.jamming_state).unwrap();
+    payload.push_i32(report.jamming_indicator).unwrap();
+    payload.push_u8(report.spoofing_state).unwrap();
+    payload.push_u8(report.authentication_state).unwrap();
+    for value in [
+        report.vel_m_s,
+        report.vel_n_m_s,
+        report.vel_e_m_s,
+        report.vel_d_m_s,
+        report.cog_rad,
+    ] {
+        payload.push_f32(value).unwrap();
+    }
+    payload.push_u8(u8::from(report.vel_ned_valid)).unwrap();
+    payload.push_i32(report.timestamp_time_relative).unwrap();
+    payload.push_u64(report.time_utc_usec).unwrap();
+    payload.push_u8(report.satellites_used).unwrap();
+    payload.push_u32(report.system_error).unwrap();
+    for value in [
+        report.heading,
+        report.heading_offset,
+        report.heading_accuracy,
+        report.rtcm_injection_rate,
+    ] {
+        payload.push_f32(value).unwrap();
+    }
+    payload.push_u8(report.selected_rtcm_instance).unwrap();
+    payload.push_u8(u8::from(report.rtcm_crc_failed)).unwrap();
+    payload.push_u8(report.rtcm_msg_used).unwrap();
     payload
 }
 

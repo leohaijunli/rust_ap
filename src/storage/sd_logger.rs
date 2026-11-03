@@ -24,7 +24,7 @@ use v6x_rust_led::logger::{
     ControlError, Link, LogError, LogRequest, LogResponse, RoutedLogRequest, Snapshot, Status,
 };
 use v6x_rust_led::parameters::{Kind, REGISTRY};
-use v6x_rust_led::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro, PX4_REVISION};
+use v6x_rust_led::px4_messages::{ActuatorArmed, SensorAccel, SensorGps, SensorGyro, PX4_REVISION};
 use v6x_rust_led::ulog::{self, DataEncoder, TopicId, TOPICS};
 use v6x_rust_led::wall_clock::Utc;
 
@@ -335,6 +335,18 @@ pub fn record_current_sensor(timestamp_us: u64, measurement: v6x_rust_led::ina21
         Class::Normal,
         timestamp_us,
         &ulog::current_sensor_payload(measurement),
+    );
+}
+
+pub fn record_sensor_gps(snapshot: SensorGps) {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, snapshot.timestamp) {
+        return;
+    }
+    record(
+        TopicId::SensorGps,
+        Class::Normal,
+        snapshot.timestamp,
+        &ulog::sensor_gps_payload(snapshot),
     );
 }
 

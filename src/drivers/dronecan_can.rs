@@ -20,18 +20,23 @@ use embassy_stm32::can::{
 use embassy_stm32::pac::{FDCAN1, RCC};
 use embassy_stm32::{peripherals, Peri};
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::channel::Channel;
+use embassy_sync::watch::Watch;
 use embassy_time::{with_timeout, Duration, Instant, Timer};
 use embedded_can::Id as CanId;
 use v6x_rust_led::dronecan::dsdl::{
     self, GetSetRequest, GetSetResponse, NodeInfoResponse, NodeStatus, NumericValue,
     SoftwareVersion, Value,
 };
+use v6x_rust_led::dronecan::gnss::{self as gnss_dsdl, GnssFix2};
 use v6x_rust_led::dronecan::node::{EscMapping, EscMonitor, NodeDirectory, ESC_COUNT};
 use v6x_rust_led::dronecan::transport::{
     Frame, Metadata, Payload, RxStats, RxTransport, TransferKind, TxFrames,
 };
+use v6x_rust_led::gps::{process_fix2, AuxiliaryCache};
 use v6x_rust_led::parameters::{Id, Kind};
+use v6x_rust_led::px4_messages::SensorGps;
 
 use crate::parameter_manager::ParameterManager;
 
@@ -210,6 +215,26 @@ impl State {
                 name,
             )?;
         }
+        if let Some(gps) = GNSS.try_get() {
+            writeln!(
+                output,
+                "GNSS node_id_from_device={} fresh={} age_us={} fix_type={} sats_used={} lat_1e7={} lon_1e7={} alt_msl_mm={} vel_m_s={} eph={} epv={} time_utc={}",
+                gps.device_id,
+                (now_us.saturating_sub(gps.timestamp)) <= v6x_rust_led::gps::GPS_FRESH_US,
+                now_us.saturating_sub(gps.timestamp),
+                gps.fix_type,
+                gps.satellites_used,
+                (gps.latitude_deg * 1e7) as i64,
+                (gps.longitude_deg * 1e7) as i64,
+                (gps.altitude_msl_m * 1e3) as i64,
+                gps.vel_m_s,
+                gps.eph,
+                gps.epv,
+                gps.time_utc_usec,
+            )?;
+        } else {
+            writeln!(output, "GNSS none")?;
+        }
         Ok(())
     }
 
@@ -319,6 +344,11 @@ type ServiceChannel = Channel<NoopRawMutex, ServiceAction, 4>;
 
 static RECEIVED: ReceivedChannel = ReceivedChannel::new();
 static OUTGOING: OutgoingChannel = OutgoingChannel::new();
+/// Latest sensor_gps snapshot for MAVLink and diagnostics consumers.
+pub static GNSS: Watch<CriticalSectionRawMutex, SensorGps, 0> = Watch::new();
+/// Auxiliary DOP cache; only touched by the receive task.
+static AUXILIARY: Mutex<CriticalSectionRawMutex, RefCell<AuxiliaryCache>> =
+    Mutex::new(RefCell::new(AuxiliaryCache::new()));
 
 #[derive(Clone, Copy)]
 struct ResponseContext {
@@ -458,6 +488,20 @@ fn handle_transfer(
     services: &ServiceChannel,
 ) {
     match metadata.kind {
+        TransferKind::Message {
+            data_type_id: gnss_dsdl::GNSS_FIX2_ID,
+        } => match gnss_dsdl::decode_gnss_fix2(payload.as_slice()) {
+            Ok(fix) => publish_gnss(fix, metadata.source, now_us),
+            Err(_) => codec_error(state),
+        },
+        TransferKind::Message {
+            data_type_id: gnss_dsdl::GNSS_AUXILIARY_ID,
+        } => match gnss_dsdl::decode_gnss_auxiliary(payload.as_slice()) {
+            Ok(auxiliary) => {
+                AUXILIARY.lock(|cache| cache.borrow_mut().update(auxiliary, now_us));
+            }
+            Err(_) => codec_error(state),
+        },
         TransferKind::Message {
             data_type_id: dsdl::NODE_STATUS_ID,
         } => match dsdl::decode_node_status(payload.as_slice()) {
@@ -1023,6 +1067,19 @@ async fn io_bus_monitor_loop(properties: Properties) -> ! {
 
 fn codec_error(state: &State) {
     state.count(|counters| counters.service_errors = counters.service_errors.saturating_add(1));
+}
+
+/// PX4 flow: build the sensor_gps snapshot, publish it, and record it.
+fn publish_gnss(fix: GnssFix2, source_node_id: u8, now_us: u64) {
+    let auxiliary = AUXILIARY.lock(|cache| *cache.borrow());
+    let snapshot = process_fix2(&fix, source_node_id, now_us, &auxiliary);
+    crate::sd_logger::record_sensor_gps(snapshot);
+    GNSS.sender().send(snapshot);
+}
+
+/// Latest sensor_gps snapshot for MAVLink; freshness is the caller's rule.
+pub fn latest_gps() -> Option<SensorGps> {
+    GNSS.try_get()
 }
 
 fn local_node_status() -> NodeStatus {

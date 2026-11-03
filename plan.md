@@ -52,6 +52,7 @@
 - 控制、参数和各链路使用同一真源与单一输出仲裁。细节见[架构](docs/architecture.md)、[DroneCAN](docs/dronecan-notes.md)、[日志预算](docs/logging-budget.md)、[日志控制](docs/logging-control.md)。
 - 估计器不直接访问外设或链路：输入为带 source/sequence/sample time/valid/age 的 DTO，输出为 `Watch<EstimatorState>` 最新快照；Mahony/EKF2 通过同一接口选择，配置只在显式 reset/apply 边界生效。
 - 标准消息必须完整匹配字段语义，不能只改 topic 名；附加有效性/相对 yaw/链路诊断用独立元数据或 `rust_*` / `dronecan_*` topic。真实数据源接入时再新增消息定义与发布路径。
+- **对齐 PX4 软件栈**：传感器数据语义、字段换算与流程严格参照固定 PX4 v1.17.0 源码（如 GNSS 按 `gnss.cpp` process_fixx 构建 sensor_gps 真源，遥测按 `GPS_RAW_INT.hpp` 派生）；PX4 的未知值语义（-1/NaN/UINT*_MAX）原样保留，缺失数据不虚构、不回填。
 
 ## 4. 仅保留必要测试
 

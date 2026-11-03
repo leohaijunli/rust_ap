@@ -15,7 +15,8 @@
 | static_cell | 2.1.1 | MIT OR Apache-2.0；P1静态raw executor初始化，Cargo.lock已同步 |
 | [PX4 板级参考](https://github.com/PX4/PX4-Autopilot) | `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause 顶层；板级/bootloader 源码参考 |
 | PX4 uploader 来源树 | `a2be9197b57b2d065e4c47ca7fc5b7565ee07282` | host 上传工具，使用其文件许可；与板级参考分开固定 |
-| PX4 标准消息 | 同一 v1.17.0 `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause；`msg/{SensorAccel,SensorGyro,ActuatorArmed}.msg` 字段与 Rust 数据边界/ULog，副本及 LICENSE 在 `tools/px4_msgs/` |
+| PX4 标准消息 | 同一 v1.17.0 `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause；`msg/{SensorAccel,SensorGyro,ActuatorArmed,SensorGps}.msg` 字段与 Rust 数据边界/ULog，副本及 LICENSE 在 `tools/px4_msgs/` |
+| libm | 0.2.16（manifest 兼容 0.2.15） | MIT OR Apache-2.0；no_std `sqrtf/atan2f/round`，P4b-g Fix2 派生与 GPS_RAW_INT 换算使用；host 测试与板上共用同一实现 |
 | [NuttX](https://github.com/PX4/NuttX) | `fb2fadf6f599c1406f052db013efd00a2518e72c` | Apache-2.0 + NOTICE/文件级来源；时钟/IRQ 配置参考 |
 | PX4 uploader工作树内NuttX | `9304289d9f2b304c6835c9d39c131648c5f804c2` | 本轮启动断言/PWR/RCC/内存映射及RTC/LSE修订差异参考；保留其文件级来源，不与v1.17子模块混用 |
 | [ST CMSIS H7](https://github.com/STMicroelectronics/cmsis-device-h7) | v1.10.4，`faccfec37f82f7a1319c21638111b0f7335de7fe` | Apache-2.0（`LICENSE.md`）；`Include/stm32h753xx.h` Copyright (c) 2019 STMicroelectronics；仅核对SCUEN定义，未拷入/链接C头文件 |

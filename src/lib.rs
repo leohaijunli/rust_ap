@@ -13,6 +13,8 @@ pub mod config;
 pub mod dronecan;
 #[path = "core/fault_record.rs"]
 pub mod fault_record;
+#[path = "core/gps.rs"]
+pub mod gps;
 #[path = "core/icm42688.rs"]
 pub mod icm42688;
 #[path = "core/ina219.rs"]

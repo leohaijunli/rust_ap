@@ -6,10 +6,11 @@ use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 use crate::ulog::{self, Record};
 
-pub const QUEUE_BYTES: usize = 136 * 1024;
+pub const QUEUE_BYTES: usize = 168 * 1024;
 pub const EVENT_RESERVE_BYTES: usize = 8 * 1024;
 pub const QUEUE_SLOTS: usize = 1024;
-pub const RUNTIME_RECORD_LEN: usize = 124;
+// Complete standard sensor_gps payload (147 B) plus the 5 B record header.
+pub const RUNTIME_RECORD_LEN: usize = 152;
 const EVENT_RESERVE_SLOTS: u32 = 64;
 const NORMAL_LIMIT: u32 = QUEUE_SLOTS as u32 - EVENT_RESERVE_SLOTS;
 

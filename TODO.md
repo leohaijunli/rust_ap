@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-03。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 为下一步；实物集中待 H-02/03/04、QGC GUI 目视与工程师操作，GNSS 授时和 M1 未开始。**
+更新：2026-11-03。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现完成、待上板实测（构建 source=`588ab77941985319`，raw/padded=412624/412640 B，static RAM=268680 B）；实物集中待 H-02/03/04、QGC GUI 目视与工程师操作，GNSS 授时和 M1 未开始。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md)
 
 ## 执行规则
@@ -19,7 +19,7 @@
 - [x] 修正 CAN2/FDCAN2（PB12/PB13）桥接，补全总线/目标/长度校验、转发租约、过滤、固定队列、超时取消及 USB 会话清理。[证据](docs/acceptance/mavcan/README.md)
 - [x] MAVCAN 核心/协议测试、fmt/Clippy、普通固件构建与资源核对（source=`a2b91d35630180da`）。
 - [x] **烧录核对 CAN2→USB 经典 `CAN_FRAME` 转发通过**（`usb_frames=10`，匿名 Allocation 请求），**DroneCAN GUI 节点可见性与数据通过**：工程师修正 GUI bus number（CAN2=bus 2）后，GPS 节点在 GUI 中可见且数据正常显示；Allocation 分配与出向 GetNodeInfo 已验证，`tx_frames` 递增确认双向收发。MAVCAN（CAN2）已收口。SLCAN 保留，未接入。
-- [ ] **下一步 P4b-g / GNSS-01～03**：MAVCAN 已收口。接入 H-RTK Fix2/Auxiliary、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志并实测。阶段依赖 P4b-a、PL-a、H-10。GPS 当前经 MAVCAN 在 GUI 中可见（CAN2），DroneCAN 数据解析待 P4b-g 实现。
+- [ ] **P4b-g / GNSS-01～03**：软件实现完成，待上板实测（当前 GPS 未接）。Fix2(1063)/Auxiliary(1061) 纯 Rust 解码与 P0 参考向量对拍（4 项 host 测试）；`process_fix2` 按固定 PX4 `gnss.cpp` process_fixx 翻译（covariance 1/6 有效、Auxiliary 2 s DOP、UTC 换算、未知字段不虚构）；标准 `sensor_gps` ULog（完整 37 字段，147 B）+ `GPS_RAW_INT`（USB/TELEM1 5 Hz，按 PX4 GPS_RAW_INT.hpp 换算，断链 1 s 后 1 Hz NO_GPS 帧）；`!dronecan` 增 GNSS 诊断行。日志队列扩容（RUNTIME_RECORD_LEN=152、QUEUE_BYTES=168 KiB、MAX_RECORD_LEN=800）支持完整标准字段，static RAM=268680 B。构建 source=`588ab77941985319`。待验：实物 Fix2/Auxiliary 速率、QGC Inspector GPS_RAW_INT、sensor_gps 日志 pyulog 解析、一次断线失效/恢复；TIME-02 GNSS 授时随本阶段实测。依赖 P4b-a、PL-a、H-10。
 
 ## 已确认范围
 

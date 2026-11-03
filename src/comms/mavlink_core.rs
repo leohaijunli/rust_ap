@@ -9,6 +9,7 @@ use mavlink::{MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersio
 
 use v6x_rust_led::mavftp;
 use v6x_rust_led::parameters::{Id, COUNT, REGISTRY};
+use v6x_rust_led::px4_messages::SensorGps;
 
 use crate::parameter_manager::ParameterManager;
 use v6x_rust_led::logger::{LogError, LogRequest, LogResponse};
@@ -352,6 +353,116 @@ pub fn ina219_status() -> Option<MavMessage> {
         y: measurement.current_a,
         z: measurement.power_w,
     }))
+}
+
+/// PX4 GPS_RAW_INT.hpp conversion from the sensor_gps snapshot.
+pub fn gps_raw_int() -> Option<MavMessage> {
+    let gps = crate::dronecan_can::latest_gps()?;
+    let now = embassy_time::Instant::now().as_micros();
+    if now.saturating_sub(gps.timestamp) > v6x_rust_led::gps::GPS_FRESH_US {
+        return None;
+    }
+    Some(gps_raw_int_from(&gps))
+}
+
+/// Fresh snapshot -> GPS_RAW_INT fields, exactly as the PX4 stream.
+fn gps_raw_int_from(gps: &SensorGps) -> MavMessage {
+    MavMessage::GPS_RAW_INT(GPS_RAW_INT_DATA {
+        time_usec: gps.timestamp,
+        fix_type: gps_fix_type(gps.fix_type),
+        lat: rounded_degrees_1e7(gps.latitude_deg),
+        lon: rounded_degrees_1e7(gps.longitude_deg),
+        alt: rounded_millimeters(gps.altitude_msl_m),
+        // PX4: eph/epv carry DOP * 100 (unitless); h/v_acc carry metres * 1e3.
+        eph: dop_100(gps.hdop),
+        epv: dop_100(gps.vdop),
+        vel: centi(gps.vel_m_s).unwrap_or(u16::MAX),
+        cog: centi(wrap_2pi_degrees(gps.cog_rad)).unwrap_or(u16::MAX),
+        satellites_visible: gps.satellites_used,
+        alt_ellipsoid: rounded_millimeters(gps.altitude_ellipsoid_m),
+        // PX4 multiplies by 1e3 and lets the C cast saturate; 0 = unknown here.
+        h_acc: mm_from_metres(gps.eph),
+        v_acc: mm_from_metres(gps.epv),
+        vel_acc: mm_from_metres(gps.s_variance_m_s),
+        ..Default::default()
+    })
+}
+
+/// PX4 sends this once per second after data stops arriving.
+pub fn gps_raw_int_no_fix() -> MavMessage {
+    MavMessage::GPS_RAW_INT(GPS_RAW_INT_DATA {
+        fix_type: GpsFixType::GPS_FIX_TYPE_NO_GPS,
+        eph: u16::MAX,
+        epv: u16::MAX,
+        vel: u16::MAX,
+        cog: u16::MAX,
+        satellites_visible: u8::MAX,
+        ..Default::default()
+    })
+}
+
+fn rounded_degrees_1e7(value: f64) -> i32 {
+    let scaled = libm::round(value * 1e7);
+    scaled.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+}
+
+fn rounded_millimeters(metres: f64) -> i32 {
+    let scaled = libm::round(metres * 1e3);
+    scaled.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32
+}
+
+/// PX4's C float->uint32 cast saturates negatives to 0 on ARM; 0 = unknown.
+fn mm_from_metres(value: f32) -> u32 {
+    if value.is_finite() && value > 0.0 {
+        (value * 1e3) as u32
+    } else {
+        0
+    }
+}
+
+/// common.xml GPS_FIX_TYPE; unknown values fall back to NO_GPS.
+fn gps_fix_type(value: u8) -> GpsFixType {
+    match value {
+        1 => GpsFixType::GPS_FIX_TYPE_NO_FIX,
+        2 => GpsFixType::GPS_FIX_TYPE_2D_FIX,
+        3 => GpsFixType::GPS_FIX_TYPE_3D_FIX,
+        4 => GpsFixType::GPS_FIX_TYPE_DGPS,
+        5 => GpsFixType::GPS_FIX_TYPE_RTK_FLOAT,
+        6 => GpsFixType::GPS_FIX_TYPE_RTK_FIXED,
+        7 => GpsFixType::GPS_FIX_TYPE_STATIC,
+        8 => GpsFixType::GPS_FIX_TYPE_PPP,
+        _ => GpsFixType::GPS_FIX_TYPE_NO_GPS,
+    }
+}
+
+/// C-like float->uint16 cast used by PX4; non-finite saturates to 0.
+fn dop_100(dop: f32) -> u16 {
+    if dop.is_finite() && dop > 0.0 {
+        ((dop * 100.0).min(f32::from(u16::MAX))) as u16
+    } else {
+        0
+    }
+}
+
+fn centi(value: f32) -> Option<u16> {
+    if value.is_finite() {
+        Some((value * 100.0).clamp(0.0, f32::from(u16::MAX)) as u16)
+    } else {
+        None
+    }
+}
+
+fn wrap_2pi_degrees(cog_rad: f32) -> f32 {
+    let two_pi = core::f32::consts::TAU;
+    // rem_euclid equivalent without std: wrap to [0, 2pi).
+    let mut wrapped = cog_rad;
+    while wrapped < 0.0 {
+        wrapped += two_pi;
+    }
+    while wrapped >= two_pi {
+        wrapped -= two_pi;
+    }
+    wrapped / two_pi * 360.0
 }
 
 pub fn parameter(parameters: &ParameterManager<'_>, id: Id) -> MavMessage {
