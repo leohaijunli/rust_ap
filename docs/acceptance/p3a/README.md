@@ -33,6 +33,34 @@
 - 备份包含 **P3a 写入前的当前 PX4 参数/校准记录**，不是项目开始前的原始配置备份；其末个非零字节在 `0x6C57`，Rust 区当时全 0。
 - 本板无可观察 FMU 灯；2 Hz 已验 RAM/存储与功能读取路径，不声称完成灯频率仪器测量。TELEM1、双链路和 QGC 参数页归 P2/P3。
 
+## 参数持久性复测（2026-11-03）
+
+工程师反馈"参数改后掉电会恢复"。实测板载 source=`2b8175bfa1356b65`、registry
+schema=`8f0cb108`、FRAM 仍为 FM25V02A。结论：**FRAM 写入与启动加载通路正常**，
+观察到"恢复"由两个独立原因造成，均非保存失败。
+
+| 步骤 | 结果 |
+| --- | --- |
+| 刷入当前固件后首次上电 | `storage=Defaults valid=false dirty=true slot=-1`；`slot_a=Err(Schema)`、`slot_b=Err(Uncommitted)` |
+| `PARAM_SET LINK_LED_HZ=5.0` | 回显 5.0，`dirty=true`（仅 RAM 生效） |
+| `!param-save` | `PARAM_SAVE ok=true written=true slot=0 generation=1 dirty=false`；`slot_a=Ok(())` |
+| 重启（`MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` param1=3 进 bootloader，再刷同一 `.px4`） | `storage=Stored valid=true dirty=false slot=0 generation=1`，`LINK_LED_HZ=5` 读回 |
+| 恢复 `LINK_LED_HZ=2.0` 后 `!param-save` | `slot=1 generation=2 dirty=false`；两槽均 `Ok(())` |
+| 再次重启 | `storage=Stored slot=1 generation=2`，`LINK_LED_HZ=2` 读回 |
+
+原因一：**注册表变化使旧记录失效**。P3a 存档写在新增 8 个 `LOG_*` 参数之前
+（`COUNT=2`、schema=`9badaa1a`）。`schema_tag()` 覆盖注册表全部名称/类型/默认值/范围，
+新增参数后 tag 变为 `8f0cb108`，加载器按 [架构第 191 行](../../architecture.md)
+的约定拒绝该槽并回退默认值，**不做静默迁移**。因此升级含注册表变化的固件后，
+需重新设置并保存一次参数。
+
+原因二：**`PARAM_SET` 只改 RAM，不自动落盘**。持久化是显式动作：`!param-save`、
+`MAV_CMD_PREFLIGHT_STORAGE`（param1=1）或 DroneCAN 保存；仅在地面站改值后直接
+断电会回到上次存档。`!params` 的 `dirty=true` 即为"未保存"提示。
+
+本次为软件重启（完整 MCU 复位后从 FRAM 读回），未重复 2026-10-31 的物理拔电；
+FRAM 非易失，复位读回已证明数据落在介质而非 RAM。
+
 ## 中断与局部审视
 
 主机重启后两次出现 CDC 正常枚举但零数据：`install-read-only/`、`install-parameters/` 均在 prepare 的心跳检查停止，未发 reboot、未刷写。工程师 USB 拔插后各安装成功；无数据现象根因未确认，不能仅凭描述符判定应用健康，后续归 P2。
