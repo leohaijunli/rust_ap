@@ -15,6 +15,7 @@ pub mod imu_ekf;
 mod mag_generated;
 mod math;
 mod observation_buffer;
+pub mod output_predictor;
 pub mod params_generated;
 pub mod range_math;
 pub mod range_sensor;

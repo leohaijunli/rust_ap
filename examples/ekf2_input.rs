@@ -14,6 +14,7 @@ use v6x_rust_led::estimator::{
     gnss::{GnssEkf, GnssObservation, GnssParams},
     imu_ekf::range::RangeParams,
     imu_ekf::{ImuEkf, ImuEkfParams},
+    output_predictor::OutputParams,
     range_sensor::RangeObservation,
     GnssSample, ImuDelta,
 };
@@ -137,11 +138,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
     let flags = args.get(4..).unwrap_or_default();
     let nis = flags.iter().any(|flag| flag == "--nis");
+    let output_mode = flags.iter().any(|flag| flag == "--output");
     let lever_arm = flags.iter().any(|flag| flag == "--lever-arm");
     if !(2..=6).contains(&args.len())
         || flags
             .iter()
-            .any(|flag| !["--nis", "--lever-arm"].contains(&flag.as_str()))
+            .any(|flag| !["--nis", "--lever-arm", "--output"].contains(&flag.as_str()))
+        || (nis && output_mode)
     {
         return Err("Usage: ekf2_input INPUT.csv [OUTPUT.csv [BARO_MAG.csv [--nis]]]".into());
     }
@@ -280,16 +283,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             gnss_params.offset_body_m = core::array::from_fn(|i| [0.2, 0.1, -0.05][i] - imu[i]);
             range_params.offset_body_m = core::array::from_fn(|i| [0.1, -0.05, -0.1][i] - imu[i]);
         }
-        HostFilter::Main(Box::new(
-            GnssEkf::new(
-                ImuEkfParams::default(),
-                BaroMagParams::default(),
-                range_params,
-                gnss_params,
-                0,
-            )
-            .map_err(|fault| format!("EKF parameters: {fault:?}"))?,
-        ))
+        let mut main = GnssEkf::new(
+            ImuEkfParams::default(),
+            BaroMagParams::default(),
+            range_params,
+            gnss_params,
+            0,
+        )
+        .map_err(|fault| format!("EKF parameters: {fault:?}"))?;
+        if lever_arm {
+            main.configure_output(OutputParams {
+                imu_offset_body_m: [0.03, -0.02, 0.01],
+                ..OutputParams::default()
+            })
+            .map_err(|fault| format!("output parameters: {fault:?}"))?;
+        }
+        HostFilter::Main(Box::new(main))
     } else {
         let basic = if args.len() >= 4 {
             ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0)
@@ -306,46 +315,50 @@ fn main() -> Result<(), Box<dyn Error>> {
         None
     };
     if let Some(output) = &mut output {
-        write!(
-            output,
-            "timestamp_us,imu_timestamp_us,control_status,fault_status"
-        )?;
-        if nis {
-            write!(output, ",baro_timestamp_us,baro_innovation,baro_variance,baro_ratio,baro_fused,baro_rejected,mag_timestamp_us")?;
-            for kind in ["innovation", "variance", "ratio"] {
-                for i in 0..3 {
-                    write!(output, ",mag_{kind}_{i}")?;
-                }
-            }
-            write!(output, ",mag_fused,mag_rejected")?;
-            if five_sensor {
-                for (name, dimensions) in [
-                    ("gnss_pos", 2),
-                    ("gnss_vel", 3),
-                    ("gnss_hgt", 1),
-                    ("range", 1),
-                ] {
-                    write!(output, ",{name}_timestamp_us")?;
-                    for kind in ["innovation", "variance", "ratio"] {
-                        for i in 0..dimensions {
-                            write!(output, ",{name}_{kind}_{i}")?;
-                        }
-                    }
-                    write!(output, ",{name}_fused,{name}_rejected")?;
-                }
-                write!(output, ",gnss_quality_failure_bits")?;
-            }
+        if output_mode {
+            writeln!(output, "timestamp_us,delayed_timestamp_us,control_status,fault_status,q_w,q_x,q_y,q_z,velocity_n,velocity_e,velocity_d,position_n,position_e,position_d,height_msl_m,latitude_deg,longitude_deg,vertical_derivative,unaided_yaw,track_angle,track_velocity,track_position")?;
         } else {
-            for index in 0..25 {
-                write!(output, ",state_{index}")?;
-            }
-            for row in 0..24 {
-                for column in 0..24 {
-                    write!(output, ",cov_{row}_{column}")?;
+            write!(
+                output,
+                "timestamp_us,imu_timestamp_us,control_status,fault_status"
+            )?;
+            if nis {
+                write!(output, ",baro_timestamp_us,baro_innovation,baro_variance,baro_ratio,baro_fused,baro_rejected,mag_timestamp_us")?;
+                for kind in ["innovation", "variance", "ratio"] {
+                    for i in 0..3 {
+                        write!(output, ",mag_{kind}_{i}")?;
+                    }
+                }
+                write!(output, ",mag_fused,mag_rejected")?;
+                if five_sensor {
+                    for (name, dimensions) in [
+                        ("gnss_pos", 2),
+                        ("gnss_vel", 3),
+                        ("gnss_hgt", 1),
+                        ("range", 1),
+                    ] {
+                        write!(output, ",{name}_timestamp_us")?;
+                        for kind in ["innovation", "variance", "ratio"] {
+                            for i in 0..dimensions {
+                                write!(output, ",{name}_{kind}_{i}")?;
+                            }
+                        }
+                        write!(output, ",{name}_fused,{name}_rejected")?;
+                    }
+                    write!(output, ",gnss_quality_failure_bits")?;
+                }
+            } else {
+                for index in 0..25 {
+                    write!(output, ",state_{index}")?;
+                }
+                for row in 0..24 {
+                    for column in 0..24 {
+                        write!(output, ",cov_{row}_{column}")?;
+                    }
                 }
             }
+            writeln!(output)?;
         }
-        writeln!(output)?;
     }
     let mut updates = 0;
     for line in lines {
@@ -372,11 +385,44 @@ fn main() -> Result<(), Box<dyn Error>> {
             {
                 return Err("more than one aid event per IMU sample is not supported".into());
             }
-            if filter
+            let updated = filter
                 .update(&imu, aiding)
-                .map_err(|fault| format!("IMU EKF: {fault:?}"))?
-            {
+                .map_err(|fault| format!("IMU EKF: {fault:?}"))?;
+            if updated {
                 updates += 1;
+            }
+            if output_mode {
+                let core = filter.core();
+                let snapshot = core.output();
+                write!(
+                    output,
+                    "{},{},{},{}",
+                    snapshot.timestamp,
+                    core.timestamp(),
+                    core.control_status(),
+                    core.fault_status()
+                )?;
+                for value in snapshot
+                    .q_body_to_ned
+                    .into_iter()
+                    .chain(snapshot.velocity_ned_m_s)
+                    .chain(snapshot.position_ned_m)
+                {
+                    write!(output, ",{value:.9e}")?;
+                }
+                let (lat, lon, _) = core.output_global_position();
+                write!(
+                    output,
+                    ",{:.9e},{lat:.17e},{lon:.17e},{:.9e},{:.9e}",
+                    snapshot.height_msl_m,
+                    core.output_vertical_derivative(),
+                    core.output_unaided_yaw()
+                )?;
+                for value in core.output_tracking_error() {
+                    write!(output, ",{value:.9e}")?;
+                }
+                writeln!(output)?;
+            } else if updated {
                 let core = filter.core();
                 write!(
                     output,

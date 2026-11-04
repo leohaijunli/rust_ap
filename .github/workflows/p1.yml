@@ -68,6 +68,13 @@ jobs:
           for scenario in nominal outliers dropout quality lever_arm; do
             .venv/bin/python tools/check_ekf2_gnss_range.py --case "$scenario" --rust "target/$host/release/examples/ekf2_input"
           done
+      - name: Qualify full-rate EKF output and timing jitter
+        run: |
+          .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source --profile gnss_range --output target/ekf2-host-output
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          for scenario in nominal jitter; do
+            .venv/bin/python tools/check_ekf2_output.py --case "$scenario" --rust "target/$host/release/examples/ekf2_input"
+          done
       - name: Host tests, lint, H753 build and package checks
         run: bash tools/firmware.sh check
       - name: Separate fault-injection build (never flashed in CI)
@@ -87,4 +94,5 @@ jobs:
             target/ekf2-host/rust-noisy/report.json
             target/ekf2-host-baro-mag/**/report.json
             target/ekf2-host-gnss-range*/**/report.json
+            target/ekf2-host-output/**/report.json
             target/p1-fault-injection/thumbv7em-none-eabihf/release/disassembly.txt

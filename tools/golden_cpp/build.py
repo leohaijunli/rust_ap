@@ -101,6 +101,7 @@ def configure_header(definitions, profile="core_imu", fixture="nominal"):
                     name = f"EKF2_{group}_POS_{'XYZ'[axis]}"
                     lines.append(f"    params.{group.lower()}_pos_body({axis}) = {gen_params.float_literal(value)}f;")
                     applied[name] = value
+        lines.append("    ekf.output_predictor().set_imu_offset(params.imu_pos_body);")
     lines.extend(["    ekf.updateParameters();", "}", ""])
     return "\n".join(lines), applied
 
@@ -182,6 +183,7 @@ def main():
                 manifest["aids_executable_sha256"] = hashlib.sha256((output / "build/golden_cpp_aids").read_bytes()).hexdigest()
             if args.profile == "gnss_range":
                 manifest["wmm_probe_sha256"] = hashlib.sha256((output / "build/wmm_probe").read_bytes()).hexdigest()
+                manifest["output_executable_sha256"] = hashlib.sha256((output / "build/golden_cpp_output").read_bytes()).hexdigest()
             manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"golden_cpp: fixed PX4 {REF}; profile={args.profile}; output={output}")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:

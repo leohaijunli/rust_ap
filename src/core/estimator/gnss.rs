@@ -170,6 +170,7 @@ pub struct GnssEkf {
     imu_params: ImuEkfParams,
     baro_mag_params: BaroMagParams,
     range_params: RangeParams,
+    output_params: super::output_predictor::OutputParams,
 }
 
 impl GnssEkf {
@@ -191,10 +192,12 @@ impl GnssEkf {
             imu_params: imu,
             baro_mag_params: baro_mag,
             range_params: range,
+            output_params: super::output_predictor::OutputParams::default(),
         })
     }
 
     pub fn reset(&mut self, t0: u64) -> Result<(), FilterFault> {
+        let output_params = self.output_params;
         *self = Self::new(
             self.imu_params,
             self.baro_mag_params,
@@ -202,11 +205,20 @@ impl GnssEkf {
             self.params,
             t0,
         )?;
+        self.configure_output(output_params)?;
         Ok(())
     }
 
     pub fn core(&self) -> &ImuEkf {
         &self.core
+    }
+    pub fn configure_output(
+        &mut self,
+        params: super::output_predictor::OutputParams,
+    ) -> Result<(), FilterFault> {
+        self.core.configure_output(params)?;
+        self.output_params = params;
+        Ok(())
     }
     pub fn status(&self) -> [AidStatus; 3] {
         [self.aids.position, self.aids.velocity, self.aids.height]
@@ -418,6 +430,7 @@ impl GnssAids {
     }
 
     fn reset_velocity(&mut self, filter: &mut ImuEkf) {
+        let previous = [filter.state[4], filter.state[5], filter.state[6]];
         for i in 0..3 {
             filter.state[4 + i] = self.velocity_observation[i];
             filter.reset_variance(3 + i, self.velocity_variance[i].max(0.0001));
@@ -425,6 +438,7 @@ impl GnssAids {
         for i in 6..9 {
             filter.reset_variance(i, filter.covariance[i][i]);
         }
+        filter.propagate_velocity_reset(previous);
         self.last_velocity_fuse = filter.delayed_us;
         filter.last_horizontal_velocity_fuse = filter.delayed_us;
         filter.last_vertical_velocity_fuse = filter.delayed_us;
@@ -458,6 +472,7 @@ impl GnssAids {
         }
         filter.global.latitude_rad = self.position_observation.latitude_rad;
         filter.global.longitude_rad = self.position_observation.longitude_rad;
+        filter.propagate_position_reset();
         filter.reset_variance(6, (2.0 * self.position_variance).max(0.0001));
         filter.reset_variance(7, (2.0 * self.position_variance).max(0.0001));
         self.last_position_fuse = filter.delayed_us;

@@ -11,7 +11,7 @@
   "_bucket_seconds": {
     "discovery": 0.0,
     "blueprint": 0.0,
-    "rewrite": 11638.506368875504,
+    "rewrite": 13663.143686294556,
     "test_heal": 0.0,
     "parity": 1691.2864503860474,
     "pgo_bench": 0.0
@@ -190,6 +190,36 @@
       "clippy_warnings": 0,
       "failures_summary": "E3 closure: 25 estimator passes (2 GNSS cases rerun after explicit mode rejection, 23 unaffected passes reused); 2 intake, 26 related Python including added NIS guard, 4 profile cases pass. Host/H753 Clippy, normal release/package/vector checks and GSF drift check pass",
       "fix_applied": "No additional mathematical edits in local simplifier review; retain independent GNSS extension and exact expression order. Source c81859106448aa0c; no board flash, runtime profiling or safety/LED change"
+    },
+    {
+      "iteration": 14,
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "coverage_pct": null,
+      "clippy_warnings": 1,
+      "failures_summary": "E4 output observer initial lib/example Clippy failed on one newly indexed velocity-delta loop; 25 existing estimator cases compiled and passed after initial observer integration",
+      "fix_applied": "Enumerate the existing velocity delta without changing floating-point order; new full-rate/reset tests and two fixed C++ output fixtures are being qualified"
+    },
+    {
+      "iteration": 15,
+      "total": 27,
+      "passed": 27,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "E4: 27 estimator tests pass (full-rate integral/reset and configuration snapshots added); host lib/example Clippy passes. Fixed C++ nominal and jitter output fixtures each provide 8000 causal rows with four recorded reset rows; immutable archives saved before Rust parity",
+      "fix_applied": "Enumerated the new linted loop without arithmetic changes; no output tolerance adjustment. E3 b3c5ca2 CI success confirmed"
+    },
+    {
+      "iteration": 16,
+      "total": 27,
+      "passed": 27,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "E4 closure: 27 estimator passes (startup/configuration case rerun after horizon fix, remaining unaffected passes reused), 2 output-tool tests, host/H753 Clippy and normal release/package/vector checks pass. E3 state/covariance/NIS regression passes after observer integration",
+      "fix_applied": "Matched pinned startup horizons without altering later warmup. Source 0545b4aa15efde3d; no hardware flash, safety/LED action, coverage or runtime profiling"
     }
   ],
   "parity_iterations": [
@@ -232,6 +262,22 @@
       "max_abs_error": "five scenarios / 12005 updates: state<5.1e-7; covariance<5.8e-6; fixed field tolerances and NIS respected",
       "divergence_cause": "One deterministic seed across five scenarios; prior cached-altitude, vector reciprocal and strict recent-boundary failures retained",
       "fix_applied": "Full state/covariance/NIS and actual source rejection/stop/recovery pass; no archive or threshold changed"
+    },
+    {
+      "iteration": 6,
+      "seeds_tested": 1,
+      "seeds_passed": 0,
+      "max_abs_error": "E4 nominal/jitter first row: delayed timestamp differs before the first downsampled update",
+      "divergence_cause": "PX4 initialise_interface sets the delayed horizon to the first raw IMU timestamp; E1-E3 update-only dumps did not expose those initial two raw rows",
+      "fix_applied": "Initialize the Rust delayed horizon at the first raw IMU exactly as the source; keep all later warmup repeats and immutable output baselines. Root-cause repair 1/5"
+    },
+    {
+      "iteration": 7,
+      "seeds_tested": 1,
+      "seeds_passed": 1,
+      "max_abs_error": "E4 nominal/jitter, 16000 full-rate rows: quaternion<5.2e-7; output state<5.6e-7; horizontal global position<5e-7m",
+      "divergence_cause": "Initial two raw-row horizon discrepancy repaired from pinned initialise_interface; later warmup and reset events preserved",
+      "fix_applied": "Both fixed baselines pass strict timestamps/control/faults and output tolerances. Nonreset position steps<1.7mm; four explicit reset rows each. No baseline or threshold changed"
     }
   ],
   "benchmarks": [],

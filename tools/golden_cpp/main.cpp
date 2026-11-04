@@ -68,6 +68,9 @@ estimator::imuSample sample(std::string_view line) {
 }
 
 void write_header(std::ostream &out) {
+#ifdef DUMP_OUTPUT
+    out << "timestamp_us,delayed_timestamp_us,control_status,fault_status,q_w,q_x,q_y,q_z,velocity_n,velocity_e,velocity_d,position_n,position_e,position_d,height_msl_m,latitude_deg,longitude_deg,vertical_derivative,unaided_yaw,track_angle,track_velocity,track_position\n";
+#else
     out << "timestamp_us,imu_timestamp_us,control_status,fault_status";
 #ifdef DUMP_AID_STATUS
     out << ",baro_timestamp_us,baro_innovation,baro_variance,baro_ratio,baro_fused,baro_rejected,mag_timestamp_us";
@@ -96,7 +99,31 @@ void write_header(std::ostream &out) {
     }
 #endif
     out << '\n';
+#endif
 }
+
+#ifdef DUMP_OUTPUT
+void write_output(std::ostream &out, std::ostream &resets, Ekf &ekf, uint64_t time) {
+    out << time << ',' << ekf.time_delayed_us() << ',' << ekf.control_status().value << ',' << ekf.fault_status().value;
+    const auto q = ekf.getQuaternion();
+    for (unsigned i = 0; i < 4; ++i) { out << ',' << q(i); }
+    for (const auto &values : {ekf.getVelocity(), ekf.getPosition()}) {
+        for (unsigned i = 0; i < 3; ++i) { out << ',' << values(i); }
+    }
+    const auto global = ekf.getLatLonAlt();
+    out << ',' << global.altitude() << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << ',' << global.latitude_deg() << ',' << global.longitude_deg()
+        << std::setprecision(std::numeric_limits<float>::max_digits10)
+        << ',' << ekf.getVerticalPositionDerivative() << ',' << ekf.getUnaidedYaw();
+    const auto tracking = ekf.getOutputTrackingError();
+    for (unsigned i = 0; i < 3; ++i) { out << ',' << tracking(i); }
+    out << '\n';
+    const auto &counts = ekf.state_reset_status().reset_count;
+    resets << time;
+    for (const auto count : {counts.quat, counts.velNE, counts.velD, counts.posNE, counts.posD, counts.hagl}) { resets << ',' << unsigned(count); }
+    resets << '\n';
+}
+#endif
 
 #if defined(DUMP_AID_STATUS) && defined(CONFIG_EKF2_GNSS)
 template <unsigned N, typename Source> void write_vector_status(std::ostream &out, const Source &aid) {
@@ -291,6 +318,19 @@ int main(int argc, char **argv) {
             (std::filesystem::exists(argv[2]) && std::filesystem::equivalent(argv[1], argv[2]))) {
             throw std::runtime_error("input and output must be distinct files");
         }
+#ifdef DUMP_OUTPUT
+        auto reset_path = std::filesystem::path(argv[2]);
+        reset_path.replace_extension(".resets.csv");
+        for (const auto *path : {argv[1], argv[2], argv[3]}) {
+            if (std::filesystem::weakly_canonical(path) == std::filesystem::weakly_canonical(reset_path)
+                || (std::filesystem::exists(reset_path) && std::filesystem::exists(path) && std::filesystem::equivalent(path, reset_path))) {
+                throw std::runtime_error("reset dump aliases input/output");
+            }
+        }
+        std::ofstream resets(reset_path);
+        if (!resets) { throw std::runtime_error("cannot open reset dump"); }
+        resets << "timestamp_us,quat_resets,velocity_ne_resets,velocity_d_resets,position_ne_resets,height_resets,hagl_resets\n";
+#endif
         std::ifstream input(argv[1]);
         std::ofstream output(argv[2]);
         if (!input || !output) {
@@ -328,7 +368,12 @@ int main(int argc, char **argv) {
 #if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
             aids.push_until(ekf, imu.time_us);
 #endif
-            if (ekf.update()) {
+            const bool updated = ekf.update();
+#ifdef DUMP_OUTPUT
+            updates += updated;
+            write_output(output, resets, ekf, imu.time_us);
+#else
+            if (updated) {
                 ++updates;
                 output << ekf.time_delayed_us() << ',' << imu.time_us << ','
                        << ekf.control_status().value << ',' << ekf.fault_status().value;
@@ -361,11 +406,16 @@ int main(int argc, char **argv) {
 #endif
                 output << '\n';
             }
+#endif
         }
 #if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
         aids.finish();
 #endif
         output.close();
+#ifdef DUMP_OUTPUT
+        resets.close();
+        if (!resets) { throw std::runtime_error("reset dump write failure"); }
+#endif
         if (samples == 0 || input.bad() || !output) {
             throw std::runtime_error("no samples or input/output failure");
         }

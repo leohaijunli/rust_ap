@@ -261,6 +261,26 @@ impl GlobalPosition {
             && self.longitude_rad.is_finite()
             && self.altitude_m.is_finite()
     }
+
+    pub fn project(self, origin: Self) -> [f32; 2] {
+        let (sin_ref, cos_ref) = (
+            libm::sin(origin.latitude_rad),
+            libm::cos(origin.latitude_rad),
+        );
+        let (sin_lat, cos_lat) = (libm::sin(self.latitude_rad), libm::cos(self.latitude_rad));
+        let longitude_delta = self.longitude_rad - origin.longitude_rad;
+        let cos_delta = libm::cos(longitude_delta);
+        let arc = libm::acos((sin_ref * sin_lat + cos_ref * cos_lat * cos_delta).clamp(-1.0, 1.0));
+        let scale = if arc.abs() > 0.0 {
+            arc / libm::sin(arc)
+        } else {
+            1.0
+        };
+        [
+            (scale * (cos_ref * sin_lat - sin_ref * cos_lat * cos_delta) * 6_371_000.0) as f32,
+            (scale * cos_lat * libm::sin(longitude_delta) * 6_371_000.0) as f32,
+        ]
+    }
 }
 
 fn wrap_pi(value: f64) -> f64 {

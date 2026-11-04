@@ -10,7 +10,8 @@ use super::{
     ekf2_parameter,
     imu_downsampler::{DownSampler, ImuBuffer, MAX_IMU_BUFFER},
     math::{self, square, GlobalPosition},
-    Covariance, FilterFault, FilterHealth, ImuDelta, ParamValue, StateVector, Timestamp,
+    output_predictor::{OutputParams, OutputPredictor},
+    Covariance, FilterFault, FilterHealth, ImuDelta, NavOutput, ParamValue, StateVector, Timestamp,
     STATE_COUNT,
 };
 
@@ -185,6 +186,8 @@ pub struct ImuEkf {
     horizontal_velocity_noise: f32,
     downsampler: DownSampler,
     buffer: ImuBuffer,
+    output_params: OutputParams,
+    output_predictor: OutputPredictor,
     pub(super) state: StateVector,
     pub(super) covariance: Covariance,
     pub(super) global: GlobalPosition,
@@ -250,6 +253,8 @@ impl ImuEkf {
             horizontal_velocity_noise: 0.5,
             downsampler: DownSampler::new(params.predict_us as u32),
             buffer: ImuBuffer::new(buffer_length),
+            output_params: OutputParams::default(),
+            output_predictor: OutputPredictor::new(buffer_length, OutputParams::default()),
             state,
             covariance: [[0.0; 24]; 24],
             global: GlobalPosition::default(),
@@ -298,6 +303,7 @@ impl ImuEkf {
 
     /// Explicit recovery. No automatic acceptance of samples after a fault.
     pub fn reset(&mut self, t0: Timestamp) -> Result<(), FilterFault> {
+        let output_params = self.output_params;
         *self = if let (Some(aids), Some(range)) = (self.aiding_params, self.range_params) {
             Self::with_range(&self.params, aids, range, t0)?
         } else if let Some(params) = self.aiding_params {
@@ -305,6 +311,18 @@ impl ImuEkf {
         } else {
             Self::new(&self.params, t0)?
         };
+        self.configure_output(output_params)?;
+        Ok(())
+    }
+
+    /// Output configuration is a snapshot and may only change before IMU input.
+    pub fn configure_output(&mut self, params: OutputParams) -> Result<(), FilterFault> {
+        params.validate()?;
+        if self.input_seen {
+            return Err(FilterFault::Input);
+        }
+        self.output_params = params;
+        self.output_predictor = OutputPredictor::new(self.params.buffer_length()?, params);
         Ok(())
     }
 
@@ -402,6 +420,54 @@ impl ImuEkf {
         )
     }
 
+    pub fn output(&self) -> NavOutput {
+        let global = self.output_predictor.global_position();
+        let xy = global.project(self.origin.unwrap_or_default());
+        NavOutput {
+            timestamp: self.latest_us,
+            q_body_to_ned: self.output_predictor.quaternion(),
+            velocity_ned_m_s: self.output_predictor.velocity(),
+            position_ned_m: [
+                xy[0],
+                xy[1],
+                -(global.altitude_m - self.origin_altitude.unwrap_or(0.0)),
+            ],
+            height_msl_m: global.altitude_m,
+        }
+    }
+    pub fn output_global_position(&self) -> (f64, f64, f32) {
+        let global = self.output_predictor.global_position();
+        (
+            global.latitude_rad.to_degrees(),
+            global.longitude_rad.to_degrees(),
+            global.altitude_m,
+        )
+    }
+    pub fn output_tracking_error(&self) -> [f32; 3] {
+        self.output_predictor.tracking_error()
+    }
+    pub fn output_vertical_derivative(&self) -> f32 {
+        self.output_predictor.vertical_derivative()
+    }
+    pub fn output_unaided_yaw(&self) -> f32 {
+        self.output_predictor.unaided_yaw()
+    }
+    pub fn angular_velocity_and_reset(&mut self) -> [f32; 3] {
+        self.output_predictor.angular_velocity_and_reset()
+    }
+    pub fn velocity_derivative_and_reset(&mut self) -> [f32; 3] {
+        self.output_predictor.velocity_derivative_and_reset()
+    }
+    pub(super) fn propagate_position_reset(&mut self) {
+        self.output_predictor.reset_lat_lon(self.global);
+    }
+    pub(super) fn propagate_velocity_reset(&mut self, previous: [f32; 3]) {
+        self.output_predictor
+            .reset_horizontal_velocity([self.state[4] - previous[0], self.state[5] - previous[1]]);
+        self.output_predictor
+            .reset_vertical_velocity(self.state[6] - previous[2]);
+    }
+
     pub(super) fn horizontal_aiding(&self) -> bool {
         self.control & ((1 << 2) | (1 << 44)) != 0
     }
@@ -422,6 +488,7 @@ impl ImuEkf {
             self.state[24] += delta;
         }
         self.altitude_delta += delta;
+        self.output_predictor.reset_altitude(altitude);
         self.last_height_fuse = self.delayed_us;
     }
 
@@ -437,10 +504,13 @@ impl ImuEkf {
     }
 
     pub(super) fn reset_yaw(&mut self, yaw: f32, variance: f32) {
+        let previous = self.quaternion();
         let q = math::from_rotation(math::with_yaw(math::rotation(self.quaternion()), yaw));
         self.state[..4].copy_from_slice(&q);
         self.reset_variance(2, variance.max(0.0001));
         self.last_heading_fuse = self.delayed_us;
+        self.output_predictor
+            .reset_quaternion(math::normalize(math::multiply(q, math::inverse(previous))));
     }
 
     /// Relative attitude-core validity only; no navigation validity is implied.
@@ -527,8 +597,17 @@ impl ImuEkf {
         if self.input_seen && input.timestamp - self.latest_us > IMU_FRESH_US {
             return self.fail(FilterFault::Timeout);
         }
+        if !self.input_seen {
+            // PX4 initialise_interface starts both horizons at the first IMU,
+            // before a downsampled sample exists. Later warmup repeats remain.
+            self.delayed_us = input.timestamp;
+        }
         self.latest_us = input.timestamp;
         self.input_seen = true;
+        self.output_predictor.predict(input);
+        if !self.output_predictor.numerics_valid() {
+            return self.fail(FilterFault::Numerics);
+        }
         let downsampled = self.downsampler.update(input);
         if !self.downsampler.numerics_valid() {
             return self.fail(FilterFault::Numerics);
@@ -590,6 +669,11 @@ impl ImuEkf {
             let q = math::align_tilt(self.accel_lpf);
             self.state[..4].copy_from_slice(&q);
             self.initialize_covariance();
+            self.output_predictor.align(
+                q,
+                [self.state[4], self.state[5], self.state[6]],
+                self.global,
+            );
             self.initialized = true;
         }
         self.update_bias_inhibit(&delayed, accel, gyro);
@@ -599,6 +683,18 @@ impl ImuEkf {
             return self.fail(fault);
         }
         if !self.numerics_valid() {
+            return self.fail(FilterFault::Numerics);
+        }
+        let q = self.quaternion();
+        self.output_predictor.correct(
+            self.delayed_us,
+            q,
+            [self.state[4], self.state[5], self.state[6]],
+            self.global,
+            [self.state[10], self.state[11], self.state[12]],
+            [self.state[13], self.state[14], self.state[15]],
+        );
+        if !self.output_predictor.numerics_valid() {
             return self.fail(FilterFault::Numerics);
         }
         Ok(true)
@@ -917,6 +1013,7 @@ impl ImuEkf {
     }
 
     fn reset_fake_position(&mut self) {
+        let previous = [self.state[4], self.state[5]];
         self.last_known_global.latitude_rad = self.global.latitude_rad;
         self.last_known_global.longitude_rad = self.global.longitude_rad;
         for axis in 0..2 {
@@ -924,6 +1021,9 @@ impl ImuEkf {
             self.state[4 + axis] = 0.0;
             self.reset_variance(3 + axis, 25.0);
         }
+        self.output_predictor.reset_lat_lon(self.global);
+        self.output_predictor
+            .reset_horizontal_velocity([self.state[4] - previous[0], self.state[5] - previous[1]]);
         self.last_fake_pos_fuse = self.delayed_us;
     }
 
@@ -971,10 +1071,14 @@ impl ImuEkf {
     }
 
     fn reset_fake_height(&mut self) {
+        let previous = self.state[6];
         self.last_known_global.altitude_m = self.global.altitude_m;
         self.state[6] = 0.0;
         self.reset_variance(5, 10.0);
         self.reset_variance(8, square(self.params.no_aid_noise).max(square(0.01)));
+        self.output_predictor
+            .reset_vertical_velocity(self.state[6] - previous);
+        self.output_predictor.reset_altitude(self.global.altitude_m);
         self.last_fake_hgt_fuse = self.delayed_us;
     }
 
@@ -1181,7 +1285,8 @@ impl ImuEkf {
     }
 
     fn numerics_valid(&self) -> bool {
-        self.global.is_finite()
+        self.output_predictor.numerics_valid()
+            && self.global.is_finite()
             && self.state.iter().all(|value| value.is_finite())
             && (math::norm(&self.quaternion()) - 1.0).abs() < 1e-4
             && self
@@ -1198,6 +1303,35 @@ impl ImuEkf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_configuration_is_explicit_and_reset_preserves_the_snapshot() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        let params = OutputParams {
+            imu_offset_body_m: [0.1, 0.2, 0.3],
+            ..OutputParams::default()
+        };
+        filter.configure_output(params).unwrap();
+        filter.update(&stationary(2500)).unwrap();
+        assert_eq!(filter.output().timestamp, 2500);
+        assert_eq!(filter.timestamp(), 2500);
+        assert_eq!(
+            filter.configure_output(OutputParams::default()),
+            Err(FilterFault::Input)
+        );
+        filter.reset(0).unwrap();
+        assert_eq!(
+            filter.output_params.imu_offset_body_m,
+            params.imu_offset_body_m
+        );
+        assert_eq!(
+            filter.configure_output(OutputParams {
+                position_time_constant_s: f32::NAN,
+                ..params
+            }),
+            Err(FilterFault::Input)
+        );
+    }
 
     #[test]
     fn recent_aiding_is_strict_at_the_one_second_dead_reckoning_boundary() {

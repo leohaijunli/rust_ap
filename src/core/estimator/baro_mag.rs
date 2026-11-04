@@ -641,11 +641,10 @@ impl Aids {
             let r = math::with_yaw(math::rotation(filter.quaternion()), 0.0);
             let earth = math::rotate(r, self.mag_lpf);
             let heading = -libm::atan2f(earth[1], earth[0]) + self.declination(filter);
-            let q =
-                math::from_rotation(math::with_yaw(math::rotation(filter.quaternion()), heading));
-            filter.state[..4].copy_from_slice(&q);
-            filter.reset_variance(2, math::square(filter.params.heading_noise).max(0.0001));
-            filter.last_heading_fuse = filter.delayed_us;
+            filter.reset_yaw(
+                heading,
+                math::square(filter.params.heading_noise).max(0.0001),
+            );
             filter.control |= MAG_CONSISTENT | MAG_ALIGNED;
             self.mag_heading_lpf = 0.0;
         }
