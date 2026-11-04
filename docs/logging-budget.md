@@ -63,8 +63,9 @@ python3 tools/p0/budgets.py --profile m1
 - 普通记录入口目标 ≤5 us；关全局中断区每次 ≤2 us。大块编码/复制/SD 等待均在临界区外；错误计数更新不会递归产生日志。
 - 写入 staging **32 KiB**，32 B 对齐；定义区与每次 sync 用兼容未知消息补齐到 512 B，保持块地址/长度对齐。当前位于 AXI、D-cache 关闭，IDMA 可达性仍须实测。
 - 初始流量上限 **256000 B/s**。当前是固定槽而非紧凑字节环：1024 槽中普通记录最多 960 槽，每条 IMU 样本占两槽。M1 提案共 1434 条/s，保守按全部记录计算约 **0.67 s** 无消费窗口；不能用 128 KiB/字节率声称更长缓冲，后续改变槽布局须重算。
-- 当前 M1 验收复用 5 分钟联合运行并要求正常段零 dropout；卡资格仍可另做 30 分钟观察。持续有效吞吐目标 ≥512000 B/s，32 KiB 写入 p99 ≤50 ms、观测最大 ≤250 ms。
-- 记录环高水位 75% 报警并停用可选 trace；满时丢记录、计数与记录缺口，采样任务继续。事件区也有上限，重复错误合并计数；磁盘写失败保留 USB/遥测诊断。
+### 3.1 dropout 定量分析（2026-11-03）
+
+**当时场景**（`b2e70b0ecc7ab844`，IMU ULog 仍为 1 kHz）：全量记录 5.3 s，普通队列丢 **5685 条**、4 个 dropout（总 2.3 s、最大 1303 ms）、`high_water_bytes=130020`（见 [P4p 记录](acceptance/ina219/README.md)）。
 
 Cybflight `crates/drivers/src/blackbox_storage.rs` 的 `BlockStore` 是异步 512 B 单块接口；实际应用 `blackbox/sdmmc_block.rs` 另有 CMD25 合并和 32 KiB static 缓冲。其上游注释中的 64 KiB/8 kHz 启动问题、吞吐与停顿记录均不是本板实测。
 
