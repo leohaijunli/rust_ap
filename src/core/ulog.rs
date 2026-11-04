@@ -145,8 +145,23 @@ pub enum Error {
     TooLong,
     InvalidText,
     InvalidLength,
+    InvalidInstance,
     TimestampRegression,
 }
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter.write_str(match self {
+            Self::TooLong => "ULog record exceeds buffer capacity",
+            Self::InvalidText => "invalid ULog key or topic name",
+            Self::InvalidLength => "ULog payload length does not match schema",
+            Self::InvalidInstance => "ULog encoder and estimator instance differ",
+            Self::TimestampRegression => "ULog timestamp regressed",
+        })
+    }
+}
+
+impl core::error::Error for Error {}
 
 pub const fn file_header(start_timestamp_us: u64) -> [u8; FILE_HEADER_LEN] {
     let mut bytes = [0; FILE_HEADER_LEN];
@@ -175,6 +190,19 @@ pub fn format(topic: TopicId) -> Result<Record, Error> {
     message(b'F', topic.definition().format.as_bytes())
 }
 
+/// Encode a metadata format into caller-owned storage. Estimator definitions
+/// exceed the runtime record capacity; they do not enter the firmware queue.
+pub fn format_definition(definition: &str, out: &mut [u8]) -> Result<usize, Error> {
+    let length = definition.len();
+    if length > usize::from(u16::MAX) || out.len() < length + 3 {
+        return Err(Error::TooLong);
+    }
+    out[..2].copy_from_slice(&(length as u16).to_le_bytes());
+    out[2] = b'F';
+    out[3..length + 3].copy_from_slice(definition.as_bytes());
+    Ok(length + 3)
+}
+
 pub fn information(key: &str, value: &[u8]) -> Result<Record, Error> {
     validate_information(key, value.len())?;
     keyed_message(b'I', key.as_bytes(), value)
@@ -189,11 +217,25 @@ pub fn parameter_f32(name: &str, value: f32) -> Result<Record, Error> {
 }
 
 pub fn subscription(topic: TopicId) -> Result<Record, Error> {
-    let definition = topic.definition();
+    raw_subscription(topic as u16, 0, topic.definition().name)
+}
+
+pub fn raw_subscription(message_id: u16, multi_id: u8, name: &str) -> Result<Record, Error> {
+    validate_name(name)?;
     let mut builder = Builder::new(b'A');
-    builder.push_u8(0)?;
-    builder.push_u16(topic as u16)?;
-    builder.push(definition.name.as_bytes())?;
+    builder.push_u8(multi_id)?;
+    builder.push_u16(message_id)?;
+    builder.push(name.as_bytes())?;
+    Ok(builder.finish())
+}
+
+/// A raw D record; schema length and per-topic monotonicity belong to the
+/// caller's registry/encoder, not to a second global firmware topic table.
+pub fn data_record(message_id: u16, timestamp_us: u64, fields: &[u8]) -> Result<Record, Error> {
+    let mut builder = Builder::new(b'D');
+    builder.push_u16(message_id)?;
+    builder.push(&timestamp_us.to_le_bytes())?;
+    builder.push(fields)?;
     Ok(builder.finish())
 }
 
@@ -251,13 +293,10 @@ impl DataEncoder {
         if self.seen[index] && timestamp_us < self.last_timestamp[index] {
             return Err(Error::TimestampRegression);
         }
-        let mut builder = Builder::new(b'D');
-        builder.push_u16(topic as u16)?;
-        builder.push(&timestamp_us.to_le_bytes())?;
-        builder.push(fields)?;
+        let record = data_record(topic as u16, timestamp_us, fields)?;
         self.last_timestamp[index] = timestamp_us;
         self.seen[index] = true;
-        Ok(builder.finish())
+        Ok(record)
     }
 }
 

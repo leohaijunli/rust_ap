@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-04。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；实物集中待 H-02/03/04、H-10、QGC GUI 目视与工程师操作，M1 未开始。**
+更新：2026-11-04。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；H7 PX4IO 通信、日志短按/长按保留事件与蜂鸣软件通过，灯归属/IO 实物待 H-12；IO MCU Rust 重写已排 IO-R0～R5，尚未实施；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；实物集中待 H-02/03/04、H-10/12/13、QGC GUI 目视与工程师操作，M1 未开始。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -15,9 +15,10 @@
 
 MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门具备后验证 GPS 实物数据。
 
-**当前软件工作：E1-H～E4-H 本地/CI 通过；E4 比较器按原判据修复，`f8fa3f6` CI success。E5-H 四个固定 C++ 场景（GNSS 超时、气压参考高度、GSF 偏航、垂直加速度故障）复位/状态/协方差/NIS 对拍本地通过，待提交与 CI。** 工程师要求持续执行至 E6-H；硬件资格与 E7 保留原依赖，不上板、不改已验实物状态。
+**当前软件工作：E1-H～E5-H 已通过（E5 CI 正确性由工程师确认）；E6-H 独立无 GPS 与标准输出本地通过，新增 CI 待执行。** 两种合成模式各 65 s，9 份 `.msg` / 165 个字段与 MAVLink 独立解析通过；[证据](docs/acceptance/ekf2/20261104-e6-host.md)。随后工程师授权回装普通合并包 `c6fe90f898b68f8f`，上传/校验、版本/心跳/无启动故障通过；PX4IO Timeout、实体按键禁用，未启动板载 EKF。[回装记录](docs/acceptance/px4io/20261104-merged-flash.md)。
 
-- [ ] **EKF2 标准输出/日志（新增）**：姿态、局部位置、全球位置三项必须同时走标准 MAVLink（`ATTITUDE_QUATERNION`、`LOCAL_POSITION_NED`、有效时 `GLOBAL_POSITION_INT`）并按固定 PX4 `.msg` 写入 ULog（`vehicle_attitude`、`vehicle_local_position`、有效时 `vehicle_global_position`，另加 `estimator_status` 诊断）。E5-H 后做 E6-H host 适配/独立解析验证，E7 再验真实 USB/TELEM1/SD 发布。无 GPS 输出保持独立有效性/协方差，不冒充全球定位。范围见 [plan.md](plan.md#ekf2-后续移植约束)。
+- [x] **E6-H 标准输出/日志 host 门**：独立无 GPS 输入类型、状态隔离、标准姿态/角速度/局部/全球/诊断 schema、MAVLink 编码与 pyulog/pymavlink 独立解析通过；无 GPS 只发独立 `ODOMETRY` / 健康状态，水平无界协方差明确，全球位置禁发。未启用固件 estimator 日志注册表或输出任务。[证据](docs/acceptance/ekf2/20261104-e6-host.md)。
+- [ ] **E7 真实输出/日志**：工程师要求下一步启动板载 EKF2，但目前没有任务或启动命令；先明确仅 IMU 受限姿态实验或正式 E7 接入范围。正式门包含 8 kHz 输入桥、参数/健康/预算、Mahony 回退与 USB/TELEM1/SD 联合验收，依赖 M1、P6a、P4b-g、P2、PL-b，不因 host 或普通回装通过提前放行。
 
 ### MAVCAN（已完成）
 
@@ -37,6 +38,7 @@ MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门�
 - [x] **D-IMU / D-ESC / D-GNSS**：单 SPI2 ICM-42688-P；4 个 Vimdrones Nano / Quad X；H-RTK DroneCAN SKU12059。
 - [x] **D-MESSAGES**：PX4 标准数据消息/ULog 字段 + MAVLink `common.xml` 标准消息与命令；[映射](docs/message-contracts.md)。
 - [x] **D-INA219 / H-11 接线配置**：SEN0291，独立 I2C3 插座，拨码 A0=0/A1=1 即 0x44（固件自动探测 4 个地址）、10 mΩ、±8 A，测量独立支路；工程师确认已连接。
+- [x] **D-USL**：工程师确认 CUAV USL 已接 GPS1，要求复用全部已核实可控的灯；按键用于日志、长按仅保留事件，不伪造 safety/arming。IO 安全灯与可能的 I²C RGB 灯分开识别，不按三个 GPIO 猜测。
 - [x] **D-PUBLIC / D-HOLSATUS / D-DEFER**：允许 GPL 来源并记录许可；Holsatus 构建修复暂缓；远期细节待 M1。
 - [x] **P0-01～10 / H-01**：软件基线、来源、硬件资料与 A3/M1 方案已归档。
 
@@ -58,7 +60,9 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [x] **参数分组元数据**：`MAV_CMD_REQUEST_MESSAGE`(397) → `COMPONENT_METADATA` + 只读 MAVFTP（`component_metadata/{general,parameters}.json`），9 个 `LOG_*` 归入 `SDLog`；板载下载与 CRC 校验通过（source=`c88f30f929842543`，raw/padded=`398000/398016 B`，static RAM=`236872 B`，栈未触达 36972 B）。[证据](docs/acceptance/p3a/README.md#参数分组元数据2026-11-03)。QGC 参数页 “SDLog” 分组呈列待工程师目视确认。
 - [x] **MSG-01 标准消息软件检查**：`sensor_accel` / `sensor_gyro`、`actuator_armed` 与固定 PX4 定义对齐；fmt/Clippy、4 项受影响核心用例、pyulog 与普通打包/布局通过，软件 source=`c2f3128aecc8a70b`。[记录](docs/acceptance/messages/README.md)；实物核对并入 P4 下一次必验记录。
 - [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
-- [ ] **PL-a / LOG-A01～05**：LOG-A01～04 及 LoggerControl/MAVLink Console 软件门已通过；实物正常 start/stop、MAVLink 下载和 pyulog 解析已通过；restart 先补录已有通过结果的直接证据，H-04 仍待受控断电恢复、缺卡/拔卡和时延边界。[证据](docs/acceptance/pl-a/README.md)；P4b-a 未关闭，不放行依赖阶段。
+- [ ] **PL-a / LOG-A01～06**：LOG-A01～04 及 LoggerControl/MAVLink Console 软件门已通过；实物正常 start/stop、下载/解析已通过。LOG-A06 短按/长按保留事件和蜂鸣软件通过，IO 安全灯不覆盖，I²C RGB/左右灯待识别；旧 `473ffd4797e692f3` 包撤回。H-04 故障/时延、H-12 IO/按键/灯/蜂鸣与 restart 直接证据仍待验。[证据](docs/acceptance/pl-a/README.md)；不放行依赖阶段。
+- [x] **IO-H0 软件**：固定 PX4 v5 报文/CRC、USART6/DMA、零输出配置与回读、按钮锁存 ACK、`!px4io` 诊断；12 项相关 host 用例、host/H7 Clippy、隔离 release/打包通过，source=`0fdd9d28c4789055`。[记录](docs/acceptance/px4io/20261104-host.md)。未刷写/实测。
+- [ ] **IO-R0～R5（本次仅计划）**：Rust 模块拆分/协议共享/迁移与必要验收已记录；先 H-12/13 型号/灯归属/恢复，再独立 M3 启动与 LED/gesture，后续 PWM/RC、更新/恢复按 [重构计划](docs/px4io.md) 逐门放行。不开始 IO 刷写、不新增 M1 前置。
 - [ ] **P4b-g / GNSS-01～03**：GPS 已接 CAN1；软件已实现并刷入，待 H-10 与依赖门具备后验证 H-RTK Fix2/Auxiliary 实物数据、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志。CAN2 桥不自动转发 CAN1。阶段依赖 P4b-a、PL-a、H-10。
 - [ ] **P2 / MAV-01～03**：USB/TELEM1 双链路、QGC 连接/重连及版本显示；MAV-01 软件门已通过，待 H-03 与工程师接线做双链路/重连实测。[证据](docs/acceptance/p2/README.md)。依赖 P1、P3a。
 - [ ] **P3 / PARAM-01～02**：软件/工具路径已由 P3a/P2 就绪；待 P2 闭合与 H-03 接线后做双链路一致性、合法/非法值回显及保存重启读回。依赖 P3a、P2。
@@ -73,7 +77,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [ ] **PL-b / LOG-B01～02**：软件与有限 HIL 通过：QGC 协议列出 2 个日志，分块下载 306176 B 后 pyulog 无 corruption；MAVLink Console start/sync/stop 通过，restart 的直接证据待补录；心跳改 PX4 兼容后 QGC 下载应命名为 `.ulg`。待 QGC GUI Refresh/Download、断链与速率边界收口。[证据](docs/acceptance/pl-b/README.md)。依赖 M1、PL-a、P2。
 - [x] **RTC-01 / TIME-01**：source=`81d6c1221048f08a` 实测 LSE `ticking=true counting=true`，30 s 增加 31 s，`!time set 1700000000` 回读 `ok=true`，`SYSTEM_TIME` 与 `LOG_ENTRY.time_utc=1700000004` 非零。根因是清 `RSF` 未解锁 WPR，且 `DR` 后再次读 `SSR` 会重新锁住影子寄存器；见[时间基准](docs/time-sync.md)。
 - [ ] **TIME-02**：H-RTK GNSS 授时待 P4b-g；3D fix 且样本新鲜才采纳，GNSS > 地面站 `SYSTEM_TIME` > 继承 RTC，偏差 ≥5 s 才写；LSI 后备额外周期校准。无 GPS 驱动前，时间来自继承 RTC 或入站 `SYSTEM_TIME`。
-- [ ] **P6a-e / EKF-01～03**：E1-H～E4-H 本地/CI 通过，E4 `f8fa3f6` [CI success](https://github.com/leohaijunli/rust_ap/actions/runs/41848722671)，[证据](docs/acceptance/ekf2/20261104-e4-host.md)。E5-H 四个复位/故障场景本地对拍通过，[证据](docs/acceptance/ekf2/20261104-e5-host.md)；继续至 E6-H。实物/E7 依赖 M1、P6a、P4b-g、P2、PL-b。[方案](docs/ekf2-port.md)
+- [ ] **P6a-e / EKF-01～03**：E1-H～E6-H 本地软件门已通过，[E6-H 证据](docs/acceptance/ekf2/20261104-e6-host.md)；实物/E7 仍依赖 M1、P6a、P4b-g、P2、PL-b。[方案](docs/ekf2-port.md)
 - [ ] **P4b-r / RTK-01～02**：RTCM 转发、RTK 与中断恢复。依赖 M1、P2、P4b-g、H-10。
 - [ ] **P5a / OUT-A01～02**：单一仲裁、限时授权/撤销、看门狗及零输出门控。依赖 M1、P4b-a、PL-a、H-06。
 - [ ] **P4b-b / CAN-B01～03**：拆桨电机映射/旋向与故障停转；恢复不自动解锁。依赖 P5a、P4b-a、PL-a。
@@ -95,3 +99,5 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 | H-08/09 | GNSS 坐标/精度，动力学/辨识/求解预算；P6c/d/f |
 | H-10 | H-RTK 固件/节点/消息率及后续 RTCM 来源；P4b-g/r |
 | H-11 | INA219 0x44 通信、单条 `DEBUG_VECT` V/A/W 在 Windows Inspector 已确认、ULog `rust_current_sensor` 已实测；待支路供电/接线确认、参考负载精度和一次断线恢复；P4p |
+| H-12 | CUAV USL 接 GPS1：IO 协议/CRC/零 PWM、PF5 电平、短按 start/stop、长按无动作、蜂鸣与可解析日志；识别 I²C RGB/安全灯/左右小灯归属；LOG-A06、IO-H0/R0/R2 |
+| H-13 | IO 实物 MCU、原应用/bootloader 备份条件、SWD/电源和不依赖新应用的恢复；IO-R0/R1/R4/R5 |

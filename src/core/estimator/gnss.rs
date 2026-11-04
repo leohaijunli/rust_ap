@@ -227,6 +227,19 @@ impl GnssEkf {
         self.aids.checks.failure_bits()
     }
 
+    pub fn standard_output(&mut self, now: u64) -> super::standard_output::Snapshot {
+        let diagnostics = super::standard_output::GnssDiagnostics {
+            aids: self.status(),
+            quality_failures: self.quality_failure_bits() & ((self.params.checks.mask << 1) | 1),
+        };
+        super::standard_output::Snapshot::from_core(
+            &mut self.core,
+            now,
+            super::standard_output::Source::Gnss,
+            Some(diagnostics),
+        )
+    }
+
     pub fn update(
         &mut self,
         imu: &ImuDelta,

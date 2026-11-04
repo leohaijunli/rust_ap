@@ -27,10 +27,14 @@ pub mod log_config;
 pub mod log_queue;
 #[path = "core/logger.rs"]
 pub mod logger;
+#[path = "core/logger_switch.rs"]
+pub mod logger_switch;
 #[path = "core/mavcan.rs"]
 pub mod mavcan;
 #[path = "core/mavftp.rs"]
 pub mod mavftp;
+#[path = "core/mavlink_estimator.rs"]
+pub mod mavlink_estimator;
 #[path = "core/metrics.rs"]
 pub mod metrics;
 #[path = "core/parameter_store.rs"]
@@ -39,6 +43,8 @@ pub mod parameter_store;
 pub mod parameters;
 #[path = "core/px4_messages.rs"]
 pub mod px4_messages;
+#[path = "core/px4io.rs"]
+pub mod px4io;
 #[path = "core/slcan.rs"]
 pub mod slcan;
 #[path = "core/ulog.rs"]

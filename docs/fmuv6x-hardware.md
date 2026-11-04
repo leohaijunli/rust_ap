@@ -54,6 +54,7 @@
 | SD 电源 | PC13，高电平使能 | `boards/px4/fmu-v6x/src/board_config.h:271`；`boards/px4/fmu-v6x/src/board_config.h:294` |
 | 外部 5 V 电源控制 | PERIPH_nEN PG4、HIPOWER_nEN PG10，低有效；这不能单独证明 CAN 插座的供电连接 | `boards/px4/fmu-v6x/src/board_config.h:265-268`；`boards/px4/fmu-v6x/src/board_config.h:289-290` |
 | 外部 armed 指示 | PE6：未解锁时输入上拉，解锁时输出低 | `boards/px4/fmu-v6x/src/board_config.h:236-244` |
+| GPS1 安全开关 / LED / 蜂鸣器 | PF5 按键高有效/上拉；FMU PD10 在有 PX4IO 时保持输入，安全灯由 IO 驱动；PF9 TIM14_CH1 MCU 推挽，低电平静音。工程师确认 CUAV USL 接 GPS1；接口还含 I²C1，可有独立 RGB 灯，模块三颗灯实际归属待 H-12 | PX4 `boards/px4/fmu-v6x/src/board_config.h:300-350`；`SafetyButton.cpp`、IO `safety_button.cpp`；[CUAV 产品页](https://store.cuav.net/shop/c-rtk-usl-expansion-module/)；[PX4IO](px4io.md) |
 | 版本识别配置 | ADC3，PH3/PH4 感测，PG0 驱动；V6X_3=FMUM ID 0x3 | `boards/px4/fmu-v6x/src/board_config.h:189-190`；`boards/px4/fmu-v6x/src/board_config.h:203-225` |
 
 P1 已核对固定 HAL 的 LDO/VOS/overdrive/flash 路径；uploader 确认 silicon revision V，实际 Dump 的供电位见下节。修复后普通 P1 的平台寄存器及两组65 s时基检查已通过，测量范围见[HIL](acceptance/p1/20261031-hil.md)。
@@ -156,6 +157,7 @@ P4.0 实测记录至少包含：日期、固件 hash、器件 ID、总线/CS/地
 | CAN2 | RX PB12、TX PB13；头文件说明连到收发器 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:405-413` |
 | TELEM1 | UART7；RX PF6、TX PE8、RTS PF8、CTS PE10 | `boards/px4/fmu-v6x/nuttx-config/include/board_dma_map.h:77-78`；`boards/px4/fmu-v6x/nuttx-config/include/board.h:396-399` |
 | PX4IO 连接 | USART6，TX PC6/RX PC7；配置为 `/dev/ttyS5`、1.5 Mbit/s。第一版 RC 另选直连 UART | `boards/px4/fmu-v6x/src/board_config.h:59-72`；`boards/px4/fmu-v6x/nuttx-config/include/board.h:393-394` |
+| PX4IO MCU / 内存预期 | 固定 IO-v2 源码选 STM32F100C8、24 MHz、flash 64 KiB / RAM 8 KiB；原 bootloader 前 4 KiB，应用 `0x08001000` / 60 KiB。本板 IO 型号/原固件仍待核实，Rust IO 重写本次只计划 | `boards/px4/io-v2/nuttx-config/{nsh/defconfig:16,include/board.h:57-65,scripts/script.ld:36-46}`；[IO-R0～R5](px4io.md) |
 | USB FS | DM PA11、DP PA12、VBUS PA9 | `boards/px4/fmu-v6x/nuttx-config/include/board.h:522-527`；`boards/px4/fmu-v6x/src/board_config.h:308-312` |
 | FMU PWM 1–4 | TIM5 CH4/CH3/CH2/CH1，PI0/PH12/PH11/PH10 | `boards/px4/fmu-v6x/src/timer_config.cpp:36-41`；`boards/px4/fmu-v6x/src/timer_config.cpp:67-71` |
 | FMU PWM 5–8 | TIM4 CH2/CH3，PD13/PD14；TIM12 CH1/CH2，PH6/PH9 | `boards/px4/fmu-v6x/src/timer_config.cpp:43-47`；`boards/px4/fmu-v6x/src/timer_config.cpp:72-75` |
@@ -207,6 +209,8 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | 时钟/供电 | HSE16 MHz、PLL1 CPU480/HCLK240/PCLK120 MHz；PLL3Q USB48 MHz；LDO/Scale1+ODEN、flash LATENCY4/WRHIGHFREQ2，I-cache开/D-cache关；平台寄存器/时基检查通过 | `src/platform.rs:20-135`；HAL `rcc/h.rs:286-296,402-427`及上述PX4来源 |
 | 时基/调度 | TIM2/P1、PSC239/ARR65535、1 MHz；TIM7/P3仅软件pend；USB/P6；线程raw executor/测量idle | `src/platform.rs`、`src/diagnostics.rs`、`src/main.rs` |
 | LED/加热 | 保留PHY灯；PE3红故障/PE4绿1 Hz/PE5蓝启动开漏；PB10加热保持低；本板FMU灯目视项不适用 | `src/main.rs:46-72,118-147`；[HIL](acceptance/p1/20261031-hil.md#led适用范围) |
+| GPS1 日志用户界面 | PF5 高有效/上拉、40 ms 时间消抖，短按释放切换 logger、1.5 s 长按保留；IO 通信/零 PWM 回读有效才允许实体动作。PD10 不输出，模式请求仅诊断，不冒充实际灯控制；PF9/TIM14 4 kHz 推挽音调反馈 1/2/3 声 | `src/core/logger_switch.rs`、`src/drivers/logger_switch.rs`；[PL-a](acceptance/pl-a/README.md)；H-12 待验 |
+| PX4IO H7 软件接口 | USART6 PC6/PC7、DMA2_CH2/CH3、P5；固定 v5 CRC/回复校验、10 ms 事务预算/最多 3 次、仅零值安全配置和按钮 ACK，错误/陈旧禁用实体日志按键；原 IO 固件/bootloader 未刷写 | `src/core/px4io.rs`、`src/drivers/px4io.rs`；[软件记录](acceptance/px4io/20261104-host.md)；实物待 H-12/13 |
 | 软件 reboot/故障 | BKP0=b007b007复位；BKP16..31版本化CRC故障；HardFault先切1 KiB栈；共享wrapper匹配RTC/LSE，HAL后比较全部BKP及BDCR，不再补写BKP | `src/backup_domain.rs`、`src/fault.rs`、`src/core/fault_record.rs`；[故障审查](acceptance/p1/fault-review.md) |
 | FDCAN1 软件配置 | PD0/PD1，HSE 16 MHz，1 Mbit/s，采样点 87.5%；IT0/1=P2，TIM6_DAC I/O executor=P4；FIFO、单次发送、自动重传关闭 | `src/drivers/dronecan_can.rs`、`src/platform.rs`；[P4b-a 软件记录](acceptance/p4b-a/README.md)，电气/HIL 待 H-02/03 |
 | SPI2 IMU 软件配置 | ICM-42688-P；PI1/PI3/PI2、PH5 CS、PF4 power、PA10 EXTI；DMA1_CH2/CH3、24 MHz 请求、8 kHz ODR、8×20 B FIFO、YAW270；EXTI P0/DMA P1/TIM7 executor P3 | `src/core/icm42688.rs`、`src/drivers/imu.rs`、`src/main.rs`；[P4 记录](acceptance/p4/README.md)，ID/实际 SPI/短时计数通过，DRDY 仪器/60 s/方向和恢复待验 |

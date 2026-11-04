@@ -632,11 +632,7 @@ pub fn encode(
         sequence: *sequence,
     };
     *sequence = sequence.wrapping_add(1);
-    let mut frame = MAVLinkV2MessageRaw::new();
-    frame.serialize_message(header, message);
-    let bytes = frame.raw_bytes();
-    out[..bytes.len()].copy_from_slice(bytes);
-    bytes.len()
+    v6x_rust_led::mavlink_estimator::encode(header, message, out)
 }
 
 /// Bounded packet assembly; transport boundaries do not delimit MAVLink frames.

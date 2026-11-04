@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 libm = "0.2.15"
+mavlink = { version = "0.17.1", default-features = false, features = ["common", "embedded", "emit-extensions"] }
 
 [features]
 default = []
@@ -28,7 +29,6 @@ embedded-fatfs = { git = "https://github.com/MabezDev/embedded-fatfs", rev = "51
 block-device-adapters = { git = "https://github.com/MabezDev/embedded-fatfs", rev = "518528cc111fcf65c48abbdeb80735a38eada112" }
 embedded-partitions = { git = "https://github.com/MabezDev/embedded-fatfs", rev = "518528cc111fcf65c48abbdeb80735a38eada112", default-features = false }
 embedded-io-async = { version = "=0.7.0", default-features = false }
-mavlink = { version = "0.17.1", default-features = false, features = ["common", "embedded", "emit-extensions"] }
 static_cell = "2.1.1"
 
 [target.'cfg(not(target_os = "none"))'.dependencies]

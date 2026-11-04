@@ -36,10 +36,10 @@ def require(condition: bool, message: str) -> None:
 
 
 def px4_fields(filename: str) -> list[tuple[str, int, str]]:
-    types = {"uint64": "uint64_t", "uint32": "uint32_t", "uint8": "uint8_t",
-             "float32": "float", "bool": "bool"}
+    types = {"uint64": "uint64_t", "uint32": "uint32_t", "uint16": "uint16_t", "uint8": "uint8_t",
+             "float32": "float", "float64": "double", "bool": "bool"}
     fields = []
-    for line in (Path(__file__).parent / "px4_msgs" / filename).read_text().splitlines():
+    for line in (Path(__file__).parent / "px4_msgs" / filename).read_text(encoding="utf-8").splitlines():
         line = line.partition("#")[0].strip()
         if not line or "=" in line:
             continue

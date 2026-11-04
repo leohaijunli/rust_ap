@@ -711,6 +711,9 @@ impl Aids {
                 math::square(filter.params.heading_noise).max(0.0001),
             );
             filter.control |= MAG_CONSISTENT | MAG_ALIGNED;
+            if filter.control & (1 << 7) != 0 {
+                filter.mag_alignment_start = filter.delayed_us;
+            }
             self.mag_heading_lpf = 0.0;
         }
         let earth = if self.wmm.is_some() {

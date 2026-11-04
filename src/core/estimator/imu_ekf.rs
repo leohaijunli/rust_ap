@@ -234,10 +234,13 @@ pub struct ImuEkf {
     last_fake_pos_fuse: Timestamp,
     last_fake_hgt_fuse: Timestamp,
     pub(super) last_height_fuse: Timestamp,
+    last_horizontal_aiding: Timestamp,
+    horizontal_position_dead_reckoning: bool,
     last_vertical_position_aiding: Timestamp,
     vertical_position_dead_reckoning: bool,
     vertical_velocity_dead_reckoning: bool,
     last_vertical_velocity_aiding: Timestamp,
+    pub(super) mag_alignment_start: Timestamp,
 }
 
 impl ImuEkf {
@@ -305,10 +308,13 @@ impl ImuEkf {
             last_fake_pos_fuse: 0,
             last_fake_hgt_fuse: 0,
             last_height_fuse: 0,
+            last_horizontal_aiding: 0,
+            horizontal_position_dead_reckoning: true,
             last_vertical_position_aiding: 0,
             vertical_position_dead_reckoning: true,
             vertical_velocity_dead_reckoning: true,
             last_vertical_velocity_aiding: 0,
+            mag_alignment_start: 0,
         })
     }
 
@@ -411,6 +417,22 @@ impl ImuEkf {
     }
     pub fn fault_status(&self) -> u32 {
         self.px4_fault
+    }
+
+    pub(super) fn local_position_validity(&self) -> [bool; 3] {
+        [
+            !self.horizontal_position_dead_reckoning,
+            !self.vertical_position_dead_reckoning,
+            !self.vertical_velocity_dead_reckoning,
+        ]
+    }
+
+    pub(super) fn range_height_limits(&self) -> Option<[f32; 2]> {
+        if self.control & ((1 << 9) | (1 << 10) | (1 << 11)) != (1 << 10) {
+            return None;
+        }
+        self.range_params
+            .map(|p| [p.sensor.minimum_m, 0.9 * p.sensor.maximum_m])
     }
 
     pub fn aid_status(&self) -> Option<(baro_mag::AidStatus, baro_mag::AidStatus)> {
@@ -1102,8 +1124,18 @@ impl ImuEkf {
                         > self.delayed_us)
             {
                 self.control &= !DEAD_RECKONING;
+                if self.delayed_us > 1_000_000 {
+                    self.last_horizontal_aiding = self.delayed_us - 1_000_000;
+                }
+                self.horizontal_position_dead_reckoning = false;
             } else {
                 self.control |= DEAD_RECKONING;
+                if self.timed_out(
+                    self.last_horizontal_aiding,
+                    default_int("EKF2_NOAID_TOUT") as u64,
+                ) {
+                    self.horizontal_position_dead_reckoning = true;
+                }
             }
             if self.vertical_position_aiding() {
                 self.last_vertical_position_aiding = self.last_height_fuse;
