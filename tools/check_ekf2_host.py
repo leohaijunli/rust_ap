@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "tests/data/ekf2/imu_yaw"
 CONFIGURATION = {"seconds": 10.0, "rate_hz": 400, "yaw_rate_deg_s": 5.0, "seed": 0,
                  "gyro_noise_rad_s": 0.0, "accel_noise_m_s2": 0.0}
+CONFIGURATIONS = {
+    "imu_yaw": CONFIGURATION,
+    "imu_noisy_clipped": CONFIGURATION | {"seed": 42, "gyro_noise_rad_s": 0.02, "accel_noise_m_s2": 0.1,
+                                          "clipping_start_s": 3.0, "clipping_end_s": 3.15, "clipping_mask": 2},
+}
 # Fixed before the first comparison. These are C++ host-regression tolerances,
 # not the future Rust/PX4 E1 numerical qualification thresholds.
 TOLERANCES = {"state_abs": 1e-6, "covariance_abs": 1e-7, "relative": 1e-5}
@@ -39,7 +44,7 @@ def read_reference_manifest(executable):
     return manifest
 
 
-def record_baseline(directory, files, report, source_manifest):
+def record_baseline(directory, files, report, source_manifest, configuration=CONFIGURATION):
     targets = [directory / f"{name}.gz" for name in files] + [directory / "manifest.json"]
     if any(path.exists() for path in targets):
         raise ValueError("golden baseline already exists; recording never overwrites it")
@@ -53,16 +58,16 @@ def record_baseline(directory, files, report, source_manifest):
         artifacts[f"{name}.gz"] = {"raw_bytes": len(data), "bytes": len(compressed),
                                    "raw_sha256": hashlib.sha256(data).hexdigest(),
                                    "sha256": hashlib.sha256(compressed).hexdigest()}
-    manifest = report | {"configuration": CONFIGURATION, "tolerances": TOLERANCES,
+    manifest = report | {"configuration": configuration, "tolerances": TOLERANCES,
                          "artifacts": artifacts, "reference_build": source_manifest,
                          "license": "BSD-3-Clause; see tools/px4_msgs/LICENSE"}
     with (directory / "manifest.json").open("x", encoding="utf-8") as output:
         output.write(json.dumps(manifest, indent=2) + "\n")
 
 
-def compare_baseline(directory, files, reference_build):
+def compare_baseline(directory, files, reference_build, configuration=CONFIGURATION):
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    if (manifest["px4_ref"] != DEFAULT_REF or manifest["configuration"] != CONFIGURATION
+    if (manifest["px4_ref"] != DEFAULT_REF or manifest["configuration"] != configuration
             or manifest["tolerances"] != TOLERANCES
             or manifest["reference_build"]["applied_parameters"] != reference_build["applied_parameters"]):
         raise ValueError("golden baseline configuration/parameters differ")
@@ -100,16 +105,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--golden", type=Path, default=ROOT / "target/ekf2-host/build/golden_cpp")
     parser.add_argument("--output", type=Path, default=ROOT / "target/ekf2-host/check")
-    parser.add_argument("--baseline", type=Path, default=BASELINE)
+    parser.add_argument("--case", choices=CONFIGURATIONS, default="imu_yaw")
+    parser.add_argument("--baseline", type=Path)
     parser.add_argument("--record-baseline", action="store_true", help="create a new baseline; never overwrite existing files")
     args = parser.parse_args()
     try:
+        configuration = CONFIGURATIONS[args.case]
+        if args.baseline is None:
+            args.baseline = BASELINE.parent / args.case
         source_manifest = read_reference_manifest(args.golden)
         args.output.mkdir(parents=True, exist_ok=True)
         imu = args.output / "imu.csv"
         dump = args.output / "golden.csv"
         truth = args.output / "truth.csv"
-        expected = write_synthetic(imu, truth, **CONFIGURATION)
+        expected = write_synthetic(imu, truth, **configuration)
         reference = run_json([args.golden, imu, dump])
         host = next(line.removeprefix("host: ") for line in
                     subprocess.check_output(["rustc", "-vV"], text=True).splitlines() if line.startswith("host: "))
@@ -144,12 +153,12 @@ def main():
 
         report = {"schema": 1, "px4_ref": DEFAULT_REF, "input_sha256": hashlib.sha256(before).hexdigest(),
                   "cpp": reference, "rust_intake": intake, "golden": inspection,
-                  "rust_math": "not implemented; input equality is not estimator numerical equivalence",
+                  "rust_math": "not exercised by DTO-only mode; E1 qualification uses tools/check_ekf2_imu.py",
                   "hardware_validation": "not run; host fixtures only"}
         files = {"imu.csv": imu, "truth.csv": truth, "golden.csv": dump}
         if args.record_baseline:
-            record_baseline(args.baseline, files, report, source_manifest)
-        report["regression"] = compare_baseline(args.baseline, files, source_manifest)
+            record_baseline(args.baseline, files, report, source_manifest, configuration)
+        report["regression"] = compare_baseline(args.baseline, files, source_manifest, configuration)
         (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(report, indent=2))
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:

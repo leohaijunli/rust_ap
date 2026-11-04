@@ -1,0 +1,905 @@
+//! E1 IMU-only delayed EKF core. No external aid, HAL, heap or output observer.
+//! This is the pinned PX4 `core_imu` profile, including internal pseudo updates;
+//! it does not provide valid absolute yaw, position or height for flight.
+//! Copyright (c) 2015-2024 PX4 Development Team. All rights reserved.
+//! SPDX-License-Identifier: BSD-3-Clause
+//! Source mapping and license: docs/provenance.md, tools/px4_msgs/LICENSE.
+
+use super::{
+    covariance_generated::predict_covariance,
+    ekf2_parameter,
+    imu_downsampler::{DownSampler, ImuBuffer, MAX_IMU_BUFFER},
+    math::{self, square, GlobalPosition},
+    Covariance, FilterFault, FilterHealth, ImuDelta, ParamValue, StateVector, Timestamp,
+    STATE_COUNT,
+};
+
+const TILT_ALIGN: u64 = 1;
+const IN_AIR: u64 = 1 << 7;
+const DEAD_RECKONING: u64 = 1 << 29;
+const FAKE_POS: u64 = 1 << 32;
+const FAKE_HGT: u64 = 1 << 33;
+const BAD_HEADING: u32 = 1 << 3;
+const BAD_ACCEL_CLIPPING: u32 = 1 << 11;
+const TILT_VARIANCE_LIMIT: f32 = square(3.0 * (core::f64::consts::PI / 180.0) as f32);
+
+/// Rust boundary watchdog, independent of PX4 aid timeouts. A gap requires reset.
+pub const IMU_FRESH_US: u64 = 100_000;
+
+/// Snapshot of implemented IMU parameters from the single generated catalog.
+/// Changing it requires a new/reset core; it is not a parameter registry.
+#[derive(Clone, Copy, Debug)]
+pub struct ImuEkfParams {
+    pub predict_us: i32,
+    pub delay_max_ms: f32,
+    pub imu_ctrl: i32,
+    pub velocity_limit: f32,
+    pub gyro_noise: f32,
+    pub accel_noise: f32,
+    pub gyro_bias_noise: f32,
+    pub accel_bias_noise: f32,
+    pub gyro_bias_init: f32,
+    pub accel_bias_init: f32,
+    pub angle_error_init: f32,
+    pub no_aid_noise: f32,
+    pub heading_noise: f32,
+    pub gyro_bias_limit: f32,
+    pub accel_bias_limit: f32,
+    pub accel_bias_accel_limit: f32,
+    pub accel_bias_gyro_limit: f32,
+    pub accel_bias_time_constant: f32,
+}
+
+fn default_float(name: &str) -> f32 {
+    match ekf2_parameter(name)
+        .expect("implemented parameter in generated catalog")
+        .default
+    {
+        ParamValue::Float(value) => value,
+        ParamValue::Int(_) => panic!("float parameter catalog type mismatch"),
+    }
+}
+
+fn default_int(name: &str) -> i32 {
+    match ekf2_parameter(name)
+        .expect("implemented parameter in generated catalog")
+        .default
+    {
+        ParamValue::Int(value) => value,
+        ParamValue::Float(_) => panic!("integer parameter catalog type mismatch"),
+    }
+}
+
+impl Default for ImuEkfParams {
+    fn default() -> Self {
+        Self {
+            predict_us: default_int("EKF2_PREDICT_US"),
+            delay_max_ms: default_float("EKF2_DELAY_MAX"),
+            imu_ctrl: default_int("EKF2_IMU_CTRL"),
+            velocity_limit: default_float("EKF2_VEL_LIM"),
+            gyro_noise: default_float("EKF2_GYR_NOISE"),
+            accel_noise: default_float("EKF2_ACC_NOISE"),
+            gyro_bias_noise: default_float("EKF2_GYR_B_NOISE"),
+            accel_bias_noise: default_float("EKF2_ACC_B_NOISE"),
+            gyro_bias_init: default_float("EKF2_GBIAS_INIT"),
+            accel_bias_init: default_float("EKF2_ABIAS_INIT"),
+            angle_error_init: default_float("EKF2_ANGERR_INIT"),
+            no_aid_noise: default_float("EKF2_NOAID_NOISE"),
+            heading_noise: default_float("EKF2_HEAD_NOISE"),
+            gyro_bias_limit: default_float("EKF2_GYR_B_LIM"),
+            accel_bias_limit: default_float("EKF2_ABL_LIM"),
+            accel_bias_accel_limit: default_float("EKF2_ABL_ACCLIM"),
+            accel_bias_gyro_limit: default_float("EKF2_ABL_GYRLIM"),
+            accel_bias_time_constant: default_float("EKF2_ABL_TAU"),
+        }
+    }
+}
+
+impl ImuEkfParams {
+    fn buffer_length(self) -> Result<usize, FilterFault> {
+        let values = [
+            ("EKF2_PREDICT_US", self.predict_us as f32),
+            ("EKF2_DELAY_MAX", self.delay_max_ms),
+            ("EKF2_IMU_CTRL", self.imu_ctrl as f32),
+            ("EKF2_VEL_LIM", self.velocity_limit),
+            ("EKF2_GYR_NOISE", self.gyro_noise),
+            ("EKF2_ACC_NOISE", self.accel_noise),
+            ("EKF2_GYR_B_NOISE", self.gyro_bias_noise),
+            ("EKF2_ACC_B_NOISE", self.accel_bias_noise),
+            ("EKF2_GBIAS_INIT", self.gyro_bias_init),
+            ("EKF2_ABIAS_INIT", self.accel_bias_init),
+            ("EKF2_ANGERR_INIT", self.angle_error_init),
+            ("EKF2_NOAID_NOISE", self.no_aid_noise),
+            ("EKF2_HEAD_NOISE", self.heading_noise),
+            ("EKF2_GYR_B_LIM", self.gyro_bias_limit),
+            ("EKF2_ABL_LIM", self.accel_bias_limit),
+            ("EKF2_ABL_ACCLIM", self.accel_bias_accel_limit),
+            ("EKF2_ABL_GYRLIM", self.accel_bias_gyro_limit),
+            ("EKF2_ABL_TAU", self.accel_bias_time_constant),
+        ];
+        for (name, value) in values {
+            let definition = ekf2_parameter(name).ok_or(FilterFault::Input)?;
+            if !value.is_finite()
+                || value < 0.0
+                || definition.min.is_some_and(|min| value < min)
+                || definition.max.is_some_and(|max| value > max)
+            {
+                return Err(FilterFault::Input);
+            }
+        }
+        if !(1000..=100_000).contains(&self.predict_us)
+            || self.imu_ctrl & !7 != 0
+            || self.accel_bias_time_constant <= 0.0
+        {
+            return Err(FilterFault::Input);
+        }
+        let length =
+            libm::ceilf(self.delay_max_ms / (self.predict_us as f32 / 1000.0)).max(2.0) as usize;
+        if length > MAX_IMU_BUFFER {
+            return Err(FilterFault::Input);
+        }
+        Ok(length)
+    }
+}
+
+/// Streaming host/MCU-buildable mathematical core; firmware does not instantiate
+/// it yet. Raw control bits are PX4 fixture state, not vehicle arming state.
+pub struct ImuEkf {
+    params: ImuEkfParams,
+    downsampler: DownSampler,
+    buffer: ImuBuffer,
+    state: StateVector,
+    covariance: Covariance,
+    global: GlobalPosition,
+    last_known_global: GlobalPosition,
+    earth_rate: math::Vector3,
+    earth_rate_latitude: f64,
+    accel_lpf: math::Vector3,
+    gyro_lpf: math::Vector3,
+    average_dt_s: f32,
+    first_sample: bool,
+    input_seen: bool,
+    initialized: bool,
+    latest_us: Timestamp,
+    delayed_us: Timestamp,
+    control: u64,
+    px4_fault: u32,
+    fault: Option<FilterFault>,
+    gyro_bias_inhibit: [bool; 3],
+    accel_bias_inhibit: [bool; 3],
+    gyro_magnitude: f32,
+    accel_magnitude: f32,
+    clipping_count: [u16; 3],
+    last_heading_fuse: Timestamp,
+    last_fake_pos_fuse: Timestamp,
+    last_fake_hgt_fuse: Timestamp,
+}
+
+impl ImuEkf {
+    pub fn new(params: &ImuEkfParams, t0: Timestamp) -> Result<Self, FilterFault> {
+        let buffer_length = params.buffer_length()?;
+        let mut state = [0.0; 25];
+        state[..4].copy_from_slice(&math::IDENTITY);
+        let mut params = *params;
+        // Same parameter clamps as fixed Ekf::updateParameters().
+        params.gyro_noise = params.gyro_noise.clamp(0.0, 1.0);
+        params.accel_noise = params.accel_noise.clamp(0.0, 1.0);
+        params.gyro_bias_noise = params.gyro_bias_noise.clamp(0.0, 1.0);
+        params.accel_bias_noise = params.accel_bias_noise.clamp(0.0, 1.0);
+        Ok(Self {
+            params,
+            downsampler: DownSampler::new(params.predict_us as u32),
+            buffer: ImuBuffer::new(buffer_length),
+            state,
+            covariance: [[0.0; 24]; 24],
+            global: GlobalPosition::default(),
+            last_known_global: GlobalPosition::default(),
+            earth_rate: [0.0; 3],
+            earth_rate_latitude: 0.0,
+            accel_lpf: [0.0; 3],
+            gyro_lpf: [0.0; 3],
+            average_dt_s: 0.01,
+            first_sample: true,
+            input_seen: false,
+            initialized: false,
+            latest_us: t0,
+            delayed_us: t0,
+            // Pinned Ekf::reset() defaults to in_air, with no system flag input.
+            control: IN_AIR,
+            px4_fault: 0,
+            fault: None,
+            gyro_bias_inhibit: [false; 3],
+            accel_bias_inhibit: [false; 3],
+            gyro_magnitude: 0.0,
+            accel_magnitude: 0.0,
+            clipping_count: [0; 3],
+            last_heading_fuse: 0,
+            last_fake_pos_fuse: 0,
+            last_fake_hgt_fuse: 0,
+        })
+    }
+
+    /// Explicit recovery. No automatic acceptance of samples after a fault.
+    pub fn reset(&mut self, t0: Timestamp) -> Result<(), FilterFault> {
+        *self = Self::new(&self.params, t0)?;
+        Ok(())
+    }
+
+    pub fn state(&self) -> &StateVector {
+        &self.state
+    }
+    pub fn covariance(&self) -> &Covariance {
+        &self.covariance
+    }
+    pub fn timestamp(&self) -> Timestamp {
+        self.delayed_us
+    }
+    pub fn latest_timestamp(&self) -> Timestamp {
+        self.latest_us
+    }
+    pub fn control_status(&self) -> u64 {
+        self.control
+    }
+    pub fn fault_status(&self) -> u32 {
+        self.px4_fault
+    }
+
+    /// Relative attitude-core validity only; no navigation validity is implied.
+    pub fn health(&self) -> FilterHealth {
+        FilterHealth {
+            valid: self.initialized
+                && self.control & TILT_ALIGN != 0
+                && self.fault.is_none()
+                && self.px4_fault == 0,
+            fault: self.fault,
+        }
+    }
+
+    fn fail<T>(&mut self, fault: FilterFault) -> Result<T, FilterFault> {
+        self.fault = Some(fault);
+        Err(fault)
+    }
+
+    pub fn check_fresh(&mut self, now: Timestamp) -> Result<(), FilterFault> {
+        if let Some(fault) = self.fault {
+            return Err(fault);
+        }
+        if now < self.latest_us {
+            return self.fail(FilterFault::Input);
+        }
+        if now - self.latest_us > IMU_FRESH_US {
+            return self.fail(FilterFault::Timeout);
+        }
+        Ok(())
+    }
+
+    /// Consume one body-frame integral. `true` means one delayed EKF update,
+    /// not one raw IMU sample, and not that absolute navigation is valid.
+    pub fn update(&mut self, input: &ImuDelta) -> Result<bool, FilterFault> {
+        if let Some(fault) = self.fault {
+            return Err(fault);
+        }
+        if self.initialized && !self.numerics_valid() {
+            return self.fail(FilterFault::Numerics);
+        }
+        let dt = [input.delta_angle_dt_s, input.delta_velocity_dt_s];
+        if input.timestamp <= self.latest_us
+            || dt
+                .iter()
+                .any(|value| !value.is_finite() || !(1e-6..=1.0).contains(value))
+            || input
+                .delta_angle_rad
+                .iter()
+                .chain(&input.delta_velocity_m_s)
+                .any(|value| !value.is_finite())
+            || dt
+                .iter()
+                .any(|value| libm::roundf(*value * 1e6) > input.timestamp as f32)
+        {
+            return self.fail(FilterFault::Input);
+        }
+        if self.input_seen && input.timestamp - self.latest_us > IMU_FRESH_US {
+            return self.fail(FilterFault::Timeout);
+        }
+        self.latest_us = input.timestamp;
+        self.input_seen = true;
+        let downsampled = self.downsampler.update(input);
+        if !self.downsampler.numerics_valid() {
+            return self.fail(FilterFault::Numerics);
+        }
+        let Some(mut sample) = downsampled else {
+            return Ok(false);
+        };
+        if sample
+            .delta_angle_rad
+            .iter()
+            .chain(&sample.delta_velocity_m_s)
+            .any(|value| !value.is_finite())
+        {
+            return self.fail(FilterFault::Numerics);
+        }
+        let period = self.params.predict_us as f32 * 1e-6;
+        sample.delta_angle_dt_s = sample.delta_angle_dt_s.clamp(0.5 * period, 2.0 * period);
+        sample.delta_velocity_dt_s = sample.delta_velocity_dt_s.clamp(0.5 * period, 2.0 * period);
+        let delayed = self.buffer.push(sample);
+        self.delayed_us = delayed.timestamp;
+        let mean_dt = (0.5 * (delayed.delta_angle_dt_s + delayed.delta_velocity_dt_s))
+            .clamp(0.5 * period, 2.0 * period);
+        let accel = delayed
+            .delta_velocity_m_s
+            .map(|value| value * (1.0 / delayed.delta_velocity_dt_s));
+        let gyro = delayed
+            .delta_angle_rad
+            .map(|value| value * (1.0 / delayed.delta_angle_dt_s));
+        if self.first_sample {
+            self.accel_lpf = accel;
+            self.gyro_lpf = gyro;
+            self.average_dt_s = mean_dt;
+            self.first_sample = false;
+        } else {
+            let alpha = 0.01_f32 / (0.09_f32 + 0.01_f32);
+            for axis in 0..3 {
+                self.accel_lpf[axis] += alpha * (accel[axis] - self.accel_lpf[axis]);
+                self.gyro_lpf[axis] += alpha * (gyro[axis] - self.gyro_lpf[axis]);
+            }
+            self.average_dt_s = 0.99 * self.average_dt_s + 0.01 * mean_dt;
+        }
+        if !self.initialized {
+            let accel_norm = math::norm(&self.accel_lpf);
+            if !(0.8 * math::GRAVITY..=1.2 * math::GRAVITY).contains(&accel_norm)
+                || math::norm(&self.gyro_lpf) > 15.0_f32.to_radians()
+            {
+                return Ok(false);
+            }
+            let q = math::align_tilt(self.accel_lpf);
+            self.state[..4].copy_from_slice(&q);
+            self.initialize_covariance();
+            self.initialized = true;
+        }
+        self.update_bias_inhibit(&delayed, accel, gyro);
+        self.predict_covariance(&delayed, accel);
+        self.predict_state(&delayed);
+        self.control_fusion(&delayed);
+        if !self.numerics_valid() {
+            return self.fail(FilterFault::Numerics);
+        }
+        Ok(true)
+    }
+
+    fn quaternion(&self) -> math::Quaternion {
+        [self.state[0], self.state[1], self.state[2], self.state[3]]
+    }
+
+    fn initialize_covariance(&mut self) {
+        self.covariance = [[0.0; 24]; 24];
+        for (i, value) in [
+            square(self.params.angle_error_init.max(0.01)),
+            square(self.params.angle_error_init.max(0.01)),
+            0.0,
+            0.25,
+            0.25,
+            square(1.5) * 0.25,
+            square(self.params.no_aid_noise.max(0.01)),
+            square(self.params.no_aid_noise.max(0.01)),
+            1.0,
+            square(self.params.gyro_bias_init),
+            square(self.params.gyro_bias_init),
+            square(self.params.gyro_bias_init),
+            square(self.params.accel_bias_init),
+            square(self.params.accel_bias_init),
+            square(self.params.accel_bias_init),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            self.covariance[i][i] = value;
+        }
+    }
+
+    fn update_bias_inhibit(
+        &mut self,
+        sample: &ImuDelta,
+        accel: math::Vector3,
+        gyro: math::Vector3,
+    ) {
+        let gyro_corrected =
+            core::array::from_fn::<_, 3, _>(|axis| gyro[axis] - self.state[10 + axis]);
+        let accel_corrected =
+            core::array::from_fn::<_, 3, _>(|axis| accel[axis] - self.state[13 + axis]);
+        let gyro_beta =
+            1.0 - (sample.delta_angle_dt_s / self.params.accel_bias_time_constant).clamp(0.0, 1.0);
+        let accel_beta = 1.0
+            - (sample.delta_velocity_dt_s / self.params.accel_bias_time_constant).clamp(0.0, 1.0);
+        self.gyro_magnitude = math::norm(&gyro_corrected).max(gyro_beta * self.gyro_magnitude);
+        self.accel_magnitude = math::norm(&accel_corrected).max(accel_beta * self.accel_magnitude);
+        let high_manoeuvre = self.gyro_magnitude > self.params.accel_bias_gyro_limit
+            || self.accel_magnitude > self.params.accel_bias_accel_limit;
+        let rotation = math::rotation(self.quaternion());
+        for (axis, vertical_projection) in rotation[2].iter().enumerate() {
+            self.gyro_bias_inhibit[axis] = self.params.imu_ctrl & 1 == 0;
+            let observable = self.control & FAKE_HGT == 0
+                && (self.control & FAKE_POS == 0 || vertical_projection.abs() > 0.966);
+            self.accel_bias_inhibit[axis] = self.params.imu_ctrl & 2 == 0
+                || high_manoeuvre
+                || sample.delta_velocity_clipping[axis]
+                || !observable;
+        }
+    }
+
+    fn predict_covariance(&mut self, sample: &ImuDelta, accel: math::Vector3) {
+        let dt = 0.5 * (sample.delta_angle_dt_s + sample.delta_velocity_dt_s);
+        let gyro_var = square(self.params.gyro_noise);
+        let accel_var = sample.delta_velocity_clipping.map(|clipped| {
+            square(if clipped {
+                4.9
+            } else {
+                self.params.accel_noise
+            })
+        });
+        self.covariance = predict_covariance(
+            &self.state,
+            &self.covariance,
+            accel,
+            accel_var,
+            gyro_var,
+            dt,
+        );
+        for (axis, variance) in accel_var.into_iter().enumerate() {
+            if self.covariance[9 + axis][9 + axis] < gyro_var {
+                self.covariance[9 + axis][9 + axis] += square(dt * self.params.gyro_bias_noise);
+            }
+            if self.covariance[12 + axis][12 + axis] < variance {
+                self.covariance[12 + axis][12 + axis] += square(dt * self.params.accel_bias_noise);
+            }
+        }
+        for row in 0..STATE_COUNT {
+            for column in 0..row {
+                self.covariance[row][column] = self.covariance[column][row];
+            }
+        }
+        self.constrain_variances();
+    }
+
+    fn predict_state(&mut self, sample: &ImuDelta) {
+        if (self.global.latitude_rad - self.earth_rate_latitude).abs() > 1.0_f64.to_radians() {
+            self.earth_rate_latitude = self.global.latitude_rad;
+            let latitude = self.earth_rate_latitude as f32;
+            self.earth_rate = [
+                7.292115e-5 * libm::cosf(latitude),
+                0.0,
+                -7.292115e-5 * libm::sinf(latitude),
+            ];
+        }
+        let earth_body = math::rotate_inverse(math::rotation(self.quaternion()), self.earth_rate);
+        let angle = core::array::from_fn(|i| {
+            (sample.delta_angle_rad[i] - self.state[10 + i] * sample.delta_angle_dt_s)
+                - earth_body[i] * sample.delta_angle_dt_s
+        });
+        let q = math::normalize(math::multiply(
+            self.quaternion(),
+            math::from_axis_angle(angle),
+        ));
+        self.state[..4].copy_from_slice(&q);
+        let delta_velocity = core::array::from_fn(|i| {
+            sample.delta_velocity_m_s[i] - self.state[13 + i] * sample.delta_velocity_dt_s
+        });
+        let delta_earth = math::rotate(math::rotation(q), delta_velocity);
+        let previous_velocity = [self.state[4], self.state[5], self.state[6]];
+        let coriolis = math::cross(self.earth_rate, previous_velocity).map(|v| -2.0 * v);
+        let transport = math::cross(
+            self.global.transport_rate(previous_velocity),
+            previous_velocity,
+        )
+        .map(|v| -v);
+        for i in 0..3 {
+            let gravity = if i == 2 { math::GRAVITY } else { 0.0 };
+            self.state[4 + i] += delta_earth[i];
+            self.state[4 + i] +=
+                ((gravity + coriolis[i]) + transport[i]) * sample.delta_velocity_dt_s;
+        }
+        let delta_position = core::array::from_fn(|i| {
+            (previous_velocity[i] + self.state[4 + i]) * sample.delta_velocity_dt_s * 0.5
+        });
+        self.global.add_ned(delta_position);
+        self.state[9] = -self.global.altitude_m;
+        for i in 4..7 {
+            self.state[i] =
+                self.state[i].clamp(-self.params.velocity_limit, self.params.velocity_limit);
+        }
+    }
+
+    fn tilt_variance(&self) -> f32 {
+        self.covariance[0][0] + self.covariance[1][1]
+    }
+    fn timed_out(&self, last: Timestamp, interval: u64) -> bool {
+        last == 0 || last.saturating_add(interval) < self.delayed_us
+    }
+
+    fn control_fusion(&mut self, sample: &ImuDelta) {
+        if self.control & TILT_ALIGN == 0 && self.tilt_variance() < TILT_VARIANCE_LIMIT {
+            self.control |= TILT_ALIGN;
+        }
+        let limit = (1.0 / self.average_dt_s) as u16;
+        for axis in 0..3 {
+            if sample.delta_velocity_clipping[axis] && self.clipping_count[axis] < limit {
+                self.clipping_count[axis] += 1;
+            } else if self.clipping_count[axis] > 0 {
+                self.clipping_count[axis] -= 1;
+            }
+        }
+        let warning = self.clipping_count.map(|count| count >= limit / 2);
+        let bad_clipping = warning.iter().all(|value| *value)
+            || self.clipping_count.iter().any(|count| *count >= limit);
+        if bad_clipping {
+            self.px4_fault |= BAD_ACCEL_CLIPPING;
+        } else {
+            self.px4_fault &= !BAD_ACCEL_CLIPPING;
+        }
+        // With all external aids compiled out there is no falling-likelihood
+        // evidence, and no at_rest system flag to enable zero gyro/velocity.
+        if self.timed_out(self.last_heading_fuse, 200_000) {
+            let variance = if self.control & TILT_ALIGN != 0 {
+                0.25
+            } else {
+                0.001
+            };
+            let innovation_variance = self.covariance[2][2] + variance;
+            if self.control & TILT_ALIGN == 0
+                || innovation_variance - variance > square(self.params.heading_noise)
+            {
+                if innovation_variance >= variance {
+                    let gain = core::array::from_fn(|row| {
+                        self.covariance[row][2] * (1.0 / innovation_variance)
+                    });
+                    self.update_with_gain(gain, 2, variance, 0.0, true);
+                    self.last_heading_fuse = self.delayed_us;
+                    self.px4_fault &= !BAD_HEADING;
+                } else {
+                    self.px4_fault |= BAD_HEADING;
+                    self.initialize_covariance();
+                }
+            }
+        }
+        self.control_fake_position();
+        self.control_fake_height();
+        self.control |= DEAD_RECKONING;
+    }
+
+    fn reset_fake_position(&mut self) {
+        self.last_known_global.latitude_rad = self.global.latitude_rad;
+        self.last_known_global.longitude_rad = self.global.longitude_rad;
+        for axis in 0..2 {
+            self.reset_variance(6 + axis, square(self.params.no_aid_noise).max(square(0.01)));
+            self.state[4 + axis] = 0.0;
+            self.reset_variance(3 + axis, 25.0);
+        }
+        self.last_fake_pos_fuse = self.delayed_us;
+    }
+
+    fn control_fake_position(&mut self) {
+        if !self.timed_out(self.last_fake_pos_fuse, 200_000) {
+            return;
+        }
+        let variance = if self.control & TILT_ALIGN != 0 {
+            square(self.params.no_aid_noise.max(1.0))
+        } else {
+            square(0.5)
+        };
+        let innovation = self.global.difference(self.last_known_global);
+        let innovation_variance = [
+            self.covariance[6][6] + variance,
+            self.covariance[7][7] + variance,
+        ];
+        let rejected = (0..2).any(|i| {
+            let ratio = square(innovation[i]) / (square(3.0) * innovation_variance[i]);
+            !ratio.is_finite() || ratio > 1.0
+        });
+        let enabled = self.tilt_variance() > TILT_VARIANCE_LIMIT;
+        if self.control & FAKE_POS != 0 {
+            if !enabled {
+                self.control &= !FAKE_POS;
+                return;
+            }
+            if !rejected {
+                for i in 0..2 {
+                    self.fuse_direct(innovation[i], innovation_variance[i], variance, 6 + i, true);
+                }
+                self.last_fake_pos_fuse = self.delayed_us;
+            }
+            if self.timed_out(self.last_fake_pos_fuse, 400_000) {
+                self.reset_fake_position();
+            }
+        } else if enabled {
+            self.control |= FAKE_POS;
+            self.reset_fake_position();
+        }
+    }
+
+    fn reset_fake_height(&mut self) {
+        self.last_known_global.altitude_m = self.global.altitude_m;
+        self.state[6] = 0.0;
+        self.reset_variance(5, 10.0);
+        self.reset_variance(8, square(self.params.no_aid_noise).max(square(0.01)));
+        self.last_fake_hgt_fuse = self.delayed_us;
+    }
+
+    fn control_fake_height(&mut self) {
+        if !self.timed_out(self.last_fake_hgt_fuse, 200_000) {
+            return;
+        }
+        let variance = square(self.params.no_aid_noise);
+        let innovation = self.state[9] + self.last_known_global.altitude_m;
+        let innovation_variance = self.covariance[8][8] + variance;
+        let ratio = square(innovation) / (square(3.0) * innovation_variance);
+        if self.control & FAKE_HGT != 0 {
+            if ratio.is_finite() && ratio <= 1.0 && ratio < square(100.0 / 3.0) {
+                self.fuse_direct(innovation, innovation_variance, variance, 8, true);
+                self.last_fake_hgt_fuse = self.delayed_us;
+            }
+            if self.timed_out(self.last_fake_hgt_fuse, 400_000) {
+                self.reset_fake_height();
+            }
+        } else {
+            self.control |= FAKE_HGT;
+            self.reset_fake_height();
+        }
+    }
+
+    fn reset_variance(&mut self, index: usize, variance: f32) {
+        for i in 0..STATE_COUNT {
+            self.covariance[i][index] = 0.0;
+            self.covariance[index][i] = 0.0;
+        }
+        self.covariance[index][index] = variance;
+    }
+
+    fn fuse_direct(
+        &mut self,
+        innovation: f32,
+        innovation_variance: f32,
+        variance: f32,
+        index: usize,
+        constrain: bool,
+    ) {
+        let gain = core::array::from_fn(|row| self.covariance[row][index] / innovation_variance);
+        self.update_with_gain(gain, index, variance, innovation, constrain);
+    }
+
+    fn update_with_gain(
+        &mut self,
+        mut gain: [f32; STATE_COUNT],
+        index: usize,
+        variance: f32,
+        innovation: f32,
+        constrain: bool,
+    ) {
+        for axis in 0..3 {
+            if self.gyro_bias_inhibit[axis] {
+                gain[9 + axis] = 0.0;
+            }
+            if self.accel_bias_inhibit[axis] {
+                gain[12 + axis] = 0.0;
+            }
+        }
+        let ph = self.covariance[index];
+        for (i, gain_i) in gain.iter().enumerate() {
+            for (j, ph_j) in ph.iter().enumerate() {
+                self.covariance[i][j] -= gain_i * ph_j;
+            }
+        }
+        let ph: [f32; STATE_COUNT] = core::array::from_fn(|i| self.covariance[i][index]);
+        for i in 0..STATE_COUNT {
+            for j in 0..=i {
+                self.covariance[i][j] =
+                    self.covariance[i][j] - ph[i] * gain[j] + gain[i] * variance * gain[j];
+                self.covariance[j][i] = self.covariance[i][j];
+            }
+        }
+        if constrain {
+            self.constrain_variances();
+        }
+        self.correct_state(gain, innovation);
+    }
+
+    fn correct_state(&mut self, gain: [f32; STATE_COUNT], innovation: f32) {
+        let delta = math::from_axis_angle([
+            gain[0] * (-innovation),
+            gain[1] * (-innovation),
+            gain[2] * (-innovation),
+        ]);
+        let q = math::normalize(math::multiply(delta, self.quaternion()));
+        self.state[..4].copy_from_slice(&q);
+        let position_delta = core::array::from_fn(|i| gain[6 + i] * (-innovation));
+        self.global.add_ned(position_delta);
+        self.state[7] = 0.0;
+        self.state[8] = 0.0;
+        self.state[9] = -self.global.altitude_m;
+        for i in 0..3 {
+            self.state[4 + i] = (self.state[4 + i] - gain[3 + i] * innovation).clamp(-1e3, 1e3);
+            self.state[10 + i] = (self.state[10 + i] - gain[9 + i] * innovation)
+                .clamp(-self.params.gyro_bias_limit, self.params.gyro_bias_limit);
+            self.state[13 + i] = (self.state[13 + i] - gain[12 + i] * innovation)
+                .clamp(-self.params.accel_bias_limit, self.params.accel_bias_limit);
+        }
+    }
+
+    fn constrain_group(&mut self, start: usize, min: f32, max: f32) {
+        for i in start..start + 3 {
+            if self.covariance[i][i] < min {
+                self.covariance[i][i] = min;
+            } else if self.covariance[i][i] > max {
+                let variance = 10.0 * self.covariance[i][i];
+                let innovation_variance = self.covariance[i][i] + variance;
+                self.fuse_direct(0.0, innovation_variance, variance, i, false);
+            }
+        }
+    }
+
+    fn constrain_variances(&mut self) {
+        self.constrain_group(0, 1e-9, 1.0);
+        self.constrain_group(3, 1e-6, 1e6);
+        self.constrain_group(6, 1e-6, 1e6);
+        for start in [9, 12] {
+            let maximum = (start..start + 3)
+                .map(|i| self.covariance[i][i])
+                .fold(0.0, f32::max)
+                .clamp(1e-9, 1.0);
+            self.constrain_group(start, (maximum / 1e6).clamp(1e-9, 1.0), maximum);
+        }
+    }
+
+    fn numerics_valid(&self) -> bool {
+        self.global.is_finite()
+            && self.state.iter().all(|value| value.is_finite())
+            && (math::norm(&self.quaternion()) - 1.0).abs() < 1e-4
+            && self
+                .covariance
+                .iter()
+                .flatten()
+                .all(|value| value.is_finite())
+            && (0..STATE_COUNT).all(|i| self.covariance[i][i] >= 0.0)
+            && (0..STATE_COUNT)
+                .all(|i| (0..i).all(|j| self.covariance[i][j] == self.covariance[j][i]))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stationary(timestamp: u64) -> ImuDelta {
+        ImuDelta {
+            timestamp,
+            delta_angle_rad: [0.0; 3],
+            delta_velocity_m_s: [0.0, 0.0, -math::GRAVITY * 0.0025],
+            delta_angle_dt_s: 0.0025,
+            delta_velocity_dt_s: 0.0025,
+            delta_velocity_clipping: [false; 3],
+        }
+    }
+
+    #[test]
+    fn warmup_repeats_oldest_sample_without_changing_input_time() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        let mut times = std::vec::Vec::new();
+        for timestamp in (2500..=250_000).step_by(2500) {
+            if filter.update(&stationary(timestamp)).unwrap() {
+                times.push((filter.timestamp(), filter.latest_timestamp()));
+            }
+        }
+        assert_eq!(times[0], (7500, 7500));
+        assert_eq!(
+            times.iter().take_while(|(time, _)| *time == 7500).count(),
+            20
+        );
+        assert!(times.windows(2).all(|pair| pair[0].1 < pair[1].1));
+        assert!(times[20..].windows(2).all(|pair| pair[0].0 < pair[1].0));
+        assert_eq!(
+            filter.control_status() & (FAKE_POS | FAKE_HGT | DEAD_RECKONING),
+            FAKE_POS | FAKE_HGT | DEAD_RECKONING
+        );
+        assert!(!filter.health().valid);
+        assert!(filter.numerics_valid());
+    }
+
+    #[test]
+    fn bad_input_timeout_and_numeric_overflow_require_explicit_reset() {
+        let params = ImuEkfParams::default();
+        let mut filter = ImuEkf::new(&params, 0).unwrap();
+        let before = *filter.state();
+        let mut bad = stationary(2500);
+        bad.delta_velocity_m_s[0] = f32::NAN;
+        assert_eq!(filter.update(&bad), Err(FilterFault::Input));
+        assert_eq!(filter.state(), &before);
+        assert_eq!(filter.update(&stationary(5000)), Err(FilterFault::Input));
+        assert!(!filter.health().valid);
+        filter.reset(0).unwrap();
+        filter.update(&stationary(2500)).unwrap();
+        assert_eq!(filter.update(&stationary(2500)), Err(FilterFault::Input));
+        filter.reset(0).unwrap();
+        filter.update(&stationary(2500)).unwrap();
+        assert_eq!(
+            filter.check_fresh(2500 + IMU_FRESH_US + 1),
+            Err(FilterFault::Timeout)
+        );
+        assert_eq!(filter.update(&stationary(5000)), Err(FilterFault::Timeout));
+        filter.reset(0).unwrap();
+        bad = stationary(2500);
+        bad.delta_angle_rad = [1e38; 3];
+        assert_eq!(filter.update(&bad), Err(FilterFault::Numerics));
+        filter.reset(0).unwrap();
+        for timestamp in [2500, 5000, 7500] {
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        filter.covariance[0][1] = f32::NAN;
+        assert_eq!(
+            filter.update(&stationary(10_000)),
+            Err(FilterFault::Numerics)
+        );
+        filter.reset(0).unwrap();
+        let mut boundary = stationary(2000);
+        boundary.delta_angle_dt_s = 0.001;
+        boundary.delta_velocity_dt_s = 0.002;
+        boundary.delta_velocity_m_s[2] = -math::GRAVITY * 0.002;
+        assert!(filter.update(&boundary).is_ok());
+    }
+
+    #[test]
+    fn parameter_snapshot_rejects_invalid_values_and_unbounded_buffer() {
+        let defaults = ImuEkfParams::default();
+        assert_eq!(defaults.buffer_length(), Ok(20));
+        assert_eq!(defaults.predict_us, 10_000);
+        for params in [
+            ImuEkfParams {
+                predict_us: 0,
+                ..defaults
+            },
+            ImuEkfParams {
+                predict_us: 1000,
+                delay_max_ms: 200.0,
+                ..defaults
+            },
+            ImuEkfParams {
+                gyro_noise: f32::NAN,
+                ..defaults
+            },
+            ImuEkfParams {
+                accel_bias_time_constant: 0.0,
+                ..defaults
+            },
+            ImuEkfParams {
+                imu_ctrl: 8,
+                ..defaults
+            },
+        ] {
+            assert!(ImuEkf::new(&params, 0).is_err());
+        }
+    }
+
+    #[test]
+    fn axis_clipping_increases_noise_and_inhibits_bias_learning() {
+        let mut normal = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        let mut clipped = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        for timestamp in (2500..=800_000).step_by(2500) {
+            let mut sample = stationary(timestamp);
+            normal.update(&sample).unwrap();
+            sample.delta_velocity_clipping[1] = timestamp > 250_000;
+            clipped.update(&sample).unwrap();
+        }
+        assert!(clipped.accel_bias_inhibit[1]);
+        assert!(clipped.covariance[4][4] > normal.covariance[4][4]);
+        assert!(clipped.numerics_valid());
+        assert_eq!(clipped.fault_status(), 0);
+        for timestamp in (802_500..=2_000_000).step_by(2500) {
+            let mut sample = stationary(timestamp);
+            sample.delta_velocity_clipping = [true; 3];
+            clipped.update(&sample).unwrap();
+        }
+        assert_ne!(clipped.fault_status() & BAD_ACCEL_CLIPPING, 0);
+        assert!(!clipped.health().valid);
+        for timestamp in (2_002_500..=3_500_000).step_by(2500) {
+            clipped.update(&stationary(timestamp)).unwrap();
+        }
+        assert_eq!(clipped.fault_status(), 0);
+    }
+}

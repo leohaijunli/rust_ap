@@ -13,6 +13,7 @@
 - 只实现当前阶段所需功能；清晰命名、小而直接的函数、复用现有工具。遵循 KISS/YAGNI，避免提前抽象、重复实现及无用注释。
 - 已安装项目技能：编写时用 `clean-code`，收尾时用 `code-simplifier` 做一次局部审视；[适配说明](docs/ai-coding-skills.md)。
 - 每个问题修复后只运行相关检查；已有检查通过且没有相关代码变化时直接继续交付。文档修改只检查内容、链接及差异。
+- **E 系列拆门（工程师确认）**：E1-H～E6-H 的纯 Rust host 实现和固定 PX4 对拍可连续先行，依次通过软件门；实物资格与 E7 上板仍依赖 M1、P6a、P4b-g、P2、PL-b。E1-H 已通过本地门；下一软件门 E2-H，不接入板载任务，不虚构硬件通过结果。
 
 ## 2. 固定工程边界
 
@@ -66,7 +67,7 @@
 | P3a 参数存储 | 参数合法性和 CRC/中断提交的 host 用例；一次实际保存/掉电重启，读回有效状态；核对升级处理策略 |
 | P2 / P3 协议 | USB/TELEM1 各连接一次，双链路同时工作并重连一次；全量读表、按名/索引读取、合法与非法设值各一例、保存后重启读回 |
 | P4 / P6a | host 单位/FIFO/坐标/陈旧数据用例；实物 ID、8 kHz ODR/1 kHz 批次与 200 Hz 日志、六面方向和静态采样；USB/TELEM1 `HIGHRES_IMU`；QGC 转动确认姿态 |
-| P6a-e / EKF2 | 固定 PX4 输入的 Rust/PX4 数值回放；状态/协方差有限、对称及有界；延迟缓冲、陈旧/跳变/拒绝/复位与 Mahony 回退；实际 GNSS 融合另验 |
+| P6a-e / EKF2 | host 门按 E1-H～E6-H 依次做固定 PX4 数值对拍及相应失败路径；E1-H 先验 IMU 通路、状态/协方差、输入陈旧/非法与数值失效。硬件资格、实际 GNSS 融合、Mahony 板载回退和 E7 实时性另验 |
 | P4b-a / P4b-g | 关键单/多帧及 CRC/超时向量；实物节点/ESC 索引、零输出、GNSS 字段与定位；一次断线后状态失效/恢复 |
 | PL-a | 一份日志经独立解析器读出；一次受控写入中断电并检查可恢复记录；一次缺卡或 I/O 故障，采样保持运行 |
 | CAN-BRD / MAVCAN | host 校验经典帧 ID/标志/DLC、转发会话/过滤；普通构建与资源核对；板载 CMD_CAN_FORWARD 握手、CAN2 节点双向收发和一次关闭/超时恢复，复用同次 USB 心跳确认 |
@@ -167,11 +168,11 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 1. **范围**：M1 仍用 Mahony 建立可运行姿态基线。新增 `P6a-e / EKF-01～03` 作为 M1 后续阶段，移植 PX4 v1.17.0 中 EKF 的 state、predict、covariance、aiding、innovation gate 与 health/reset 逻辑；不移植 uORB 和模块调度层。
 2. **Rust 接口**：在 `src/core/estimator/` 定义固件唯一依赖的 `NavFilter`（`new/push_imu/push_measurement/step/output/health`）、内部 `AidSource`，以及 `ImuDelta` / `Measurement` / `NavOutput` DTO；接口与分层见 [EKF2 移植方案](docs/ekf2-port.md)。IMU 通过现有 16 槽有界队列输入；GNSS/后续传感器用带时间与有效性的快照；输出通过 `Watch` 独立给控制、ULog 和 MAVLink。
-3. **首个融合子集**：EKF-01 先做 IMU 预测、roll/pitch 与相对 yaw；EKF-02 在 P4b-g 后加入 GNSS 位置/速度和固定容量延迟缓冲。磁力计、气压计、空速不以虚构数据占位，只有实际硬件阶段才加入。
+3. **首个融合子集**：E1-H 先做无外部 aid 的 IMU 核心，保留固定 PX4 的降采样、延迟缓冲、预测、约束及内部伪观测；yaw 为相对值，位置/高度不可视为有效导航。E2-H～E6-H 可用明确标注的合成观测开发，不冒充实物；真实传感器接入与硬件资格仍按原依赖验收。
 4. **配置/切换**：`v6x_rust_led::config::Algorithm` 后续扩展 `Ekf2`；参数映射必须有范围校验和显式 reset/apply。EKF 无效、NaN、协方差异常、输入陈旧或 deadline miss 时撤销有效性并回退到已验证 Mahony，不无缝伪造连续状态。
 5. **数值验证**：用同一固定输入分别运行 PX4 v1.17.0 参考核心和 Rust 版本，按状态、创新、方差及拒绝/复位事件对拍；容差在测试前固定。未通过 replay、边界失败路径和实际 GNSS HIL 前，不称为“等价 EKF2”。
 6. **许可/来源**：逐文件记录 PX4/ECL 原路径、commit、BSD-3-Clause 版权与 Rust 修改点；估计数学输入保留独立 DTO，标准 PX4 消息用于数据边界，不链接 PX4 C++。
-7. **E0 最小 IMU 通路（2026-11-04）**：142 条参数、接口骨架、固定 PX4 C++ 黄金程序、静止/偏航合成器与 `vehicle_imu` 提取器已落地；4000 条输入经 C++/Rust DTO 的位级摘要一致，1001 步完整黄金状态/协方差已保存到 `tests/data/ekf2/imu_yaw/`。对齐的是 25 个名义状态与 24 维误差协方差，不是旧版四元数占 4 维的 24 状态布局。Rust 预测器、完整五传感器仿真/回放、`Core`/`Gate`/`Supervisor` 仍未实现；输入一致不等于 EKF2 数值等价，E1 依赖门不变。[结果与命令](docs/ekf2-port.md#12-e0-当前状态2026-11-04)。
+7. **E0 / E1-H（2026-11-04）**：E0 CI `7d0c486` 通过；E1-H Rust IMU 延迟核心、生成协方差、参数快照与失效锁定已实现。两组 10 s 各 1001 更新的完整状态/协方差对拍通过，本地 f32 位差为 0，黄金数据已入库；仅此范围，不称完整 EKF2 或板载资格通过。下一步 E2-H。[结果与命令](docs/acceptance/ekf2/20261104-e1-host.md)。
 
 ### INA219 支路电流（工程师新增）
 
@@ -198,7 +199,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | --- | --- | --- |
 | PL-b / LOG-B01～02 | 列表/下载/取消与删除限制；软件和协议 HIL 已通过，QGC GUI/异常链路待验 | M1、PL-a、P2 |
 | P4b-r / RTK-01～02 | GPS_RTCM_DATA→RTCMStream；关键重组用例、实际 RTK 与改正中断/恢复 | M1、P2、P4b-g、H-10 |
-| P6a-e / EKF-01～03 | 纯 Rust EKF2 核心：IMU 预测→GNSS aiding→健康/回退与遥测；固定 PX4 数值对拍 | M1、P6a、P4b-g、P2、PL-b |
+| P6a-e / EKF-01～03 | E1-H～E6-H 可依次完成 host 核心与固定 PX4 对拍；实物资格、板载融合与回退不提前放行 | host：前一软件门；板载：M1、P6a、P4b-g、P2、PL-b |
 | P5a / OUT-A01～02 | 单一仲裁、限时/限幅授权、看门狗与故障锁定；先验零输出门控 | M1、P4b-a、PL-a、H-06 |
 | P4b-b / CAN-B01～03 | 逐电机映射/旋向、命令超时与断线停转；恢复不自动解锁 | P5a、P4b-a、PL-a |
 | P5b / OUT-B01～02 | 直连 RC、预检/解锁、来源仲裁及丢控行为 | M1、P6a、P4b-b、P2/P3、H-07 |

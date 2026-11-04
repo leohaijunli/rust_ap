@@ -2,6 +2,10 @@
 //! generated PX4 EKF2 parameter catalog. No HAL, transport or allocator
 //! dependency, so firmware and host tests share one contract.
 
+mod covariance_generated;
+mod imu_downsampler;
+pub mod imu_ekf;
+mod math;
 pub mod params_generated;
 
 pub use params_generated::EKF2_PARAMS;

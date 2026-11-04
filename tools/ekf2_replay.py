@@ -73,11 +73,15 @@ def write_imu(path, rows):
 
 
 def synthetic_imu(seconds=10.0, rate_hz=400, yaw_rate_deg_s=5.0, seed=0,
-                  gyro_noise_rad_s=0.0, accel_noise_m_s2=0.0):
+                  gyro_noise_rad_s=0.0, accel_noise_m_s2=0.0,
+                  clipping_start_s=0.0, clipping_end_s=0.0, clipping_mask=0):
     if (not math.isfinite(seconds) or seconds <= 0 or rate_hz <= 0
             or 1_000_000 % rate_hz or not math.isfinite(yaw_rate_deg_s)
             or not math.isfinite(gyro_noise_rad_s) or gyro_noise_rad_s < 0
-            or not math.isfinite(accel_noise_m_s2) or accel_noise_m_s2 < 0):
+            or not math.isfinite(accel_noise_m_s2) or accel_noise_m_s2 < 0
+            or not math.isfinite(clipping_start_s) or not math.isfinite(clipping_end_s)
+            or not 0 <= clipping_start_s <= clipping_end_s <= seconds
+            or type(clipping_mask) is not int or not 0 <= clipping_mask <= 7):
         raise ValueError("invalid synthetic IMU configuration")
     dt_us = 1_000_000 // rate_hz
     duration_us = round(seconds * 1_000_000)
@@ -95,7 +99,10 @@ def synthetic_imu(seconds=10.0, rate_hz=400, yaw_rate_deg_s=5.0, seed=0,
         angle[2] += yaw - yaw_before
         velocity = [rng.gauss(0, accel_noise_m_s2) * dt_s for _ in range(3)]
         velocity[2] -= GRAVITY * dt_s
-        row = dict(zip(IMU_FIELDS, [timestamp, dt_us, dt_us, *angle, *velocity, 0]))
+        # Synthetic clipping tests flag propagation/noise handling only; they
+        # do not pretend to simulate a real sensor's rail-induced corruption.
+        clipping = clipping_mask if clipping_start_s * 1e6 < timestamp <= clipping_end_s * 1e6 else 0
+        row = dict(zip(IMU_FIELDS, [timestamp, dt_us, dt_us, *angle, *velocity, clipping]))
         truth = {"timestamp_us": timestamp, "q_w": math.cos(yaw / 2), "q_x": 0,
                  "q_y": 0, "q_z": math.sin(yaw / 2), "v_n": 0, "v_e": 0,
                  "v_d": 0, "p_n": 0, "p_e": 0, "p_d": 0}

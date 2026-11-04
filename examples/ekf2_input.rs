@@ -1,9 +1,18 @@
-//! Host-only CSV intake probe. It constructs the firmware's ImuDelta DTO but
-//! performs no estimation; the digest checks identical C++/Rust input bits.
+//! Host CSV intake / optional E1 IMU-core dump. Both modes hash the input DTO;
+//! an output path enables Rust estimation, never firmware or hardware execution.
 
-use std::{env, error::Error, fs::File, io::BufRead, io::BufReader};
+use std::{
+    env,
+    error::Error,
+    fs::File,
+    io::{BufRead, BufReader, BufWriter, Write},
+    path::Path,
+};
 
-use v6x_rust_led::estimator::ImuDelta;
+use v6x_rust_led::estimator::{
+    imu_ekf::{ImuEkf, ImuEkfParams},
+    ImuDelta,
+};
 
 const HEADER: &str = concat!(
     "timestamp_us,delta_angle_dt_us,delta_velocity_dt_us,delta_angle_x_rad,delta_angle_y_rad,",
@@ -81,8 +90,14 @@ fn hash_sample(hash: &mut u64, imu: &ImuDelta) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
-    if args.len() != 2 {
-        return Err("Usage: ekf2_input INPUT.csv".into());
+    if !(2..=3).contains(&args.len()) {
+        return Err("Usage: ekf2_input INPUT.csv [RUST_OUTPUT.csv]".into());
+    }
+    if args.len() == 3
+        && Path::new(&args[2]).exists()
+        && Path::new(&args[1]).canonicalize()? == Path::new(&args[2]).canonicalize()?
+    {
+        return Err("input and output must be distinct files".into());
     }
     let mut lines = BufReader::new(File::open(&args[1])?).lines();
     if lines.next().ok_or("empty input")?? != HEADER {
@@ -92,6 +107,29 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut count = 0u64;
     let mut first = 0;
     let mut previous = 0;
+    let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0)
+        .map_err(|fault| format!("EKF parameters: {fault:?}"))?;
+    let mut output = if args.len() == 3 {
+        Some(BufWriter::new(File::create_new(&args[2])?))
+    } else {
+        None
+    };
+    if let Some(output) = &mut output {
+        write!(
+            output,
+            "timestamp_us,imu_timestamp_us,control_status,fault_status"
+        )?;
+        for index in 0..25 {
+            write!(output, ",state_{index}")?;
+        }
+        for row in 0..24 {
+            for column in 0..24 {
+                write!(output, ",cov_{row}_{column}")?;
+            }
+        }
+        writeln!(output)?;
+    }
+    let mut updates = 0;
     for line in lines {
         let imu = sample(&line?, previous)?;
         if count == 0 {
@@ -100,12 +138,39 @@ fn main() -> Result<(), Box<dyn Error>> {
         previous = imu.timestamp;
         count += 1;
         hash_sample(&mut digest, &imu);
+        if let Some(output) = &mut output {
+            if filter
+                .update(&imu)
+                .map_err(|fault| format!("IMU EKF: {fault:?}"))?
+            {
+                updates += 1;
+                write!(
+                    output,
+                    "{},{},{},{}",
+                    filter.timestamp(),
+                    imu.timestamp,
+                    filter.control_status(),
+                    filter.fault_status()
+                )?;
+                for value in filter
+                    .state()
+                    .iter()
+                    .chain(filter.covariance().iter().flatten())
+                {
+                    write!(output, ",{value:.9e}")?;
+                }
+                writeln!(output)?;
+            }
+        }
     }
     if count == 0 {
         return Err("no IMU samples".into());
     }
+    if let Some(output) = &mut output {
+        output.flush()?;
+    }
     println!(
-        "{{\"samples\":{count},\"first_timestamp_us\":{first},\"last_timestamp_us\":{previous},\"input_digest\":\"{digest:016x}\"}}"
+        "{{\"samples\":{count},\"updates\":{updates},\"first_timestamp_us\":{first},\"last_timestamp_us\":{previous},\"input_digest\":\"{digest:016x}\"}}"
     );
     Ok(())
 }

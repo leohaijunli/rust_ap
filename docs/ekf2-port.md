@@ -4,7 +4,7 @@
 
 ## 1. 结论与执行边界
 
-- EKF2 最终替代 M1 的 Mahony 姿态基线，但**不改变当前 M1 数据链验收顺序**。E0（host-only 基础设施）可先行；E1 及之后的板上融合仍按 `P6a-e / EKF-01～03` 的依赖放行。
+- EKF2 最终替代 M1 的 Mahony 姿态基线，但**不改变当前 M1 数据链验收顺序**。E0 与 E1-H～E6-H 可在 host 依软件门先行；实物资格和 E7 上板仍按 `P6a-e / EKF-01～03` 的依赖放行。
 - 保留固定 PX4 的 **24 维误差状态/协方差**与 **25 个名义状态（含地形）**，不用 16 状态裁剪版；四元数是 4 个名义分量，但姿态误差只有 3 维。
 - 传感器范围按 **IMU、GNSS、气压、磁力计、雷达高度计** 五类设计。当前固件只有 SPI2 ICM-42688-P；BMP388/BMM150 驱动、GNSS 实物数据和雷达高度计硬件仍是前置条件，不能用虚构数据占位。
 - 算法可替换：固件只依赖 `NavFilter`；EKF2 内部再分 `Core` / `Gate` / `Supervisor` / `AidSource`。
@@ -39,6 +39,10 @@ v2 的目标 crate 划分（`nav-types` / `nav-core` / `nav-params` / `nav-ekf2`
 src/core/estimator/
 ├─ mod.rs               NavFilter / AidSource / 输入输出 DTO
 ├─ params_generated.rs  由 PX4 v1.17.0 YAML 生成
+├─ covariance_generated.rs 固定 PX4 符号表达式转译，CI --check
+├─ imu_ekf.rs            E1-H 无外部 aid 的延迟核心
+├─ imu_downsampler.rs    定长积分降采样 / IMU 缓冲
+├─ math.rs              四元数 / WGS84 累积
 └─ (后续) core.rs, gate.rs, supervisor.rs, aid_sources/
 ```
 
@@ -166,7 +170,11 @@ pub struct ParamDef {
 | **E6 无 GPS 解算** | 独立实例、输出、MAVLink 流 | 漂移与理论量级一致，σ 能包住误差 |
 | **E7 上板** | Embassy 任务、DWT 计时、参数桥 | 见第 9 节 L5，必要范围以 `plan.md` 为准 |
 
-E0 可在当前 M1 数据链工作之外先行；E1 起仍按 `P6a-e / EKF-01～03` 依赖放行，不跳过 M1、P6a、P4b-g、P2、PL-b。
+工程师已确认拆分软件门与实物资格：E1-H～E6-H 按上述顺序在 host 先行，前一软件门通过才推进后一门；实物资格和 E7 上板仍依赖 M1、P6a、P4b-g、P2、PL-b。合成输入只用于软件对拍，不冒充真实传感器结果。
+
+E1-H 范围为纯 IMU、无外部 aid 的 `core_imu`：降采样、原版延迟缓冲、预测、协方差约束与零创新航向/伪位置/伪高度等内部融合。首次 Rust 对拍前固定判据：符号对齐后的四元数差范数 ≤`1e-5`；全部状态绝对/相对容差 `1e-5`/`1e-5`；完整协方差绝对/相对容差 `1e-7`/`1e-4`，持续 10 s；时间与状态标志必须一致。PSD 用归一化 LDL 检查，仅容许 `1e-5` 的 f32 舍入枢轴误差；对角相对误差报告以 `1e-7` 为分母下限。另验非法/陈旧输入、clipping 与数值失效。C++ 基线重建的既定容差不变。
+
+表中真实日志、硬件和实时性指标属于实物资格；E2-H～E6-H 先完成相应的固定 C++ 合成输入对拍和关键失败路径，不用合成数据冒充真实日志。
 
 ## 9. 验证
 
@@ -216,7 +224,7 @@ DWT 测预测/标量更新/整轮最坏时间，初始目标整轮 <1 ms；热�
 - 偏航/位置/速度重置必须同步修正协方差，容易漏。
 - 雷达高度计的倾角与安装位置误差会直接变成高度偏差。
 - 无 GPS 解算的水平位置可能被误用，必须靠 validity 与 σ 约束下游。
-- f32 协方差可能丧失正定性，需要对称化与钳位；经纬度换算用 f64，且只在输出边界。
+- f32 协方差可能丧失正定性，需要原版稳定更新与约束；全球位置按固定 `LatLonAlt` 用 f64 累积经纬度、f32 累积高度，不以名义状态的零 xy 代替真实位置累积。
 - 当前缺少 BMP388/BMM150 驱动和雷达硬件；五传感器范围不能靠软件假设补齐。
 
 ## 11. 来源与许可
@@ -238,8 +246,8 @@ DWT 测预测/标量更新/整轮最坏时间，初始目标整轮 <1 ms；热�
 | 数据存储 | `tests/data/ekf2/imu_yaw/{imu,truth,golden}.csv.gz` 与 `manifest.json` 已生成，纳入仓库；原始黄金 CSV 2533266 B → 434688 B，记录固定 ref、源/工具/二进制 hash、参数、种子与容差；CI 只校验，不自动覆盖 |
 | 本轮软件检查 | estimator 6 项、Rust intake 2 项、Python 12 项通过（含实际 ULog 文件、单实例 f32 换算、基线不可覆盖/篡改拒绝）；host lib/example Clippy 通过，97 项未受影响 Rust 用例复用。旧 DroneCAN `--tests` Clippy 告警保持，不扩改 |
 | 普通构建/打包 | 原生 Windows release 与 ELF/bin/PX4 分区/向量检查通过；source=`3de5f0f08f2056b4`，raw/padded=`412720/412736 B`，static RAM=`268680 B`；未刷写 |
-| CI | 前次 `536a662` 的参数/软件工作流[通过](https://github.com/leohaijunli/rust_ap/actions/runs/41768366322)；本轮加入 C++ 构建、intake 和已提交黄金数据回归，远程结果不预写 |
-| 未开始/未放行 | Rust `Core`/`Gate`/`Supervisor`、积分/降采样、Rust 数值对拍、完整五传感器仿真/真实日志回放与板上融合；E1 依赖不变 |
+| CI | `7d0c486` 的 C++ 构建、Rust intake 与黄金数据回归[通过](https://github.com/leohaijunli/rust_ap/actions/runs/41780879699) |
+| 后续状态 | E1-H 纯 IMU host 核心开始实现；完整五传感器、Rust 数值资格与板上融合尚未完成，实物资格门不变 |
 
 历史普通构建 `f79daad8874002c4` 的布局检查保留。Bash 构建曾因 Windows checkout 的 CRLF 失败，采用等价原生命令通过，未改脚本。本轮 C++ 快照最初遗漏 WMM 头文件，随后发现缺少 PX4 的 `-fno-strict-aliasing`；均修正为固定源码/编译约定，没有改上游数学代码。
 
@@ -259,3 +267,13 @@ python3 tools/ekf2_replay.py ulog recording.ulg target/ekf2-host/imu.csv --sourc
 ```
 
 `--record-baseline` 只允许首次创建，已有黄金数据拒绝覆盖；新场景使用新目录并审查后提交。C++ host 回归容差在首次对拍前固定为状态绝对 `1e-6`、协方差绝对 `1e-7`、相对 `1e-5`，不替代 E1 Rust 数值资格门。
+
+## 13. E1-H 纯 IMU 软件门（2026-11-04）
+
+**本地通过，实物资格未验。** `ImuEkf` 已实现已积分 `ImuDelta` 的旋转/速度复合降采样、固定缓冲、倾角初始化、状态与协方差预测、bias inhibit、Joseph 更新和无外部 aid 内部状态机。协方差的 144 个中间项 / 300 个上三角结果从固定 C++ 表达式严格生成；不手写近似雅可比，不改黄金结果。
+
+- `imu_yaw` 与新增 `imu_noisy_clipped` 各 4000 输入 / 1001 更新 / 10 s，通过全状态、完整协方差、标志、对称及 PSD 对拍；本地 f32 位差均为 0。这里只覆盖这两个场景，不泛称完整 EKF2 等价。
+- estimator 12 项、intake 2 项、Python 18 项及 host Clippy 通过；普通 H753 release/打包/布局通过，未刷写。具体产物与命令见 [E1-H 记录](acceptance/ekf2/20261104-e1-host.md)。
+- 新增黄金数据与真值保存在 `tests/data/ekf2/imu_noisy_clipped/`，噪声/短时 clipping 明确为合成输入；旧 `imu_yaw` 不改写。CI 校验两场景与生成漂移，不记录/覆盖基线。
+- `ImuEkfParams` 默认值与范围复用唯一生成表，配置改变须重新构造/显式 reset；超出 64 槽容量的配置拒绝。非法/非有限输入、>100 ms IMU 中断与数值异常锁定失效，显式 reset 才恢复。
+- 当前只提供延迟数学核心，相对 yaw 不代表绝对航向，伪高度/位置不代表有效导航。没有输出预测器、完整 `NavFilter` 适配、8 kHz 板载输入桥、传感器融合或 Mahony 板载回退；这些仍按后续阶段实现/验收。下一软件门为 E2-H，不等待 M1 实物验收来编写 host 代码。
