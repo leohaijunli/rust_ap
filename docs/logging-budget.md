@@ -56,22 +56,44 @@ python3 tools/p0/budgets.py --profile m1
 
 ## 3. 缓冲、调度与 SD 能力边界
 
-- 当前为单一 **136 KiB** MPSC 固定槽队列，普通记录准入上限严格保留至少 **8 KiB** 事件容量；运行时最大记录 124 B。生产者只做有界 `try_record`，不调用 SD/FAT。
-- 当前已接入的 10 个 topic 均小于 124 B；后续标准 `esc_status` 汇总超过此上限，接入前须调整固定记录/队列布局并重新核验 RAM、编码及准入，不能直接放入现有队列。
+- 当前为单一 **168 KiB** MPSC 固定槽队列（P4b-g 为完整标准 `sensor_gps` 扩容），普通记录准入上限严格保留至少 **8 KiB** 事件容量；运行时最大记录 152 B。生产者只做有界 `try_record`，不调用 SD/FAT。
+- 当前已接入的 11 个 topic 均小于 152 B（`sensor_gps` 147 B 为最大）；后续标准 `esc_status` 汇总超过此上限，接入前须调整固定记录/队列布局并重新核验 RAM、编码及准入，不能直接放入现有队列。
 - 单一 LoggerControl 状态机提供 start/stop/sync/status/apply_config；stop 先切 Stopping 阻止新记录，再清空队列、对齐 staging、flush file/fs、释放 FAT 所有权并拉低 PC13。错误态也允许重新 start，新会话始终创建新文件。
 - sync 周期运行时范围 100–10000 ms，默认 1000 ms；修改只影响后续同步，不改变 ULog schema 或数据采样率。USB 原始控制台、MAVLink Console 和标准 logging commands 共用该状态机。
 - 普通记录入口目标 ≤5 us；关全局中断区每次 ≤2 us。大块编码/复制/SD 等待均在临界区外；错误计数更新不会递归产生日志。
 - 写入 staging **32 KiB**，32 B 对齐；定义区与每次 sync 用兼容未知消息补齐到 512 B，保持块地址/长度对齐。当前位于 AXI、D-cache 关闭，IDMA 可达性仍须实测。
 - 初始流量上限 **256000 B/s**。当前是固定槽而非紧凑字节环：1024 槽中普通记录最多 960 槽，每条 IMU 样本占两槽。M1 提案共 1434 条/s，保守按全部记录计算约 **0.67 s** 无消费窗口；不能用 128 KiB/字节率声称更长缓冲，后续改变槽布局须重算。
-### 3.1 dropout 定量分析（2026-11-03）
-
-**当时场景**（`b2e70b0ecc7ab844`，IMU ULog 仍为 1 kHz）：全量记录 5.3 s，普通队列丢 **5685 条**、4 个 dropout（总 2.3 s、最大 1303 ms）、`high_water_bytes=130020`（见 [P4p 记录](acceptance/ina219/README.md)）。
+- 当前 M1 验收复用 5 分钟联合运行并要求正常段零 dropout；卡资格仍可另做 30 分钟观察。持续有效吞吐目标 ≥512000 B/s，32 KiB 写入 p99 ≤50 ms、观测最大 ≤250 ms。
+- 记录环高水位 75% 报警并停用可选 trace；满时丢记录、计数与记录缺口，采样任务继续。事件区也有上限，重复错误合并计数；磁盘写失败保留 USB/遥测诊断。
 
 Cybflight `crates/drivers/src/blackbox_storage.rs` 的 `BlockStore` 是异步 512 B 单块接口；实际应用 `blackbox/sdmmc_block.rs` 另有 CMD25 合并和 32 KiB static 缓冲。其上游注释中的 64 KiB/8 kHz 启动问题、吞吐与停顿记录均不是本板实测。
 
 FAT 已固定为 `embedded-fatfs` commit `518528cc111fcf65c48abbdeb80735a38eada112`，配套 `block-device-adapters`、`embedded-partitions` 与根 `[patch.crates-io] block-device-driver`，支持 MBR FAT 与 superfloppy。文件名固定 8.3 且只创建新文件，不启用 LFN/alloc/std。
 
 HAL `embassy-stm32 0.5.0/src/sdmmc/mod.rs:1043-1142` 存在同步命令/取消等待。为避免默认无卡影响，PC13 保持低且存储任务等待显式 start；启动后的异常卡仍可能阻塞线程执行器，导致 stop/sync 不能及时执行，必须在 H-04 量化。普通 async timeout 不能抢占该忙循环。
+
+### 3.1 dropout 定量分析（2026-11-03）
+
+**当时场景**（`b2e70b0ecc7ab844`，IMU ULog 仍为 1 kHz）：全量记录 5.3 s，普通队列丢 **5685 条**、4 个 dropout（总 2.3 s、最大 1303 ms）、`high_water_bytes=130020`（见 [P4p 记录](acceptance/ina219/README.md)）。
+
+| 量 | 数值 | 依据 |
+| --- | ---: | --- |
+| 当时日志产生速率 | ≈98 kB/s | `sensor_accel`/`sensor_gyro` 各 1 kHz × 49 B（含 DATA 开销） |
+| 丢样速率 | ≈1073 条/s（≈53 kB/s） | 5685 / 5.3 s |
+| **隐含 SD 持续写入吞吐** | **≈927 条/s ≈45 kB/s（下界）** | 产生 − 丢弃 |
+| 队列充满时间 | ≈2.6 s | 136 KiB ≈ 2800 条 ÷ 1073 条/s |
+| 观测 | 4 个 dropout 共 2.3 s、最大 1303 ms | 与充满-排空循环吻合 |
+
+**结论**：不是瞬态阻塞，而是**稳态亏空** —— 产生速率约为 SD 持续吞吐的 2.2 倍，队列必然周期性充满并丢弃。AHRS 消费 1 kHz 走独立 16 槽 fan-out 队列（`next_for_ahrs`），不占 SD 带宽，与日志无关。
+
+**当前配置（200 Hz 日志 + 速率参数 + 168 KiB 队列）**：产生 ≈21 kB/s（IMU 2×200 Hz + INA 10 Hz + health/events），对 ≈45 kB/s 的隐含吞吐有 **≈2.1× 余量**，预期零 dropout。待板载实测复验（GPS/联合负载），复验命令：
+
+```sh
+.venv/bin/python tools/analyze_dropout.py <board.ulg> \
+  --record-bytes sensor_accel=44,sensor_gyro=44,rust_current_sensor=28
+```
+
+**M1 缺口警告**：M1 全预算 86–108 kB/s 仍高于隐含 45 kB/s。全部 topic 接入后联合运行会重现 dropout，除非 SD 吞吐提升（CMD25 多块写合并、SDMMC 时钟/宽度复核、sync/staging 策略）或按实际接入 topic 复核预算。第 2 节的 512 kB/s 目标与本推算的差距须在 M1 首次联合运行实测后收口。
 
 ## 4. 首轮策略与留后事项
 
