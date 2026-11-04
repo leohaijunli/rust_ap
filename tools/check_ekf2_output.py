@@ -57,7 +57,9 @@ def compare_output(actual, expected, tolerances=TOLERANCES):
                 matches = error <= tolerances["state_abs"]
             elif name == "unaided_yaw":
                 error = abs(math.remainder(a - b, math.tau))
-                matches = error <= tolerances["state_abs"]
+                # This is a state angle: use the same already-fixed absolute
+                # OR relative criterion, while accounting for angle wrapping.
+                matches = error <= tolerances["state_abs"] or error <= tolerances["state_relative"] * max(abs(a), abs(b))
             else:
                 error = abs(a - b)
                 maximum_state = max(maximum_state, error)

@@ -4,10 +4,29 @@ import unittest
 from pathlib import Path
 
 from ekf2_output import write_inputs
-from check_ekf2_output import compare_output
+from check_ekf2_output import compare_output, CPP_TOLERANCES
 
 
 class OutputInputTests(unittest.TestCase):
+    def test_wrapped_yaw_uses_the_already_fixed_relative_state_criterion(self):
+        import gzip
+        baseline = Path(__file__).resolve().parents[1] / "tests/data/ekf2/output_nominal/output.csv.gz"
+        with gzip.open(baseline, "rt", encoding="utf-8") as file:
+            reader = csv.reader(file)
+            header, row = next(reader), next(reader)
+        i = header.index("unaided_yaw")
+        row[i] = "0.758576274"
+        with tempfile.TemporaryDirectory() as temporary:
+            expected, actual = Path(temporary) / "expected.csv", Path(temporary) / "actual.csv"
+            expected.write_text(",".join(header) + "\n" + ",".join(row) + "\n", encoding="utf-8")
+            changed = row.copy()
+            changed[i] = "0.758575261" # Exact CI discrepancy; relative error remains below 1e-5.
+            actual.write_text(",".join(header) + "\n" + ",".join(changed) + "\n", encoding="utf-8")
+            self.assertEqual(compare_output(actual, expected, CPP_TOLERANCES)["rows"], 1)
+            changed[i] = "0.7585"
+            actual.write_text(",".join(header) + "\n" + ",".join(changed) + "\n", encoding="utf-8")
+            with self.assertRaises(ValueError): compare_output(actual, expected, CPP_TOLERANCES)
+
     def test_output_comparison_rejects_time_numeric_and_global_position_errors(self):
         baseline = Path(__file__).resolve().parents[1] / "tests/data/ekf2/output_nominal/output.csv.gz"
         import gzip

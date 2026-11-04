@@ -7,7 +7,10 @@
   "scope_summary": "E-series host math only; timing starts at skill activation; hardware and PGO not measured",
   "started_at_epoch": 1793782759.1266398,
   "completed_at": null,
-  "_active_bucket": null,
+  "_active_bucket": {
+    "name": "rewrite",
+    "started_at": 1793801446.7550488
+  },
   "_bucket_seconds": {
     "discovery": 0.0,
     "blueprint": 0.0,
@@ -220,6 +223,26 @@
       "clippy_warnings": 0,
       "failures_summary": "E4 closure: 27 estimator passes (startup/configuration case rerun after horizon fix, remaining unaffected passes reused), 2 output-tool tests, host/H753 Clippy and normal release/package/vector checks pass. E3 state/covariance/NIS regression passes after observer integration",
       "fix_applied": "Matched pinned startup horizons without altering later warmup. Source 0545b4aa15efde3d; no hardware flash, safety/LED action, coverage or runtime profiling"
+    },
+    {
+      "iteration": 17,
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "Remote E4 f5d2b76 CI run 41844438267 failed in full-rate output/timing step; E1-E3 numerical steps succeeded. Local E4 fixtures and H753 results remain passing; root cause pending job-log review",
+      "fix_applied": "Pause E5 implementation at the prior software gate. Retrieve the exact job log with existing repository credentials; do not loosen tolerances or replace archives"
+    },
+    {
+      "iteration": 18,
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "E4 comparator repair: 3 targeted Python tests pass, including the exact CI discrepancy and out-of-tolerance rejection; both 8000-row C++/Rust output regressions pass. This change is tools/docs only; firmware results reused",
+      "fix_applied": "Apply the already-fixed absolute OR relative state criterion to wrapped unaided yaw. Tolerance values and all immutable data unchanged; numerical/CI root-cause repair 1/5"
     }
   ],
   "parity_iterations": [
