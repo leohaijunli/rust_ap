@@ -19,10 +19,28 @@ jobs:
           repository: PX4/PX4-Autopilot
           ref: d6f12ad1c4f70ad3230afd7d86e971421e02fef4
           path: target/px4-ekf2-source
-          sparse-checkout: src/modules/ekf2
+          sparse-checkout: |
+            cmake
+            src/modules/ekf2
+            src/lib/matrix
+            src/lib/mathlib
+            src/lib/geo
+            src/lib/lat_lon_alt
+            src/lib/atmosphere
+            src/lib/world_magnetic_model
+            platforms/common/include
+            msg
           persist-credentials: false
       - name: Check EKF2 parameter catalog
         run: .venv/bin/python tools/gen_params.py --root target/px4-ekf2-source --check
+      - name: Build fixed PX4 host golden reference
+        run: .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source
+      - name: Check shared IMU intake and committed golden baseline
+        run: |
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          cargo test --example ekf2_input --target "$host" --locked
+          cargo clippy --example ekf2_input --target "$host" --locked -- -D warnings
+          .venv/bin/python tools/check_ekf2_host.py
       - name: Host tests, lint, H753 build and package checks
         run: bash tools/firmware.sh check
       - name: Separate fault-injection build (never flashed in CI)

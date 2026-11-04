@@ -5,7 +5,7 @@
 ## 1. 结论与执行边界
 
 - EKF2 最终替代 M1 的 Mahony 姿态基线，但**不改变当前 M1 数据链验收顺序**。E0（host-only 基础设施）可先行；E1 及之后的板上融合仍按 `P6a-e / EKF-01～03` 的依赖放行。
-- 保留 PX4 的 **24 状态布局**，不用 16 状态裁剪版；未启用状态用激活掩码和零方差关闭。
+- 保留固定 PX4 的 **24 维误差状态/协方差**与 **25 个名义状态（含地形）**，不用 16 状态裁剪版；四元数是 4 个名义分量，但姿态误差只有 3 维。
 - 传感器范围按 **IMU、GNSS、气压、磁力计、雷达高度计** 五类设计。当前固件只有 SPI2 ICM-42688-P；BMP388/BMM150 驱动、GNSS 实物数据和雷达高度计硬件仍是前置条件，不能用虚构数据占位。
 - 算法可替换：固件只依赖 `NavFilter`；EKF2 内部再分 `Core` / `Gate` / `Supervisor` / `AidSource`。
 - 参数从固定 PX4 YAML 生成，保留全部 `EKF2_*` 名称；不新建第二套运行时参数系统，最终接入现有 `src/core/parameters.rs` 与 FRAM 双槽存储。
@@ -15,13 +15,21 @@
 
 | 项 | v1 | v2 |
 | --- | --- | --- |
-| 状态维度 | 裁到 16 | 保留 PX4 24 状态布局，激活掩码关闭未用状态 |
+| 状态维度 | 裁到 16 | 对齐固定 PX4：24 维误差状态、25 个名义状态，含地形 |
 | 传感器 | IMU/GPS/气压/磁力计 | 加入雷达高度计与地形估计 |
 | 结构 | 单一滤波器 | `NavFilter` / `AidSource` / `Core` 分层 |
 | 参数 | 未涉及 | 从 PX4 YAML 生成，名称/类型/默认值/范围对齐 |
 | 输出 | 单解 | 主解算（含 GPS）+ 独立无 GPS 解算 |
 
-24×24 f32 协方差约 2.3 kB，H7 内存不是约束。保留 PX4 索引顺序（四元数 0-3、速度 4-6、位置 7-9、陀螺零偏 10-12、加计零偏 13-15、地磁 16-18、磁零偏 19-21、风 22-23）可直接对照 PX4 `estimator_states`，减少对拍时的索引映射。
+24×24 f32 协方差为 2304 B。固定基线 `EKF/python/ekf_derivation/generated/state.h` 定义名义状态 25 个分量，但 `State::size=24` 是误差维度；不能把旧版四元数占 4 维的索引用于协方差。
+
+| 量 | 名义状态索引 | 误差状态/协方差索引 |
+| --- | --- | --- |
+| 姿态 | 四元数 0–3 | 旋转误差 0–2 |
+| 速度 / 位置 | 4–6 / 7–9 | 3–5 / 6–8 |
+| 陀螺 / 加计零偏 | 10–12 / 13–15 | 9–11 / 12–14 |
+| 地磁 / 磁零偏 | 16–18 / 19–21 | 15–17 / 18–20 |
+| 风 / 地形 | 22–23 / 24 | 21–22 / 23 |
 
 ## 3. 与当前工程的对齐
 
@@ -67,11 +75,13 @@ pub trait NavFilter {
 }
 ```
 
-第二层是 EKF2 内部的 aid source。状态维度固定为 PX4 的 24，用 `StateVector` / `Covariance` 别名而不是 const 泛型，避免为不存在的其他维度付出复杂度：
+第二层是 EKF2 内部的 aid source。名义状态与误差状态分别使用固定别名，不使用 const 泛型：
 
 ```rust
 pub const STATE_COUNT: usize = 24;
-pub type StateVector = [f32; STATE_COUNT];
+pub const NOMINAL_STATE_COUNT: usize = 25;
+pub type StateVector = [f32; NOMINAL_STATE_COUNT];
+pub type ErrorStateVector = [f32; STATE_COUNT];
 pub type Covariance = [[f32; STATE_COUNT]; STATE_COUNT];
 
 pub trait AidSource<P> {
@@ -93,13 +103,13 @@ pub trait AidSource<P> {
 
 | 传感器 | PX4 对应输入 | 测量模型 | 当前前置条件 |
 | --- | --- | --- | --- |
-| IMU | `sensor_combined` | 预测输入；积 delta angle/velocity（含 coning/sculling），降到约 100 Hz；原始 IMU 供输出预测器 | 已有 8 kHz ICM-42688-P；需补积分/降采样 |
+| IMU | `vehicle_imu`（多实例）/ `sensor_combined`（单实例） | 预测输入；积 delta angle/velocity（含 coning/sculling），降到约 100 Hz；原始 IMU 供输出预测器 | 已有 8 kHz ICM-42688-P；需补积分/降采样 |
 | GNSS | `vehicle_gps_position` | 位置 3 + 速度 3，标量序贯；`EKF2_GPS_DELAY` 对齐；局部 NED 原点 | P4b-g 实物数据与 H-10 |
 | 气压 | `vehicle_air_data` | 高度标量；处理 `EKF2_PCOEF_*` / `EKF2_BARO_*` | BMP388 驱动未实现 |
 | 雷达高度计 | `distance_sensor` | 离地高度 = 斜距·cos(倾角)；地形估计或高度基准 | 硬件/安装/量程待补（H-12） |
 | 磁力计 | `vehicle_magnetometer` | 3D 融合（地磁与磁零偏状态）或仅偏航 | BMM150 驱动未实现；无 GPS 时磁偏角需参数 |
 
-雷达高度计优先采用**单状态地形估计**：独立 1 状态 KF 估计地面海拔，高度计只更新它，再由气压高度与离地高度反推地形。这样能复用 PX4 `EKF2_RNG_*` 的条件式使用、门限、噪声、安装位置偏置和质量时间参数。作为高度基准只适用于平坦地面，作为后续简化选项。
+地形是固定基线的误差状态 23 / 名义状态 24，范围传感器可更新高度与地形的相关状态；不另建独立 1 状态 KF 冒充原版 EKF2。`EKF2_RNG_*` 的条件式使用、门限、噪声、安装位置偏置和质量时间参数随 E3 对拍落实。
 
 必须处理：最小/最大量程、信号质量、倾角超限、安装位置杠杆臂补偿、数据丢失与恢复。
 
@@ -221,13 +231,31 @@ DWT 测预测/标量更新/整轮最坏时间，初始目标整轮 <1 ms；热�
 | --- | --- |
 | 参数生成 | `tools/gen_params.py` 从 `d6f12ad…` 的 20 个 YAML 生成 142 条 `EKF2_*`，全部 `Support::Planned`；`--check` 与仓库表一致，版权与来源已登记 |
 | 参数契约 | `src/core/estimator/mod.rs` 的 host 测试校验数量、名称长度/字符集/唯一性、默认值有限且在范围内、类型与默认值变体一致 |
-| 接口骨架 | `NavFilter`、`AidSource`、`Measurement`/`AidId`、`ControlStatus`、`ScalarBatch` 已落地；`src/lib.rs` 注册 `estimator` |
+| 接口骨架 | 固定源码核对后纠正为 25 名义 / 24 误差维度；`ImuDelta` 补独立积分时长与逐轴 clipping，H 使用 `ErrorStateVector`；未接入固件 |
 | 生成器测试 | `tools/test_gen_params.py` 8 项通过，含 `--check` 漂移拒绝/不改写；固定输入 `--check`、fmt 和 CI 配置核对通过 |
-| 复用软件结果 | host 102 项、host lib/普通固件 Clippy 通过；额外 `--tests` Clippy 的 3 处既有 `chunks_exact_to_as_chunks` 告警保留，未改无关 DroneCAN 测试 |
-| 普通构建/打包 | 原生 Windows release 与 ELF/bin/PX4 分区/向量检查通过；source=`f79daad8874002c4`，raw/padded=`412720/412736 B`，static RAM=`268680 B`；未刷写 |
-| CI | 固定 PX4 checkout + `--check` 已接入；本轮核对配置与相同输入的本地检查，不预写远程结论 |
-| 尚未开始 | `Core`/`Gate`/`Supervisor`、IMU 降采样、`nav-sim`/`golden_cpp`、回放与对拍 |
+| host 参考 | GCC 15.2 编译固定 PX4 `core_imu`，保留原版缓冲、预测及伪观测/约束；从 YAML 应用 23 个相关默认值，不是独立纯预测 oracle |
+| 输入与黄金数据 | 10 s / 400 Hz，先静止 1 s 再 5°/s 偏航；C++ 与 Rust DTO 均消费 4000 条，输入摘要 `f89e278bed7eae06` 一致；1001 步状态/完整协方差通过有限、非负对角与对称检查，最大对称误差 0、最大方差 102.850784 |
+| 数据存储 | `tests/data/ekf2/imu_yaw/{imu,truth,golden}.csv.gz` 与 `manifest.json` 已生成，纳入仓库；原始黄金 CSV 2533266 B → 434688 B，记录固定 ref、源/工具/二进制 hash、参数、种子与容差；CI 只校验，不自动覆盖 |
+| 本轮软件检查 | estimator 6 项、Rust intake 2 项、Python 12 项通过（含实际 ULog 文件、单实例 f32 换算、基线不可覆盖/篡改拒绝）；host lib/example Clippy 通过，97 项未受影响 Rust 用例复用。旧 DroneCAN `--tests` Clippy 告警保持，不扩改 |
+| 普通构建/打包 | 原生 Windows release 与 ELF/bin/PX4 分区/向量检查通过；source=`3de5f0f08f2056b4`，raw/padded=`412720/412736 B`，static RAM=`268680 B`；未刷写 |
+| CI | 前次 `536a662` 的参数/软件工作流[通过](https://github.com/leohaijunli/rust_ap/actions/runs/41768366322)；本轮加入 C++ 构建、intake 和已提交黄金数据回归，远程结果不预写 |
+| 未开始/未放行 | Rust `Core`/`Gate`/`Supervisor`、积分/降采样、Rust 数值对拍、完整五传感器仿真/真实日志回放与板上融合；E1 依赖不变 |
 
-首次调用 `tools/firmware.sh build` 因 Windows checkout 的 CRLF 行尾失败；本轮改用等价的原生构建/打包命令通过，未改动该脚本。构建报告位于本地 `target/thumbv7em-none-eabihf/release/v6x-rust-led.build.json`。
+历史普通构建 `f79daad8874002c4` 的布局检查保留。Bash 构建曾因 Windows checkout 的 CRLF 失败，采用等价原生命令通过，未改脚本。本轮 C++ 快照最初遗漏 WMM 头文件，随后发现缺少 PX4 的 `-fno-strict-aliasing`；均修正为固定源码/编译约定，没有改上游数学代码。
 
-E0 尚未满足“同一输入可同时喂 C++ 与 Rust”的退出条件；黄金数据、合成仿真器与 ULog 回放随 E1 排期，必须先提供参考输出再验 Rust 预测器。当前 DTO/trait 仅为未接入固件的骨架；IMU 积分时长、序贯更新等契约在对拍前细化。E1 起的放行条件不变。
+原版延迟缓冲填充时，最早时间戳会重复；本次保留 19 次初始重复，检查最新输入递增、延迟时间不倒退且不超过输入，禁止暖机后的重复。不伪造时间戳来让检查通过。
+
+**“同一输入可喂 C++ 与 Rust”的最小 IMU 通路已建立，但只证明输入契约与 host 参考可用，不证明 Rust EKF 数值等价。** `vehicle_imu` 必须带积分字段；单实例 `sensor_combined` 按固定 `EKF2.cpp:682–686` 的 f32 rate×dt 转换，并要求对应 `sensor_selection`。当前 200 Hz 抽取的 `sensor_accel/gyro` 不能还原成等价回放输入；设备/校准切换、gyro clipping 或无效加计时间戳会显式拒绝。
+
+### 重现与扩展
+
+Ubuntu/WSL 使用已有工具环境（`tools/requirements.txt`），编译缓存和临时输出在忽略的 `target/ekf2-host/`：
+
+```sh
+python3 tools/golden_cpp/build.py --root /home/dev/PX4-Autopilot
+python3 tools/check_ekf2_host.py
+python3 tools/ekf2_replay.py ulog recording.ulg target/ekf2-host/imu.csv --instance 0
+python3 tools/ekf2_replay.py ulog recording.ulg target/ekf2-host/imu.csv --source sensor_combined
+```
+
+`--record-baseline` 只允许首次创建，已有黄金数据拒绝覆盖；新场景使用新目录并审查后提交。C++ host 回归容差在首次对拍前固定为状态绝对 `1e-6`、协方差绝对 `1e-7`、相对 `1e-5`，不替代 E1 Rust 数值资格门。

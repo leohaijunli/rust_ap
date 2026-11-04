@@ -17,6 +17,7 @@
 | PX4 uploader 来源树 | `a2be9197b57b2d065e4c47ca7fc5b7565ee07282` | host 上传工具，使用其文件许可；与板级参考分开固定 |
 | PX4 标准消息 | 同一 v1.17.0 `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause；`msg/{SensorAccel,SensorGyro,ActuatorArmed,SensorGps}.msg` 字段与 Rust 数据边界/ULog，副本及 LICENSE 在 `tools/px4_msgs/` |
 | PX4 EKF2 参数 YAML | 同一 v1.17.0 `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause；`src/modules/ekf2/module.yaml` 与 `params_*.yaml` 共 20 文件/142 参数，经 `tools/gen_params.py` 生成 Rust 元数据；Copyright (c) 2012–2023 PX4 Development Team，复用[许可副本](../tools/px4_msgs/LICENSE) |
+| PX4 EKF host 参考 | 同一 v1.17.0 `d6f12ad1c4f70ad3230afd7d86e971421e02fef4` | BSD-3-Clause；原路径为 `src/modules/ekf2/EKF/`、matrix/mathlib、geo/lat_lon_alt 及必要头文件。仅在 host 编译不修改的数学核心；快照保留文件版权和 LICENSE，不引入板上 C++/uORB/NuttX |
 | [PyYAML](https://github.com/yaml/pyyaml) | 6.0.3 | MIT；仅供 host 参数生成及 CI 读取 YAML，固定于 `tools/requirements.txt`，不进入板上应用 |
 | libm | 0.2.16（manifest 兼容 0.2.15） | MIT OR Apache-2.0；no_std `sqrtf/atan2f/round`，P4b-g Fix2 派生与 GPS_RAW_INT 换算使用；host 测试与板上共用同一实现 |
 | [NuttX](https://github.com/PX4/NuttX) | `fb2fadf6f599c1406f052db013efd00a2518e72c` | Apache-2.0 + NOTICE/文件级来源；时钟/IRQ 配置参考 |
@@ -71,11 +72,12 @@
 | `src/core/icm42688.rs`、`src/core/config.rs`、`src/drivers/imu.rs` | 本项目 P4 纯 Rust/Embassy 实现；寄存器地址、20 B high-resolution FIFO、复位/配置/水位/周期回读流程对照固定 PX4 `d6f12ad…` 的 `src/drivers/imu/invensense/icm42688p/{InvenSense_ICM42688P_registers.hpp,ICM42688P.cpp,ICM42688P.hpp}`（BSD-3-Clause）。本项目采用 8 kHz ODR、YAW270/FLU、独立 fan-out 与 Embassy API，未链接或拷入 C++ 驱动 |
 | `src/core/px4_messages.rs`、`src/core/ulog.rs`、`tools/px4_msgs/`、fixture/检查工具 | 标准字段适配上述固定 `.msg`；本项目显式编码和 FRD 转换，保留 BSD-3-Clause 许可。DeviceId 对照同 commit 的 `Device.hpp`、`nuttx/SPI.cpp`、`drv_sensor.h`、FMUv6X `spi.cpp` 与 `spi_hw_description.h`；裁剪判据参考 `PX4Accelerometer.cpp` / `PX4Gyroscope.cpp` 的单样本 99.9% 满量程规则，未移植 FIFO 平均或 uORB 运行时 |
 | `src/core/estimator/params_generated.rs`、`tools/gen_params.py`、`tools/test_gen_params.py` | 参数表从上述固定 YAML 按 git ref 读取，保留名称/类型/默认值/范围/单位并标记 `Planned`；生成头保留 PX4 版权与许可引用，生成器和测试由本项目编写。CI 拉取同一固定 commit 后运行 `--check`，不读取 v1.18 工作树 |
-| `src/core/estimator/mod.rs`、`src/lib.rs` 的 estimator 注册 | 本项目 no_std DTO/trait 与参数契约测试；保留 24 状态别名，未移植 EKF 数学核心、未接入板上融合或第二套参数存储 |
+| `src/core/estimator/mod.rs`、`src/lib.rs` 的 estimator 注册 | 本项目 no_std DTO/trait 与参数契约测试；按固定 `generated/state.h` 区分 25 名义状态与 24 误差协方差，IMU 保留独立积分时长和逐轴 clipping；未移植 Rust 数学核心、未接入板上融合或第二套参数存储 |
+| `tools/golden_cpp/`、`tools/ekf2_replay.py`、`tools/check_ekf2_host.py`、`examples/ekf2_input.rs`、`tests/data/ekf2/imu_yaw/` | 本项目 host 构建/编解码、合成与校验工具；C++ 库从固定 git ref 读取，援助状态只生成 `.msg` 的数据字段，不实现 uORB。源文件/工具/二进制 hash、应用参数与压缩黄金数据校验记录在数据集 `manifest.json`；Rust probe 只验证输入，未实现解算 |
 | `tools/enter_bootloader.py`、`tools/test_enter_bootloader.py`、`tools/firmware.sh` | 本项目 host 上传入口；复用应用既有 `!bootloader` 协议和原 PX4 uploader，不修改或替换 bootloader |
 | `tools/setup_ubuntu.sh`、`.run/Setup Ubuntu.run.xml` | 本项目 Ubuntu 工具入口；下载上述固定 uploader 的 `Tools/px4_uploader.py` 到忽略的 `.venv/`，SHA-256=`f05929e1035e693005677e088e4e7085503b2e8ab3d7c8785f7bd84cd48880f8`；保留上游脚本许可，未修改上游代码 |
 | `src/core/ina219.rs`、`src/drivers/ina219.rs` 与遥测/诊断接线 | 本项目 SEN0291 纯 Rust 实现，参考固定 LibDriver `src/driver_ina219.{c,h}` / example 与 TI SBOS448G（23–24 页 CNVR/OVF/FS0）；采用工程师确认的 10 mΩ/8 A、±80 mV、CAL=16776（FS0 清零）、单次转换和同次 V×I。工程师提供的根目录 `ina219/` C++ 文件为参考，不链接 uORB/NuttX/C++ |
-| `.opencode/skills/`、`AGENTS.md` | 工程师要求安装并应用的 clean-code / code-simplifier 项目适配；固定来源、改动与许可见[技能说明](ai-coding-skills.md) |
+| `.opencode/skills/`、`AGENTS.md` | 工程师要求安装的 clean-code / code-simplifier / rust-embedded 项目适配；新技能固定 full-stack-skills `b8a6af74af28ee86b8cbbbc3075cde0b31a5155e`，保留 Apache-2.0 许可和三份参考，不替换 Embassy/bootloader；[技能说明](ai-coding-skills.md) |
 
 主工程没有拷入候选协议实现或引入 C/C++ FFI；P4b-a 为依据固定公开协议和参考向量编写的纯 Rust 实现。Python、参考 C 生成器只在 host 使用；原 PX4 bootloader 按恢复要求保留，外接 ESC/H-RTK 的厂商固件不属于本项目飞控应用。
 

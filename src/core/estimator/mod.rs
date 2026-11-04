@@ -9,11 +9,13 @@ pub use params_generated::EKF2_PARAMS;
 /// Monotonic microseconds since boot, the base of every sensor sample.
 pub type Timestamp = u64;
 
-/// PX4 EKF2 state count. The layout is unchanged so `estimator_states` logs
-/// compare without index remapping.
+/// PX4 v1.17.0 error-state dimension, including terrain. Attitude error has
+/// three components; the nominal state stores a four-component quaternion.
 pub const STATE_COUNT: usize = 24;
+pub const NOMINAL_STATE_COUNT: usize = 25;
 
-pub type StateVector = [f32; STATE_COUNT];
+pub type StateVector = [f32; NOMINAL_STATE_COUNT];
+pub type ErrorStateVector = [f32; STATE_COUNT];
 pub type Covariance = [[f32; STATE_COUNT]; STATE_COUNT];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +64,9 @@ pub struct ImuDelta {
     pub timestamp: Timestamp,
     pub delta_angle_rad: [f32; 3],
     pub delta_velocity_m_s: [f32; 3],
+    pub delta_angle_dt_s: f32,
+    pub delta_velocity_dt_s: f32,
+    pub delta_velocity_clipping: [bool; 3],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -217,7 +222,7 @@ impl ControlStatus {
 pub struct ScalarUpdate {
     pub innovation: f32,
     pub innovation_variance: f32,
-    pub observation: StateVector,
+    pub observation: ErrorStateVector,
 }
 
 impl ScalarUpdate {
@@ -293,6 +298,14 @@ pub trait AidSource<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nominal_state_and_error_covariance_keep_distinct_px4_dimensions() {
+        assert_eq!(StateVector::default().len(), 25);
+        assert_eq!(ErrorStateVector::default().len(), 24);
+        assert_eq!(core::mem::size_of::<Covariance>(), 24 * 24 * 4);
+        assert_eq!(ScalarUpdate::EMPTY.observation.len(), 24);
+    }
 
     #[test]
     fn ekf2_catalog_matches_the_px4_contract() {
