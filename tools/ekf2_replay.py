@@ -205,7 +205,9 @@ def open_csv(path):
     return path.open(encoding="utf-8", newline="")
 
 
-def check_golden(path):
+def check_golden(path, allowed_fault_mask=0):
+    if not isinstance(allowed_fault_mask, int) or not 0 <= allowed_fault_mask <= 0xffffffff:
+        raise ValueError("invalid allowed reference fault mask")
     count = 0
     previous = 0
     previous_input = 0
@@ -232,7 +234,7 @@ def check_golden(path):
                 if time != first_delayed:
                     raise ValueError("repeated delayed timestamp after warm-up")
                 warmup_repeats += 1
-            if integer(row["fault_status"]) != 0:
+            if integer(row["fault_status"]) & ~allowed_fault_mask:
                 raise ValueError("PX4 reference reports a fault")
             state = [float(row[f"state_{index}"]) for index in range(25)]
             covariance = [[float(row[f"cov_{r}_{c}"]) for c in range(24)] for r in range(24)]

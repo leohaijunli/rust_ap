@@ -11,6 +11,7 @@ use super::{
     imu_downsampler::{DownSampler, ImuBuffer, MAX_IMU_BUFFER},
     math::{self, square, GlobalPosition},
     output_predictor::{OutputParams, OutputPredictor},
+    reset_status::{ResetReport, ResetStatus},
     Covariance, FilterFault, FilterHealth, ImuDelta, NavOutput, ParamValue, StateVector, Timestamp,
     STATE_COUNT,
 };
@@ -53,6 +54,10 @@ pub(super) trait ControlExtension {
     }
     fn shift_altitude(&mut self, _delta: f32) -> Result<(), FilterFault> {
         Ok(())
+    }
+    /// Height and vertical-velocity innovation/variance for the GNSS reference.
+    fn vertical_innovations(&self) -> [(f32, f32); 2] {
+        [(0.0, 0.0); 2]
     }
 }
 struct NoExtension;
@@ -188,6 +193,9 @@ pub struct ImuEkf {
     buffer: ImuBuffer,
     output_params: OutputParams,
     output_predictor: OutputPredictor,
+    resets: ResetStatus,
+    last_good_vertical_accel: Timestamp,
+    last_bad_vertical_accel: Timestamp,
     pub(super) state: StateVector,
     pub(super) covariance: Covariance,
     pub(super) global: GlobalPosition,
@@ -255,6 +263,9 @@ impl ImuEkf {
             buffer: ImuBuffer::new(buffer_length),
             output_params: OutputParams::default(),
             output_predictor: OutputPredictor::new(buffer_length, OutputParams::default()),
+            resets: ResetStatus::default(),
+            last_good_vertical_accel: 0,
+            last_bad_vertical_accel: 0,
             state,
             covariance: [[0.0; 24]; 24],
             global: GlobalPosition::default(),
@@ -446,6 +457,20 @@ impl ImuEkf {
     pub fn output_tracking_error(&self) -> [f32; 3] {
         self.output_predictor.tracking_error()
     }
+    pub fn reset_report(&self) -> ResetReport {
+        self.resets.report
+    }
+    pub(super) fn quaternion_reset_this_update(&self) -> bool {
+        self.resets.quaternion_changed()
+    }
+    pub(super) fn record_position_reset(&mut self, before: [f32; 2]) {
+        let after = self.global.project(self.origin.unwrap_or_default());
+        self.resets
+            .horizontal_position([after[0] - before[0], after[1] - before[1]]);
+    }
+    pub(super) fn record_terrain_reset(&mut self, delta: f32) {
+        self.resets.hagl(delta);
+    }
     pub fn output_vertical_derivative(&self) -> f32 {
         self.output_predictor.vertical_derivative()
     }
@@ -466,6 +491,9 @@ impl ImuEkf {
             .reset_horizontal_velocity([self.state[4] - previous[0], self.state[5] - previous[1]]);
         self.output_predictor
             .reset_vertical_velocity(self.state[6] - previous[2]);
+        self.resets
+            .horizontal_velocity([self.state[4] - previous[0], self.state[5] - previous[1]]);
+        self.resets.vertical_velocity(self.state[6] - previous[2]);
     }
 
     pub(super) fn horizontal_aiding(&self) -> bool {
@@ -477,6 +505,58 @@ impl ImuEkf {
     fn vertical_position_aiding(&self) -> bool {
         self.control & ((1 << 11) | (1 << 9) | (1 << 10)) != 0
     }
+    pub(super) fn vertical_velocity_aiding(&self) -> bool {
+        self.control & (1 << 44) != 0
+    }
+    pub(super) fn height_reset_required(&self) -> bool {
+        self.timed_out(self.last_good_vertical_accel, 500_000)
+            || self.timed_out(self.last_height_fuse, 5_000_000)
+    }
+    fn check_vertical_acceleration(
+        &mut self,
+        checks: [(u8, f32, f32); 4],
+        clipping_frequently: bool,
+    ) {
+        let ratios = checks.map(|(_, innovation, variance)| {
+            if variance < f32::EPSILON {
+                0.0
+            } else {
+                innovation / libm::sqrtf(variance)
+            }
+        });
+        let medium = ratios.iter().any(|ratio| *ratio > 3.0);
+        let high = (0..4).any(|i| {
+            (0..4).any(|j| checks[i].0 != checks[j].0 && ratios[i] > 3.0 && ratios[j] > 1.0)
+        });
+        let bad = high || (clipping_frequently && medium);
+        if bad {
+            self.last_bad_vertical_accel = self.delayed_us;
+        } else {
+            self.last_good_vertical_accel = self.delayed_us;
+        }
+        let active = if self.px4_fault & (1 << 10) != 0 {
+            self.last_bad_vertical_accel != 0
+                && self.last_bad_vertical_accel.saturating_add(3_000_000) > self.delayed_us
+        } else {
+            bad
+        };
+        if active {
+            self.px4_fault |= 1 << 10;
+        } else {
+            self.px4_fault &= !(1 << 10);
+        }
+    }
+    pub(super) fn reset_vertical_velocity(&mut self, velocity: f32, variance: f32) {
+        let delta = velocity - self.state[6];
+        self.state[6] = velocity;
+        if variance.is_finite() {
+            self.reset_variance(5, variance.max(0.0001));
+        }
+        self.reset_variance(8, self.covariance[8][8]);
+        self.output_predictor.reset_vertical_velocity(delta);
+        self.resets.vertical_velocity(delta);
+        self.last_vertical_velocity_fuse = self.delayed_us;
+    }
 
     pub(super) fn reset_altitude(&mut self, altitude: f32, variance: f32) {
         let delta = -(altitude - self.global.altitude_m);
@@ -486,7 +566,9 @@ impl ImuEkf {
         }
         if self.range_params.is_some() {
             self.state[24] += delta;
+            self.resets.hagl(delta);
         }
+        self.resets.height(delta);
         self.altitude_delta += delta;
         self.output_predictor.reset_altitude(altitude);
         self.last_height_fuse = self.delayed_us;
@@ -507,10 +589,14 @@ impl ImuEkf {
         let previous = self.quaternion();
         let q = math::from_rotation(math::with_yaw(math::rotation(self.quaternion()), yaw));
         self.state[..4].copy_from_slice(&q);
-        self.reset_variance(2, variance.max(0.0001));
+        if variance.is_finite() && variance > f32::EPSILON {
+            self.reset_variance(2, variance);
+        }
         self.last_heading_fuse = self.delayed_us;
         self.output_predictor
             .reset_quaternion(math::normalize(math::multiply(q, math::inverse(previous))));
+        self.resets
+            .quaternion(math::normalize(math::multiply(q, math::inverse(previous))));
     }
 
     /// Relative attitude-core validity only; no navigation validity is implied.
@@ -764,6 +850,7 @@ impl ImuEkf {
                 && (self.control & FAKE_POS == 0 || vertical_projection.abs() > 0.966);
             self.accel_bias_inhibit[axis] = self.params.imu_ctrl & 2 == 0
                 || high_manoeuvre
+                || self.px4_fault & (1 << 10) != 0
                 || sample.delta_velocity_clipping[axis]
                 || !observable;
         }
@@ -773,7 +860,7 @@ impl ImuEkf {
         let dt = 0.5 * (sample.delta_angle_dt_s + sample.delta_velocity_dt_s);
         let gyro_var = square(self.params.gyro_noise);
         let accel_var = sample.delta_velocity_clipping.map(|clipped| {
-            square(if clipped {
+            square(if clipped || self.px4_fault & (1 << 10) != 0 {
                 4.9
             } else {
                 self.params.accel_noise
@@ -885,6 +972,7 @@ impl ImuEkf {
         extension: &mut X,
     ) -> Result<(), FilterFault> {
         self.previous_control = self.control;
+        self.resets.begin_update();
         self.altitude_delta = 0.0;
         let mut aiding = self.aiding.take();
         let mut range = self.range.take();
@@ -912,6 +1000,38 @@ impl ImuEkf {
             } else {
                 self.px4_fault &= !BAD_ACCEL_CLIPPING;
             }
+            let gnss = extension.vertical_innovations();
+            let baro = aiding.as_ref().map(|a| a.baro_status);
+            let range_status = range.as_ref().map(|a| a.status);
+            let active = |bit: u64, value: (f32, f32)| {
+                if self.control & bit != 0 {
+                    value
+                } else {
+                    (0.0, 0.0)
+                }
+            };
+            let baro = active(
+                1 << 9,
+                baro.map(|a| (a.innovation[0], a.variance[0]))
+                    .unwrap_or_default(),
+            );
+            let height = active(1 << 11, gnss[0]);
+            let velocity = active(1 << 44, gnss[1]);
+            let range_check = active(
+                1 << 10,
+                range_status
+                    .map(|a| (-a.innovation[0], a.variance[0]))
+                    .unwrap_or_default(),
+            );
+            self.check_vertical_acceleration(
+                [
+                    (0, baro.0, baro.1),
+                    (1, height.0, height.1),
+                    (1, velocity.0, velocity.1),
+                    (2, range_check.0, range_check.1),
+                ],
+                warning[2] || bad_clipping,
+            );
             // With all external aids compiled out there is no falling-likelihood
             // evidence, and no at_rest system flag to enable zero gyro/velocity.
             if let Some(aiding) = &mut aiding {
@@ -1024,6 +1144,9 @@ impl ImuEkf {
         self.output_predictor.reset_lat_lon(self.global);
         self.output_predictor
             .reset_horizontal_velocity([self.state[4] - previous[0], self.state[5] - previous[1]]);
+        self.resets.horizontal_position([0.0; 2]);
+        self.resets
+            .horizontal_velocity([self.state[4] - previous[0], self.state[5] - previous[1]]);
         self.last_fake_pos_fuse = self.delayed_us;
     }
 
@@ -1079,6 +1202,11 @@ impl ImuEkf {
         self.output_predictor
             .reset_vertical_velocity(self.state[6] - previous);
         self.output_predictor.reset_altitude(self.global.altitude_m);
+        self.resets.vertical_velocity(self.state[6] - previous);
+        self.resets.height(0.0);
+        if self.range_params.is_some() {
+            self.resets.hagl(0.0);
+        }
         self.last_fake_hgt_fuse = self.delayed_us;
     }
 
@@ -1303,6 +1431,48 @@ impl ImuEkf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resets_decorrelate_covariance_and_record_velocity_height_and_yaw_changes() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        filter.initialize_covariance();
+        filter.state[6] = 3.0;
+        filter.covariance[8][8] = 4.0;
+        filter.covariance[5][8] = 0.2;
+        filter.covariance[8][5] = 0.2;
+        filter.reset_vertical_velocity(0.0, 10.0);
+        assert_eq!(filter.covariance[5][5], 10.0);
+        assert_eq!(filter.covariance[8][8], 4.0);
+        assert_eq!(filter.covariance[5][8], 0.0);
+        assert_eq!(filter.reset_report().velocity_delta[2], -3.0);
+        filter.reset_altitude(100.0, 9.0);
+        assert_eq!(filter.covariance[8][8], 9.0);
+        assert_eq!(filter.global.altitude_m, 100.0);
+        assert_eq!(filter.reset_report().position_delta[2], -100.0);
+        filter.reset_yaw(0.2, 0.04);
+        assert_eq!(filter.covariance[2][2], 0.04);
+        assert_eq!(filter.reset_report().counts, [1, 0, 1, 0, 1, 0]);
+        assert!(
+            (math::to_axis_angle(filter.reset_report().quaternion_delta)[2] - 0.2).abs() < 1e-6
+        );
+    }
+
+    #[test]
+    fn vertical_acceleration_evidence_uses_independent_references_and_strict_probation() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        filter.delayed_us = 1_000_000;
+        filter.check_vertical_acceleration(
+            [(0, 4.0, 1.0), (1, 2.0, 1.0), (1, 0.0, 0.0), (2, 0.0, 0.0)],
+            false,
+        );
+        assert_ne!(filter.px4_fault & (1 << 10), 0);
+        filter.delayed_us = 3_999_999;
+        filter.check_vertical_acceleration([(0, 0.0, 0.0); 4], false);
+        assert_ne!(filter.px4_fault & (1 << 10), 0);
+        filter.delayed_us = 4_000_000;
+        filter.check_vertical_acceleration([(0, 0.0, 0.0); 4], false);
+        assert_eq!(filter.px4_fault & (1 << 10), 0);
+    }
 
     #[test]
     fn output_configuration_is_explicit_and_reset_preserves_the_snapshot() {
@@ -1586,5 +1756,22 @@ mod tests {
             clipped.update(&stationary(timestamp)).unwrap();
         }
         assert_eq!(clipped.fault_status(), 0);
+    }
+
+    #[test]
+    fn bad_vertical_acceleration_inhibits_every_accel_bias_axis_until_recovery() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        for timestamp in (2500..=800_000).step_by(2500) {
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        let baseline = filter.accel_bias_inhibit;
+        filter.px4_fault |= 1 << 10;
+        filter.update(&stationary(802_500)).unwrap();
+        assert!(filter.accel_bias_inhibit.iter().all(|inhibit| *inhibit));
+        filter.px4_fault &= !(1 << 10);
+        for timestamp in (805_000..=1_600_000).step_by(2500) {
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        assert_eq!(filter.accel_bias_inhibit, baseline);
     }
 }

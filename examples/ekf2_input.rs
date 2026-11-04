@@ -139,12 +139,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     let flags = args.get(4..).unwrap_or_default();
     let nis = flags.iter().any(|flag| flag == "--nis");
     let output_mode = flags.iter().any(|flag| flag == "--output");
+    let reset_mode = flags.iter().any(|flag| flag == "--resets");
+    let baro_reset = flags.iter().any(|flag| flag == "--baro-reset");
+    let gsf_yaw = flags.iter().any(|flag| flag == "--gsf-yaw");
     let lever_arm = flags.iter().any(|flag| flag == "--lever-arm");
     if !(2..=6).contains(&args.len())
-        || flags
-            .iter()
-            .any(|flag| !["--nis", "--lever-arm", "--output"].contains(&flag.as_str()))
-        || (nis && output_mode)
+        || flags.iter().any(|flag| {
+            ![
+                "--nis",
+                "--lever-arm",
+                "--output",
+                "--resets",
+                "--baro-reset",
+                "--gsf-yaw",
+            ]
+            .contains(&flag.as_str())
+        })
+        || (u8::from(nis) + u8::from(output_mode) + u8::from(reset_mode) > 1)
+        || (baro_reset && gsf_yaw)
     {
         return Err("Usage: ekf2_input INPUT.csv [OUTPUT.csv [BARO_MAG.csv [--nis]]]".into());
     }
@@ -278,6 +290,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut filter = if five_sensor {
         let mut gnss_params = GnssParams::default();
         let mut range_params = RangeParams::default();
+        let mut baro_mag_params = BaroMagParams::default();
+        if baro_reset {
+            baro_mag_params.height_reference = 0;
+            gnss_params.control = 0;
+            range_params.control = 0;
+        }
+        if gsf_yaw {
+            baro_mag_params.mag_type = 5;
+        }
         if lever_arm {
             let imu = [0.03_f32, -0.02, 0.01];
             gnss_params.offset_body_m = core::array::from_fn(|i| [0.2, 0.1, -0.05][i] - imu[i]);
@@ -285,7 +306,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         let mut main = GnssEkf::new(
             ImuEkfParams::default(),
-            BaroMagParams::default(),
+            baro_mag_params,
             range_params,
             gnss_params,
             0,
@@ -322,7 +343,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 output,
                 "timestamp_us,imu_timestamp_us,control_status,fault_status"
             )?;
-            if nis {
+            if reset_mode {
+                write!(output, ",quat_resets,velocity_ne_resets,velocity_d_resets,position_ne_resets,height_resets,hagl_resets,delta_q_w,delta_q_x,delta_q_y,delta_q_z,delta_velocity_n,delta_velocity_e,delta_velocity_d,delta_position_n,delta_position_e,delta_height,delta_hagl")?;
+            } else if nis {
                 write!(output, ",baro_timestamp_us,baro_innovation,baro_variance,baro_ratio,baro_fused,baro_rejected,mag_timestamp_us")?;
                 for kind in ["innovation", "variance", "ratio"] {
                     for i in 0..3 {
@@ -432,7 +455,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                     core.control_status(),
                     core.fault_status()
                 )?;
-                if nis {
+                if reset_mode {
+                    let report = core.reset_report();
+                    for count in report.counts {
+                        write!(output, ",{count}")?;
+                    }
+                    for value in report
+                        .quaternion_delta
+                        .into_iter()
+                        .chain(report.velocity_delta)
+                        .chain(report.position_delta)
+                        .chain([report.hagl_delta])
+                    {
+                        write!(output, ",{value:.9e}")?;
+                    }
+                } else if nis {
                     let (baro, mag) = core.aid_status().ok_or("missing aid status")?;
                     write!(
                         output,

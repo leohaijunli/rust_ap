@@ -101,6 +101,11 @@ def configure_header(definitions, profile="core_imu", fixture="nominal"):
                     name = f"EKF2_{group}_POS_{'XYZ'[axis]}"
                     lines.append(f"    params.{group.lower()}_pos_body({axis}) = {gen_params.float_literal(value)}f;")
                     applied[name] = value
+        if fixture in ("gsf_yaw", "baro_reset"):
+            overrides = {"EKF2_MAG_TYPE": 5} if fixture == "gsf_yaw" else {"EKF2_HGT_REF": 0, "EKF2_GPS_CTRL": 0, "EKF2_RNG_CTRL": 0}
+            for name, value in overrides.items():
+                lines.append(f"    params.{name.lower()} = {value};")
+                applied[name] = value
         lines.append("    ekf.output_predictor().set_imu_offset(params.imu_pos_body);")
     lines.extend(["    ekf.updateParameters();", "}", ""])
     return "\n".join(lines), applied
@@ -156,7 +161,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("PX4_ROOT", "/home/dev/PX4-Autopilot")))
     parser.add_argument("--profile", choices=PROFILES, default="core_imu")
-    parser.add_argument("--fixture", choices=("nominal", "lever_arm"), default="nominal")
+    parser.add_argument("--fixture", choices=("nominal", "lever_arm", "gsf_yaw", "baro_reset"), default="nominal")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
@@ -164,8 +169,8 @@ def main():
         defaults = {"core_imu": "target/ekf2-host", "baro_mag": "target/ekf2-host-baro-mag",
                     "gnss_range": "target/ekf2-host-gnss-range"}
         if args.fixture != "nominal" and args.profile != "gnss_range":
-            raise ValueError("lever-arm fixture requires the five-sensor profile")
-        default_output = defaults[args.profile] + ("-lever-arm" if args.fixture == "lever_arm" else "")
+            raise ValueError("nondefault fixture requires the five-sensor profile")
+        default_output = defaults[args.profile] + (f"-{args.fixture.replace('_', '-')}" if args.fixture != "nominal" else "")
         output = (args.output or ROOT / default_output).resolve()
         source, include = prepare(args.root, output, args.profile, args.fixture)
         if not args.prepare_only:
@@ -184,6 +189,7 @@ def main():
             if args.profile == "gnss_range":
                 manifest["wmm_probe_sha256"] = hashlib.sha256((output / "build/wmm_probe").read_bytes()).hexdigest()
                 manifest["output_executable_sha256"] = hashlib.sha256((output / "build/golden_cpp_output").read_bytes()).hexdigest()
+                manifest["resets_executable_sha256"] = hashlib.sha256((output / "build/golden_cpp_resets").read_bytes()).hexdigest()
             manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"golden_cpp: fixed PX4 {REF}; profile={args.profile}; output={output}")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:

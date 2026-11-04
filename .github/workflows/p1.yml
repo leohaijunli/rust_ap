@@ -75,6 +75,15 @@ jobs:
           for scenario in nominal jitter; do
             .venv/bin/python tools/check_ekf2_output.py --case "$scenario" --rust "target/$host/release/examples/ekf2_input"
           done
+      - name: Qualify EKF resets and fault recovery
+        run: |
+          .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source --profile gnss_range --output target/ekf2-host-resets
+          .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source --profile gnss_range --fixture baro_reset --output target/ekf2-host-gnss-range-baro-reset
+          .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source --profile gnss_range --fixture gsf_yaw --output target/ekf2-host-gnss-range-gsf-yaw
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          for scenario in gnss_reset baro_reset gsf_yaw vertical_clipping; do
+            .venv/bin/python tools/check_ekf2_resets.py --case "$scenario" --rust "target/$host/release/examples/ekf2_input"
+          done
       - name: Host tests, lint, H753 build and package checks
         run: bash tools/firmware.sh check
       - name: Separate fault-injection build (never flashed in CI)

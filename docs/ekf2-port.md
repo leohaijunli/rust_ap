@@ -153,7 +153,7 @@ pub struct ParamDef {
 
 初始化：静止时加计求倾角、磁力计求偏航；水平原点默认起飞点；磁偏角无 GPS 时由 `NAVD_*` 参数给定，否则标记磁北参考。从主解算拷贝初值作为显式开关，默认关闭。
 
-输出走独立 `ODOMETRY` 流；`estimator_type` 与 frame 字段按 MAVLink `common.xml` 确认，不复用主解算的全局位置消息。
+输出走独立 `ODOMETRY` 流；`estimator_type` 与 frame 字段按 MAVLink `common.xml` 确认，不复用主解算的全局位置消息。无 GPS 实例仍写自己的 `vehicle_local_position` / `ODOMETRY` 与有效性，但不发布 `GLOBAL_POSITION_INT` / `vehicle_global_position`，除非工程师明确给出独立原点并接受其为相对坐标。
 
 后续水平约束按性价比：零速更新 → 多旋翼拖曳模型（`EKF2_DRAG_CTRL` / `EKF2_BCOEF_*` / `EKF2_MCOEF`）→ 磁异常匹配 `AidSource`。
 
@@ -298,3 +298,7 @@ GNSS/雷达的默认 Auto/in-air 通路、独立延迟、质量恢复、原点/�
 ## 16. E4-H 本地软件门（2026-11-04）
 
 全速观察器、双历史、延迟互补校正、body-origin 输出和复位传播已实现。正常/抖动两组各 20 s、8000 输出行的固定 C++ 对拍通过；时间/标志严格相等，非复位位置步长 <1.7 mm。27 项核心、输出工具 2 项、Clippy 与普通构建/打包/布局通过；[证据](acceptance/ekf2/20261104-e4-host.md)。本次 CI 待核对，继续 E5-H～E6-H；8 kHz 板载输入桥、运行预算与实物资格未验。
+
+## 17. E5-H 本地软件门（2026-11-04）
+
+复位与故障路径已实现：协方差去相关、速度/高度/地形/偏航复位传播、GNSS 超时重置、气压参考高度重初始化、GSF 偏航对准、坏垂直加速度检测（含 10 s 持续期）、期间暂停加计零偏学习、地面效应死区与恢复。四个固定 C++ 场景各 30 s / 3001 次 EKF 更新：状态最大差 ≤`7.67e-6`、协方差 ≤`1.34e-5`（按绝对或相对判据）、四元数 ≤`1.22e-7`，复位计数与事件逐项相等。31 项核心、Python 工具、Clippy 与普通构建通过；[证据](acceptance/ekf2/20261104-e5-host.md)。CI 待核对，随后 E6-H；实物与运行预算仍未验。

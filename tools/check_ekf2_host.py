@@ -65,11 +65,12 @@ def record_baseline(directory, files, report, source_manifest, configuration=CON
         output.write(json.dumps(manifest, indent=2) + "\n")
 
 
-def compare_baseline(directory, files, reference_build, configuration=CONFIGURATION):
+def compare_baseline(directory, files, reference_build, configuration=CONFIGURATION, allowed_fault_mask=0):
     manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
     if (manifest["px4_ref"] != DEFAULT_REF or manifest["configuration"] != configuration
             or manifest["tolerances"] != TOLERANCES
-            or manifest["reference_build"]["applied_parameters"] != reference_build["applied_parameters"]):
+            or manifest["reference_build"]["applied_parameters"] != reference_build["applied_parameters"]
+            or manifest.get("allowed_fault_mask", 0) != allowed_fault_mask):
         raise ValueError("golden baseline configuration/parameters differ")
     for name, source in files.items():
         expected = manifest["artifacts"][f"{name}.gz"]
@@ -79,7 +80,7 @@ def compare_baseline(directory, files, reference_build, configuration=CONFIGURAT
             raise ValueError(f"golden artifact checksum mismatch: {name}")
         if name != "golden.csv" and hashlib.sha256(source.read_bytes()).hexdigest() != expected["raw_sha256"]:
             raise ValueError(f"generated input/truth changed: {name}")
-    check_golden(directory / "golden.csv.gz")
+    check_golden(directory / "golden.csv.gz", allowed_fault_mask=allowed_fault_mask)
     with open_csv(files["golden.csv"]) as actual, open_csv(directory / "golden.csv.gz") as expected:
         actual_rows, expected_rows = csv.reader(actual), csv.reader(expected)
         if next(actual_rows) != next(expected_rows):

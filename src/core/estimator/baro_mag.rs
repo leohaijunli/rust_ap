@@ -19,6 +19,9 @@ const MAG_3D: u64 = 1 << 5;
 const MAG_DEC: u64 = 1 << 6;
 const MAG_ALIGNED: u64 = 1 << 23;
 const MAG_CONSISTENT: u64 = 1 << 37;
+// AlphaFilter is initialized with dt=0.01s, tau=0.09s. Literal 0.1f differs
+// by one f32 ULP and can change a height reset by an altitude-sized ULP.
+const SENSOR_ALPHA: f32 = 0.01 / (0.09 + 0.01);
 
 /// Already processed pressure altitude and calibrated FRD field, not raw pressure.
 #[derive(Clone, Copy, Debug, Default)]
@@ -210,6 +213,24 @@ impl Aids {
     }
 
     pub fn control_baro(&mut self, filter: &mut ImuEkf) -> Result<(), FilterFault> {
+        // Pinned updateGroundEffect runs before pressure-height fusion.
+        if filter.control & (1 << 7) != 0 && filter.control & (1 << 8) == 0 {
+            if filter.terrain_valid {
+                let near_ground =
+                    filter.state[24] + filter.global.altitude_m < default_float("EKF2_GND_MAX_HGT");
+                if near_ground {
+                    filter.control |= 1 << 20;
+                } else {
+                    filter.control &= !(1 << 20);
+                }
+            } else if filter.control & (1 << 20) != 0 {
+                // This profile has no external ground-effect-on flag input;
+                // its zero timeout origin is expired, as in the pinned core.
+                filter.control &= !(1 << 20);
+            }
+        } else {
+            filter.control &= !(1 << 20);
+        }
         if filter.control & BARO != 0 && filter.height_reference != 0 {
             self.baro_bias.predict(filter.average_dt_s)?;
         }
@@ -221,7 +242,7 @@ impl Aids {
             if self.baro_counter == 0 {
                 self.baro_lpf = sample.altitude_m;
             } else {
-                self.baro_lpf += 0.1 * (sample.altitude_m - self.baro_lpf);
+                self.baro_lpf += SENSOR_ALPHA * (sample.altitude_m - self.baro_lpf);
             }
             self.baro_counter += 1;
             if self.baro_counter <= self.baro.length {
@@ -243,6 +264,22 @@ impl Aids {
                 fused: false,
                 rejected: !ratio.is_finite() || ratio > 1.0,
             };
+            if filter.px4_fault & (1 << 10) != 0 && self.baro_status.rejected {
+                let limit = self.params.baro_gate.max(1.0) * libm::sqrtf(innovation_variance);
+                self.baro_status.innovation[0] = innovation.clamp(-limit, limit);
+                self.baro_status.rejected = false;
+            }
+            let deadzone = default_float("EKF2_GND_EFF_DZ");
+            if filter.control & (1 << 20) != 0
+                && deadzone > 0.0
+                && self.baro_status.innovation[0] < 0.0
+            {
+                self.baro_status.innovation[0] = if self.baro_status.innovation[0] <= -deadzone {
+                    self.baro_status.innovation[0] + deadzone
+                } else {
+                    0.0
+                };
+            }
             self.baro_bias
                 .set_noise(0.13, libm::sqrtf(measurement_variance))?;
             if filter.control & BARO != 0 && filter.height_reference != 0 {
@@ -252,14 +289,39 @@ impl Aids {
                 )?;
             }
             if filter.control & BARO != 0 {
-                if ratio.is_finite() && ratio <= 1.0 {
-                    filter.fuse_direct(innovation, innovation_variance, variance, 8, true);
+                if !self.baro_status.rejected {
+                    filter.fuse_direct(
+                        self.baro_status.innovation[0],
+                        innovation_variance,
+                        variance,
+                        8,
+                        true,
+                    );
                     self.last_baro_fuse = filter.delayed_us;
                     filter.last_height_fuse = filter.delayed_us;
                     self.baro_status.fused = true;
                 }
-                if filter.timed_out(self.last_baro_fuse, 5_000_000) {
+                if filter.height_reset_required() && filter.height_reference == 0 {
+                    filter.reset_altitude(
+                        self.baro_lpf - self.baro_bias.bias(),
+                        measurement_variance,
+                    );
+                    self.baro_bias
+                        .set_bias(-filter.global.altitude_m + self.baro_lpf)?;
+                    self.baro_status.innovation = [0.0; 3];
+                    self.baro_status.variance = [variance, 0.0, 0.0];
+                    self.baro_status.ratio = [0.0; 3];
+                    self.baro_status.fused = true;
+                    self.baro_status.rejected = false;
+                    if !filter.vertical_velocity_aiding() {
+                        filter.reset_vertical_velocity(0.0, 10.0);
+                    }
+                    self.last_baro_fuse = filter.delayed_us;
+                } else if filter.timed_out(self.last_baro_fuse, 5_000_000) {
                     filter.control &= !BARO;
+                    if !filter.timed_out(filter.last_height_fuse, 5_000_000) {
+                        filter.control |= 1 << 43;
+                    }
                     if filter.height_reference == 0 {
                         filter.height_reference = 4;
                     }
@@ -317,7 +379,7 @@ impl Aids {
             self.stop_mag(filter);
         } else {
             for i in 0..3 {
-                self.mag_lpf[i] += 0.1 * (sample.field_gauss[i] - self.mag_lpf[i]);
+                self.mag_lpf[i] += SENSOR_ALPHA * (sample.field_gauss[i] - self.mag_lpf[i]);
             }
         }
         self.mag_counter += 1;
@@ -343,12 +405,15 @@ impl Aids {
         };
         let continuing = filter.control & 1 != 0 && math::norm(&sample.field_gauss) > 0.0;
         let starting = continuing
+            && !filter.quaternion_reset_this_update()
             && self.check_field(sample.field_gauss, filter)
             && self.mag_counter > 3
             && self.last_mag_push + 500_000 > filter.latest_us;
         self.check_heading(sample.field_gauss, filter);
         let consistent = filter.control & MAG_CONSISTENT != 0 || !filter.horizontal_aiding();
-        let active = filter.control & MAG != 0 && filter.control & (1 << 16) == 0 && consistent;
+        let active = filter.control & MAG != 0
+            && filter.control & ((1 << 16) | (1 << 17)) == 0
+            && consistent;
         if active && self.params.mag_type == 0 && filter.control & MAG_ALIGNED != 0 {
             filter.control |= MAG_3D;
         } else {
@@ -589,7 +654,7 @@ impl Aids {
         let heading = -libm::atan2f(earth[1], earth[0]) + self.declination(filter);
         if filter.control & YAW != 0 {
             self.mag_heading_lpf +=
-                0.1 * (math::wrap_pi_f32(math::yaw(r) - heading) - self.mag_heading_lpf);
+                SENSOR_ALPHA * (math::wrap_pi_f32(math::yaw(r) - heading) - self.mag_heading_lpf);
         } else {
             self.mag_heading_lpf = 0.0;
         }

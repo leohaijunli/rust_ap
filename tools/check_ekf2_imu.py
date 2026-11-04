@@ -58,8 +58,8 @@ def require_psd(covariance):
                 raise ValueError("inconsistent semidefinite covariance pivot")
 
 
-def compare_outputs(actual_path, reference_path):
-    check_golden(actual_path)
+def compare_outputs(actual_path, reference_path, allowed_fault_mask=0):
+    check_golden(actual_path, allowed_fault_mask=allowed_fault_mask)
     count = 0
     different_f32_fields = 0
     max_quaternion = max_state = max_covariance = max_diagonal_relative = 0.0

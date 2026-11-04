@@ -205,6 +205,7 @@ impl RangeAids {
     }
 
     fn reset_terrain(&mut self, filter: &mut ImuEkf, variance: f32) {
+        let previous = filter.state[24];
         filter.reset_variance(23, 0.0);
         let mut gain = [0.0; 24];
         gain[23] = 1.0;
@@ -212,6 +213,7 @@ impl RangeAids {
         h[8] = -1.0;
         h[23] = 1.0;
         filter.measurement_update(gain, h, variance, self.status.innovation[0]);
+        filter.record_terrain_reset(filter.state[24] - previous);
         self.last_fuse = filter.delayed_us;
     }
 
@@ -280,6 +282,14 @@ impl RangeAids {
                 fused: false,
                 rejected: !ratio.is_finite() || ratio > 1.0,
             };
+            if filter.px4_fault & (1 << 10) != 0
+                && self.status.rejected
+                && self.sensor.data_healthy()
+            {
+                let limit = self.params.gate.max(1.0) * libm::sqrtf(self.status.variance[0]);
+                self.status.innovation[0] = self.status.innovation[0].clamp(-limit, limit);
+                self.status.rejected = false;
+            }
             let continuing = self.params.control != 0 && filter.control & 1 != 0;
             let starting = continuing
                 && self.last_push + 400_000 > filter.latest_us
@@ -362,7 +372,18 @@ impl RangeAids {
                             filter.last_terrain_fuse = filter.delayed_us;
                         }
                     }
-                    if filter.timed_out(self.last_fuse, 5_000_000) && starting {
+                    if filter.height_reset_required()
+                        && filter.control & RANGE_HEIGHT != 0
+                        && filter.height_reference == 2
+                        && starting
+                    {
+                        filter.reset_altitude(measurement - filter.state[24], f32::NAN);
+                        self.zero_status(variance);
+                        if !filter.vertical_velocity_aiding() {
+                            filter.reset_vertical_velocity(0.0, 10.0);
+                        }
+                        self.last_fuse = filter.delayed_us;
+                    } else if filter.timed_out(self.last_fuse, 5_000_000) && starting {
                         self.reset_terrain(filter, variance);
                         self.zero_status(variance);
                     }

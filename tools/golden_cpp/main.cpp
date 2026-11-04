@@ -88,6 +88,8 @@ void write_header(std::ostream &out) {
     }
     out << ",gnss_quality_failure_bits";
 #endif
+#elif defined(DUMP_RESET_STATUS)
+    out << ",quat_resets,velocity_ne_resets,velocity_d_resets,position_ne_resets,height_resets,hagl_resets,delta_q_w,delta_q_x,delta_q_y,delta_q_z,delta_velocity_n,delta_velocity_e,delta_velocity_d,delta_position_n,delta_position_e,delta_height,delta_hagl";
 #else
     for (unsigned index = 0; index < 25; ++index) {
         out << ",state_" << index;
@@ -393,6 +395,15 @@ int main(int argc, char **argv) {
                 write_scalar_status(output, ekf.aid_src_rng_hgt());
                 output << ',' << ekf.gps_check_fail_status().value;
 #endif
+#elif defined(DUMP_RESET_STATUS)
+                const auto &status = ekf.state_reset_status();
+                const auto &counts = status.reset_count;
+                for (const auto count : {counts.quat, counts.velNE, counts.velD, counts.posNE, counts.posD, counts.hagl}) { output << ',' << unsigned(count); }
+                for (unsigned i = 0; i < 4; ++i) { output << ',' << status.quat_change(i); }
+                for (unsigned i = 0; i < 2; ++i) { output << ',' << status.velNE_change(i); }
+                output << ',' << status.velD_change;
+                for (unsigned i = 0; i < 2; ++i) { output << ',' << status.posNE_change(i); }
+                output << ',' << status.posD_change << ',' << status.hagl_change;
 #else
                 const auto state = ekf.state().Data();
                 for (unsigned index = 0; index < 25; ++index) {

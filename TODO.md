@@ -15,7 +15,9 @@
 
 MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门具备后验证 GPS 实物数据。
 
-**当前软件工作：E1-H～E3-H 本地/CI 通过；E4-H 本地输出/抖动与构建门通过，`f5d2b76` 已推送，首次 CI 输出步骤失败，先修复再进入 E5-H。** 工程师要求持续执行至 E6-H；硬件资格与 E7 保留原依赖，不上板、不改已验实物状态。
+**当前软件工作：E1-H～E4-H 本地/CI 通过；E4 比较器按原判据修复，`f8fa3f6` CI success。E5-H 四个固定 C++ 场景（GNSS 超时、气压参考高度、GSF 偏航、垂直加速度故障）复位/状态/协方差/NIS 对拍本地通过，待提交与 CI。** 工程师要求持续执行至 E6-H；硬件资格与 E7 保留原依赖，不上板、不改已验实物状态。
+
+- [ ] **EKF2 标准输出/日志（新增）**：姿态、局部位置、全球位置三项必须同时走标准 MAVLink（`ATTITUDE_QUATERNION`、`LOCAL_POSITION_NED`、有效时 `GLOBAL_POSITION_INT`）并按固定 PX4 `.msg` 写入 ULog（`vehicle_attitude`、`vehicle_local_position`、有效时 `vehicle_global_position`，另加 `estimator_status` 诊断）。E5-H 后做 E6-H host 适配/独立解析验证，E7 再验真实 USB/TELEM1/SD 发布。无 GPS 输出保持独立有效性/协方差，不冒充全球定位。范围见 [plan.md](plan.md#ekf2-后续移植约束)。
 
 ### MAVCAN（已完成）
 
@@ -71,7 +73,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [ ] **PL-b / LOG-B01～02**：软件与有限 HIL 通过：QGC 协议列出 2 个日志，分块下载 306176 B 后 pyulog 无 corruption；MAVLink Console start/sync/stop 通过，restart 的直接证据待补录；心跳改 PX4 兼容后 QGC 下载应命名为 `.ulg`。待 QGC GUI Refresh/Download、断链与速率边界收口。[证据](docs/acceptance/pl-b/README.md)。依赖 M1、PL-a、P2。
 - [x] **RTC-01 / TIME-01**：source=`81d6c1221048f08a` 实测 LSE `ticking=true counting=true`，30 s 增加 31 s，`!time set 1700000000` 回读 `ok=true`，`SYSTEM_TIME` 与 `LOG_ENTRY.time_utc=1700000004` 非零。根因是清 `RSF` 未解锁 WPR，且 `DR` 后再次读 `SSR` 会重新锁住影子寄存器；见[时间基准](docs/time-sync.md)。
 - [ ] **TIME-02**：H-RTK GNSS 授时待 P4b-g；3D fix 且样本新鲜才采纳，GNSS > 地面站 `SYSTEM_TIME` > 继承 RTC，偏差 ≥5 s 才写；LSI 后备额外周期校准。无 GPS 驱动前，时间来自继承 RTC 或入站 `SYSTEM_TIME`。
-- [ ] **P6a-e / EKF-01～03**：E1-H～E3-H 本地/CI 通过；E4-H 本地 16000 行全速输出/抖动与构建门通过，`f5d2b76` [CI 输出步骤失败](https://github.com/leohaijunli/rust_ap/actions/runs/41844438267)，[证据](docs/acceptance/ekf2/20261104-e4-host.md)。先修复 E4 CI，再继续 E5-H～E6-H。实物/E7 依赖 M1、P6a、P4b-g、P2、PL-b。[方案](docs/ekf2-port.md)
+- [ ] **P6a-e / EKF-01～03**：E1-H～E4-H 本地/CI 通过，E4 `f8fa3f6` [CI success](https://github.com/leohaijunli/rust_ap/actions/runs/41848722671)，[证据](docs/acceptance/ekf2/20261104-e4-host.md)。E5-H 四个复位/故障场景本地对拍通过，[证据](docs/acceptance/ekf2/20261104-e5-host.md)；继续至 E6-H。实物/E7 依赖 M1、P6a、P4b-g、P2、PL-b。[方案](docs/ekf2-port.md)
 - [ ] **P4b-r / RTK-01～02**：RTCM 转发、RTK 与中断恢复。依赖 M1、P2、P4b-g、H-10。
 - [ ] **P5a / OUT-A01～02**：单一仲裁、限时授权/撤销、看门狗及零输出门控。依赖 M1、P4b-a、PL-a、H-06。
 - [ ] **P4b-b / CAN-B01～03**：拆桨电机映射/旋向与故障停转；恢复不自动解锁。依赖 P5a、P4b-a、PL-a。

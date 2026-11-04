@@ -12,6 +12,8 @@ PX4 定义固定为 v1.17.0 commit `d6f12ad1c4f70ad3230afd7d86e971421e02fef4`。
 | INA219 独立支路 | `rust_current_sensor`：记录/采样时间、V/A/W | `DEBUG_VECT`：`name=INA219`，`x=V`、`y=A`、`z=W` | SEN0291 I2C3，日志/遥测各 10 Hz；W=V×I，失败停记录/停发，见 P4p |
 | 输出状态 | `actuator_armed` | `HEARTBEAT.base_mode` | 同一 `OUTPUT_STATE`；当前 disarmed、无预解锁/预检许可 |
 | Mahony / EKF2 姿态、角速度 | `vehicle_attitude`、`vehicle_angular_velocity` | `ATTITUDE`、`ATTITUDE_QUATERNION` | P6a 接入真实估计输出；相对 yaw 单列健康元数据 |
+| EKF2 局部位置、速度 | `vehicle_local_position` | `LOCAL_POSITION_NED` | E6-H 适配/编码，E7 接真实里程与链路；`xy_valid`/`z_valid` 为假时不得发布有效位置 |
+| EKF2 全球位置 | `vehicle_global_position`（仅有效时） | `GLOBAL_POSITION_INT` | 需真实全球原点与有效水平解；无 GPS 实例不发送，避免伪造全球定位 |
 | 四个 ESC | `esc_status` / `EscReport[8]` | `ESC_STATUS`、`ESC_INFO` | P4b-a 映射可信后由 P7 汇总；原始 DroneCAN Status 保留独立诊断名 |
 | H-RTK GNSS | `sensor_gps`（PX4 同源别名 `vehicle_gps_position`） | `GPS_RAW_INT` | P4b-g 接真实 Fix2/Auxiliary；尚无融合位置 |
 | 参数 / 日志管理 | ULog `P` 参数记录 + 持久状态诊断 | `PARAM_*`、`LOG_*`、`COMMAND_ACK`、`SERIAL_CONTROL` | 已接入标准协议，双链路/GUI 与异常门按既有阶段验收 |
@@ -30,6 +32,7 @@ MAVLink 使用固定 rust-mavlink 0.17.1 的 `mavlink::common` 生成类型；US
 - IMU `device_id=0x260012`：PX4 DeviceId 的 ICM42688P 类型 `0x26`、SPI bus 2、同型实例地址 0。`HIGHRES_IMU.id=0` 是 MAVLink 传感器实例号。
 - `error_count` 为 SPI/FIFO 传输失败、解码失败和 DRDY 超时累计值的饱和和；初始化 FIFO flush 不算错误。`clip_counter` 只计所记录的一个样本，按 PX4 单样本发布的 99.9% 满量程阈值判定。
 - 只有真实解码样本写标准 IMU；陈旧遥测停发。ESC 温度 K→°C、GNSS deg/mm→标准单位以及未知精度/航向须在各数据源阶段落实；不把未融合 GNSS 当作 `GLOBAL_POSITION_INT`。
+- EKF2 输出固定三组：姿态（`vehicle_attitude` / `ATTITUDE_QUATERNION`）、局部位置（`vehicle_local_position` / `LOCAL_POSITION_NED`）、全球位置（`vehicle_global_position` / `GLOBAL_POSITION_INT`，仅有效时）。姿态四元数 Hamilton `[w,x,y,z]`、FRD→NED；局部/全球位置为 NED，单位 m 与 m/s；三者共用同一 `EstimatorState` 快照，不各自重算或插值。日志与 MAVLink 复用同一字段映射，允许的差异只有消息自身的时间/字段宽度。
 
 ## 扩展与来源
 

@@ -19,6 +19,7 @@ pub mod output_predictor;
 pub mod params_generated;
 pub mod range_math;
 pub mod range_sensor;
+pub mod reset_status;
 pub mod wmm;
 mod wmm_generated;
 

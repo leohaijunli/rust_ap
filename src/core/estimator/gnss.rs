@@ -406,6 +406,16 @@ impl GnssAids {
             self.params.velocity_gate,
             3,
         );
+        if filter.px4_fault & (1 << 10) != 0
+            && self.velocity.ratio[2] > 1.0
+            && self.velocity.ratio[0] < 1.0
+            && self.velocity.ratio[1] < 1.0
+            && sample.speed_accuracy_m_s < self.params.checks.maximum_speed_accuracy_m_s
+        {
+            let limit = self.params.velocity_gate.max(1.0) * libm::sqrtf(self.velocity.variance[2]);
+            self.velocity.innovation[2] = self.velocity.innovation[2].clamp(-limit, limit);
+            self.velocity.rejected = false;
+        }
     }
 
     fn fuse_velocity(&mut self, filter: &mut ImuEkf) -> bool {
@@ -466,6 +476,7 @@ impl GnssAids {
     }
 
     fn reset_position(&mut self, filter: &mut ImuEkf) {
+        let previous = filter.global.project(filter.origin.unwrap_or_default());
         if filter.origin.is_none() {
             filter.origin = Some(self.position_observation);
             filter.origin_timestamp = filter.delayed_us;
@@ -473,6 +484,7 @@ impl GnssAids {
         filter.global.latitude_rad = self.position_observation.latitude_rad;
         filter.global.longitude_rad = self.position_observation.longitude_rad;
         filter.propagate_position_reset();
+        filter.record_position_reset(previous);
         filter.reset_variance(6, (2.0 * self.position_variance).max(0.0001));
         filter.reset_variance(7, (2.0 * self.position_variance).max(0.0001));
         self.last_position_fuse = filter.delayed_us;
@@ -483,14 +495,14 @@ impl GnssAids {
         );
     }
 
-    fn control_velocity(&mut self, filter: &mut ImuEkf) {
+    fn control_velocity(&mut self, filter: &mut ImuEkf, force_reset: bool) {
         let continuing = self.params.control & 4 != 0
             && filter.control & 3 == 3
             && filter.control & (GNSS_FAULT | HEIGHT_FAULT) == 0;
         if filter.control & VELOCITY != 0 {
             if continuing {
                 self.fuse_velocity(filter);
-                if filter.timed_out(self.last_velocity_fuse, 7_000_000) {
+                if filter.timed_out(self.last_velocity_fuse, 7_000_000) || force_reset {
                     self.reset_velocity(filter);
                 }
             } else {
@@ -500,7 +512,7 @@ impl GnssAids {
                 }
             }
         } else if continuing && self.checks.passed() {
-            let do_reset = filter.previous_control & 2 == 0;
+            let do_reset = force_reset || filter.previous_control & 2 == 0;
             let fused = !do_reset
                 && self.velocity.ratio[0] + self.velocity.ratio[1] < 0.25
                 && self.fuse_velocity(filter);
@@ -511,13 +523,13 @@ impl GnssAids {
         }
     }
 
-    fn control_position(&mut self, filter: &mut ImuEkf) {
+    fn control_position(&mut self, filter: &mut ImuEkf, force_reset: bool) {
         let enabled = self.params.control & 1 != 0;
         let continuing = enabled && filter.control & 3 == 3 && filter.control & HEIGHT_FAULT == 0;
         if filter.control & POSITION != 0 {
             if continuing {
                 self.fuse_position(filter);
-                if filter.timed_out(self.last_position_fuse, 7_000_000) {
+                if filter.timed_out(self.last_position_fuse, 7_000_000) || force_reset {
                     self.reset_position(filter);
                 }
             } else {
@@ -527,7 +539,7 @@ impl GnssAids {
                 }
             }
         } else if continuing && self.checks.passed() {
-            let do_reset = filter.previous_control & 2 == 0;
+            let do_reset = force_reset || filter.previous_control & 2 == 0;
             let fused = filter.origin.is_some()
                 && !do_reset
                 && self.position.ratio[0] + self.position.ratio[1] < 0.25
@@ -635,14 +647,37 @@ impl ControlExtension for GnssAids {
                     filter.control |= 2;
                 }
             }
-            self.control_velocity(filter);
-            self.control_position(filter);
+            let force_reset = filter.control & GNSS_FAULT == 0
+                && filter.control & (POSITION | VELOCITY) != 0
+                && self.yaw.available()
+                && math::wrap_pi_f32(
+                    math::yaw(math::rotation(filter.quaternion())) - self.yaw.yaw(),
+                )
+                .abs()
+                    > 25.0_f32.to_radians()
+                && filter.timed_out(filter.last_horizontal_velocity_fuse, 1_000_000)
+                && filter.last_horizontal_velocity_fuse != 0;
+            if force_reset {
+                filter.reset_yaw(self.yaw.yaw(), self.yaw.variance());
+                filter.control |= 2;
+                if filter.control & ((1 << 4) | (1 << 5)) != 0 {
+                    filter.control |= 1 << 17;
+                }
+            }
+            self.control_velocity(filter, force_reset);
+            self.control_position(filter, force_reset);
         }
         Ok(())
     }
 
     fn shift_altitude(&mut self, delta: f32) -> Result<(), FilterFault> {
         self.height_bias.set_bias(self.height_bias.bias() + delta)
+    }
+    fn vertical_innovations(&self) -> [(f32, f32); 2] {
+        [
+            (self.height.innovation[0], self.height.variance[0]),
+            (self.velocity.innovation[2], self.velocity.variance[2]),
+        ]
     }
 
     fn control_height(&mut self, filter: &mut ImuEkf) -> Result<(), FilterFault> {
@@ -677,6 +712,11 @@ impl ControlExtension for GnssAids {
             self.params.position_gate,
             1,
         );
+        if filter.px4_fault & (1 << 10) != 0 && self.height.rejected {
+            let limit = self.params.position_gate.max(1.0) * libm::sqrtf(self.height.variance[0]);
+            self.height.innovation[0] = self.height.innovation[0].clamp(-limit, limit);
+            self.height.rejected = false;
+        }
         let common =
             filter.origin.is_some() && self.checks.passed() && filter.control & GNSS_FAULT == 0;
         let continuing = self.params.control & 2 != 0 && common;
@@ -693,12 +733,24 @@ impl ControlExtension for GnssAids {
                     )?;
                 }
                 if !self.height.rejected {
-                    filter.fuse_direct(innovation, self.height.variance[0], variance, 8, true);
+                    filter.fuse_direct(
+                        self.height.innovation[0],
+                        self.height.variance[0],
+                        variance,
+                        8,
+                        true,
+                    );
                     self.height.fused = true;
                     self.last_height_fuse = filter.delayed_us;
                     filter.last_height_fuse = filter.delayed_us;
                 }
-                if filter.timed_out(self.last_height_fuse, 5_000_000) {
+                if filter.height_reset_required() && filter.height_reference == 1 {
+                    filter.reset_altitude(measurement, measurement_variance);
+                    self.height_bias
+                        .set_bias(-filter.global.altitude_m + measurement)?;
+                    Self::zero(&mut self.height, [variance, 0.0, 0.0]);
+                    self.last_height_fuse = filter.delayed_us;
+                } else if filter.timed_out(self.last_height_fuse, 5_000_000) {
                     self.stop_height(filter);
                 }
             } else {
