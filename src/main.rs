@@ -27,6 +27,9 @@ mod imu;
 #[path = "drivers/ina219.rs"]
 mod ina219;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/logger_switch.rs"]
+mod logger_switch;
+#[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/mavcan.rs"]
 mod mavcan;
 #[cfg(not(feature = "fault-dump"))]
@@ -43,6 +46,9 @@ mod mavlink_usb;
 mod parameter_manager;
 #[cfg(not(feature = "fault-dump"))]
 mod platform;
+#[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/px4io.rs"]
+mod px4io;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/rtc.rs"]
 mod rtc;
@@ -67,7 +73,7 @@ use core::cell::RefCell;
 #[cfg(not(feature = "fault-dump"))]
 use embassy_executor::{raw::Executor, InterruptExecutor};
 #[cfg(not(feature = "fault-dump"))]
-use embassy_futures::join::{join, join3};
+use embassy_futures::join::{join, join4};
 #[cfg(not(feature = "fault-dump"))]
 use embassy_stm32::gpio::{Input, Level, Output, OutputOpenDrain, Pull, Speed};
 #[cfg(not(feature = "fault-dump"))]
@@ -113,6 +119,11 @@ bind_interrupts!(struct SdIrqs {
 
 bind_interrupts!(struct Uart7Irqs {
     UART7 => UsartInterruptHandler<embassy_stm32::peripherals::UART7>;
+});
+
+#[cfg(not(feature = "fault-dump"))]
+bind_interrupts!(struct Px4ioIrqs {
+    USART6 => UsartInterruptHandler<embassy_stm32::peripherals::USART6>;
 });
 
 bind_interrupts!(struct I2c3Irqs {
@@ -168,6 +179,9 @@ async fn application(p: Peripherals) {
     // GPIO_VDD_5V_PERIPH_nEN: power the standalone I2C connector.
     let _periph_power = Output::new(p.PG4, Level::Low, Speed::Low);
     let _not_armed = Input::new(p.PE6, Pull::Up);
+    // PX4IO owns the shared safety LED on this board. Never drive PD10 from
+    // FMU while the existing IO firmware may be driving the same net.
+    let _safety_led = Input::new(p.PD10, Pull::None);
     let fast_spawner = diagnostics::start(p.TIM7);
 
     let fram_cs = Output::new(p.PG7, Level::High, Speed::Medium);
@@ -256,6 +270,20 @@ async fn application(p: Peripherals) {
     )
     .expect("UART7 configuration");
 
+    // FMUv6X IO link is USART6 (TX PC6/RX PC7), not the TELEM1 UART.
+    let mut px4io_config = embassy_stm32::usart::Config::default();
+    px4io_config.baudrate = 1_500_000;
+    let px4io_uart = embassy_stm32::usart::Uart::new(
+        p.USART6,
+        p.PC7,
+        p.PC6,
+        Px4ioIrqs,
+        p.DMA2_CH2,
+        p.DMA2_CH3,
+        px4io_config,
+    )
+    .expect("USART6 PX4IO configuration");
+
     // Standalone I2C connector: SCL3/SDA3 (PA8/PH8), not the GPS/POWER I2C buses.
     let mut i2c_config = I2cConfig::default();
     i2c_config.timeout = embassy_time::Duration::from_millis(20);
@@ -319,8 +347,12 @@ async fn application(p: Peripherals) {
                             sd_logger::run(sdmmc, sd_power, &parameters),
                             sd_logger::health_task(),
                         ),
-                        join3(
+                        join4(
                             ina219::run(i2c3),
+                            join(
+                                px4io::run(px4io_uart),
+                                logger_switch::run(p.PF5, p.TIM14, p.PF9),
+                            ),
                             async {
                                 loop {
                                     let half_period_us =

@@ -80,6 +80,7 @@ M1 快照至少携带源、序号、本地微秒时间、有效标志和数据�
 | CAN 协议 | 线程 executor | P4 只做 I/O/周期帧；重组、节点与参数服务走有界跨执行器通道，不持有高优先级锁 |
 | USB / UART7 | OTG_FS；UART7 DMA1_CH0/CH1，P6 | USB/TELEM1 双链路互不等待；各自 20 Hz 读取同一 IMU 最新快照 |
 | INA219 | I2C3 PA8/PH8、DMA1_CH4/CH5、EV/ER P6；线程 executor | 独立 I2C 插座，PG4 低使能外设 5 V；每 100 ms 转换，失败/陈旧停发支路测量 |
+| PX4IO H7 接口 | USART6 PC6/PC7、DMA2_CH2/CH3、P5；线程 executor | 仅 v5 状态/按钮 ACK 与零值配置回读；PD10 保持输入，原 IO 固件不更新；10 ms 预算不等于可抢占证明，[范围](px4io.md) |
 | SD | SDMMC2/P7、内部 IDMA；线程存储任务 | PL-a 已构建：PC13 默认低、显式启动、32 KiB staging、FAT 单写者；同步 HAL 等待仍待 H-04 量化 |
 | 日志/参数/低速遥测 | 线程 executor | 有界 poll；任何等待都不持有高优先级路径需要的锁 |
 

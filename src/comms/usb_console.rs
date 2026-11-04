@@ -34,7 +34,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
     let _ = match command {
         Command::Help => writeln!(
             response,
-            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu ina219 logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
+            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu ina219 px4io logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
         ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
         Command::Metrics => crate::diagnostics::write_diagnostics(&mut response),
@@ -48,7 +48,9 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::MavCan => crate::mavcan::write_diagnostics(&mut response),
         Command::Imu => crate::imu::write_diagnostics(&mut response),
         Command::Ina219 => crate::ina219::write_diagnostics(&mut response),
-        Command::Logger => crate::sd_logger::write_diagnostics(&mut response),
+        Command::Px4io => crate::px4io::write_diagnostics(&mut response),
+        Command::Logger => crate::sd_logger::write_diagnostics(&mut response)
+            .and_then(|()| crate::logger_switch::write_diagnostics(&mut response)),
         Command::LoggerStart => {
             logger_result(&mut response, "start", crate::sd_logger::request_start())
         }
@@ -94,6 +96,7 @@ pub(crate) async fn mavlink_report(
             let _ = crate::rtc::write_diagnostics(&mut response, "RTC");
             let _ = crate::imu::write_diagnostics(&mut response);
             let _ = crate::sd_logger::write_diagnostics(&mut response);
+            let _ = crate::logger_switch::write_diagnostics(&mut response);
             response.finish();
             response
         }
@@ -245,6 +248,7 @@ pub(crate) enum Command {
     MavCan,
     Imu,
     Ina219,
+    Px4io,
     Logger,
     LoggerStart,
     LoggerStop,
@@ -302,6 +306,7 @@ impl CommandLine {
                     b"!mavcan" | b"mavcan" => Some(Command::MavCan),
                     b"!imu" | b"imu" => Some(Command::Imu),
                     b"!ina219" | b"ina219" => Some(Command::Ina219),
+                    b"!px4io" | b"px4io" => Some(Command::Px4io),
                     b"!time" | b"time" => Some(Command::Time),
                     #[cfg(feature = "fault-injection")]
                     b"!panic" => Some(Command::Panic),

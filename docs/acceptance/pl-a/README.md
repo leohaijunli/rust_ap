@@ -1,6 +1,6 @@
 # PL-a ULog / SD 软件验收
 
-日期：2026-11-02。**LOG-A01～04 与 LoggerControl/MAVLink Console 软件开发通过；实物 SD 的正常 start/stop/下载/解析已做有限 HIL，受控断电、缺卡/拔卡与时延边界仍待 H-04，PL-a 尚未关闭。P4b-a 依赖也仍未放行。**
+日期：2026-11-02；状态更新：2026-11-04。**LOG-A01～04 与 LoggerControl/MAVLink Console 软件开发通过；LOG-A06 按键/蜂鸣与 H7 PX4IO 接口软件通过，灯归属和 IO 实物待 H-12。原 SD 正常 start/stop/下载/解析已做有限 HIL；受控断电、缺卡/拔卡与时延边界仍待 H-04，PL-a 尚未关闭。P4b-a 依赖也仍未放行。**
 
 原软件/实物结果按下表保留；新软件使用 9 个已接入 topic，其中 IMU/输出状态为标准 PX4 schema，见[消息记录](../messages/README.md)。restart 原有通过标记缺直接证据引用，先补录已有结果。
 
@@ -29,5 +29,13 @@
 - LOG-A03/04：确认 PC13 供电、SDMMC2 4-bit、实际时钟/IDMA 可达内存、CMD25、多块写吞吐和 32 KiB p99/最大时延。
 - LOG-A05：正常 start→sync→stop→再次 start；一份实物日志由 pyulog 独立解析；一次受控写入断电后恢复完整前缀；一次缺卡/卡忙/写入中拔卡，确认 CAN/P1 快路径继续并量化 USB/线程停顿。
 - HAL 0.5.0 的 ACMD41、wait-idle 和取消路径含同步循环。默认不启动避免无卡影响；显式测试后仍须以实测判定，不能用 async timeout 声称可抢占。
+
+## LOG-A06 GPS1 实体日志开关（2026-11-04）
+
+- 工程师确认 CUAV USL 接 GPS1，并选择全部已核实可控的灯。PF5 高有效/上拉，40 ms 按实际时间消抖；短按释放后共用 logger start/stop，1.5 s 长按仅保留事件。上电/重连按住不触发，IO 通信与零 PWM 配置回读无效时禁用实体动作。
+- PF9/TIM14 MCU 侧推挽、4 kHz / 50%，0% 为低电平静音；1/2/3 声反馈启动/停止/失败。`!logger`、`!status` 增 `LOGGER_SWITCH schema=2`。
+- IO 拥有安全灯，PD10 保持输入；`requested_on` 只是 logger 模式请求，尚未实际驱动 LED。GPS1 还有 I²C1，RGB/左右灯需分别识别，不把 safety_off/armed 伪造成灯状态。
+- 早期 `473ffd4797e692f3` 包的直接 PD10 输出/开漏 PF9 方案经 PX4 审查后撤回；新隔离包 source=`0fdd9d28c4789055`、12 项相关 host/Clippy/构建通过，细节和真实失败修复见 [PX4IO 记录](../px4io/20261104-host.md)。
+- **H-12 待验**：拆桨确认 `!px4io` 协议/CRC/零 PWM、按钮电平、短按 start/stop、长按无动作、蜂鸣及所得 ULog 解析；先识别大灯/左右灯的实际接口，再决定 I²C 驱动或 IO-R2 LED 扩展。软件检查不关闭这些实物门。
 
 日志在线列表/下载/删除仍归 PL-b；真实 IMU/AHRS/GNSS topic 随对应数据源阶段接入。当前结果仅允许继续软件开发，不放行依赖 PL-a 的硬件阶段。

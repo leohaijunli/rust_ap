@@ -71,6 +71,7 @@
 | EKF2 标准输出 / 日志（工程师新增） | host 核对标准 MAVLink 构建与固定 PX4 ULog 字段/单位/时间/有效性及复位计数，日志用独立 pyulog 解析；E7 接入后复用一次输出采集核对 USB/TELEM1 与 SD，不能由合成数据冒充板载发布 |
 | P4b-a / P4b-g | 关键单/多帧及 CRC/超时向量；实物节点/ESC 索引、零输出、GNSS 字段与定位；一次断线后状态失效/恢复 |
 | PL-a | 一份日志经独立解析器读出；一次受控写入中断电并检查可恢复记录；一次缺卡或 I/O 故障，采样保持运行 |
+| PX4IO / LOG-A06 | 固定 v5 报文/CRC/错误与零输出门控 host 用例；按钮短/长按与延迟用例；H7 普通构建/打包；工程师确认 IO 协议/CRC/零 PWM、按钮/蜂鸣及灯归属。IO 重写按 IO-R0～R5 阶段门，不由 host 结果放行 |
 | CAN-BRD / MAVCAN | host 校验经典帧 ID/标志/DLC、转发会话/过滤；普通构建与资源核对；板载 CMD_CAN_FORWARD 握手、CAN2 节点双向收发和一次关闭/超时恢复，复用同次 USB 心跳确认 |
 | M1 | **一次 5 分钟额定联合运行**：IMU→AHRS、CAN、SD、USB/TELEM1、QGC 同时工作；复用该记录核对速率、丢样、队列、CPU/栈及日志 |
 | P5 / P6 非零输出 | 必须覆盖授权/撤销、过期命令、丢 RC/ESC、总线失效及停转；实际控制需台架/系留和实时性验证 |
@@ -105,12 +106,13 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P1 / P1-01～04 | 可恢复 bring-up 与周期基线；已完成 | P0 |
 | P3a / P3A-01～04 | FRAM 识别/备份、参数注册表、持久化；已完成 | P1 |
 | P4b-a / CAN-A01～04 | DroneCAN 节点、ESC 状态和零命令；软件门通过，实物待验 | P1、P3a、H-02/03 |
-| PL-a / LOG-A01～05 | ULog、缓冲、SDMMC2/FAT、LoggerControl/MAVLink Console；软件门/正常路径有限 HIL 通过，故障门待验 | P3a、P4b-a、H-04 |
+| PL-a / LOG-A01～06 | ULog、缓冲、SDMMC2/FAT、LoggerControl/MAVLink Console 与 GPS1 实体日志开关；软件门/正常路径有限 HIL 通过，故障及新开关实物门待验 | P3a、P4b-a、H-04、H-12 |
 | P4b-g / GNSS-01～03 | H-RTK 接收、有效性和日志；软件/刷写完成，实物待验 | P4b-a、PL-a、H-10 |
 | P2 / MAV-01～03 | USB/TELEM1 双链路、消息/命令和重连；软件门通过，实物待验 | P1、P3a |
 | P3 / PARAM-01～02 | QGC 标准参数读设；软件/工具路径就绪，双链路实物待验 | P3a、P2 |
 | P4 / SENS-01～04 | 单 IMU 驱动、校准及采样；软件门通过，实物待验 | P1、P3a、PL-a |
 | P4p / PWR-01～02 | SEN0291/INA219 I2C3 支路电流、有效性和标准遥测；本轮新增 | P1、P2、H-11 |
+| PX4IO / IO-H0、IO-R0～R5 | H7 通信软件完成、实物待验；IO MCU 纯 Rust 重写本次仅计划，不自动开始 | P1、H-12/13；非零输出仍需 P5a、H-06/07 |
 | P6a / EST-01～02 | Mahony AHRS、姿态遥测与日志 | P4、P2、PL-a |
 | P7 / TEL-01～02 | 随已有数据源补遥测及速率控制 | 对应数据源、P2 |
 | M1 / M1-01～02 | 一次完整数据链联合验收 | 上述 M1 阶段 |
@@ -146,8 +148,16 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 2. **LOG-A03/04**：SDMMC2/PLL1Q、PC13 显式启动、固定 FAT 栈、MBR/superfloppy、新文件与 32 KiB 对齐写入已构建。
 3. **LOG-A05 待验**：实物正常 start/stop、MAVLink 下载和 pyulog 解析已通过；H-04 仍需受控断电、缺卡/拔卡和时延边界。一次旧日志断电后的 corruption/dropout 保留为失败记录，不能按通过收口。
 4. **控制 API**：start/stop/sync/status/apply_config 共用单一状态机；QGC MAVLink Console 与标准 logging commands 已接入。正常 stop 后 Disabled 与解析已验证；restart 的通过标记尚缺直接证据引用，先补录已有结果。
+5. **LOG-A06 部分软件完成、实物待验**：CUAV USL 接 GPS1；PF5 40 ms 消抖，短按释放后复用同一 logger 状态机切换 start/stop，1.5 s 长按仅保留事件；PF9/TIM14 MCU 推挽音调反馈结果。PD10 保持输入，IO 安全灯不伪造解锁来显示日志；GPS1 I²C RGB/左右小灯需识别后再接入已核实可控的灯。旧直接驱动 PD10/开漏 PF9 包已撤回，见 [PX4IO 记录](docs/acceptance/px4io/20261104-host.md)。
 
 详情和精确产物见 [PL-a 记录](docs/acceptance/pl-a/README.md)。
+
+### PX4IO Rust 重写（工程师新增，本次只计划）
+
+- 当前只完成 H7→原 IO 的 v5 通信与零输出配置/回读；没有替换或刷写 IO 应用/bootloader。标准 IO 没有任意安全灯型命令，独立 LED 覆盖与 gesture 扩展不能改变 safety/arming。
+- IO-R0 硬件/恢复→R1 独立 M3 启动→R2 协议/用户界面先完成原型；R3 PWM/实际 RC→R4 双 MCU 更新包→R5 联合故障验收逐门放行。模块拆分、共享协议、PX4→Rust 迁移清单、工程日估算与必要验收见 [Rust 重构计划](docs/px4io.md)。
+- 单独 `thumbv7m-none-eabi` Rust/no_std/Embassy 工程，保留 IO 前 4 KiB bootloader 和源码预期的 `0x08001000` 应用入口；实物核实后才能采用。H7 仍保留原 bootloader、`0x08020000`、board ID 53 和 QGC 恢复。
+- 最小 IO 估算 1–2 周，完整必要功能/恢复约 4–6 个工程周；不是交付承诺。若 I²C 大灯已满足 logger UI，不为灯显示强制重写 IO。IO 重写不新增 M1 前置，非零输出按原 P5/H-06/07 门执行。
 
 ### P2 当前结果
 
@@ -240,6 +250,8 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | H-09 | 质量/惯量、动力模型、辨识和求解预算 | P6f |
 | H-10 | H-RTK SKU/固件/节点/消息率；后补 RTCM 来源 | P4b-g/r |
 | H-11 | INA219/SEN0291 独立 I2C 插座、0x44（A0=0/A1=1）、10 mΩ、±8 A、独立支路已确认且已连接；超时处理与总线恢复修改后 0x44 通信和三条命名值 10 Hz 已实测，原 SCL 低电平未复现；单条调试消息、参考负载精度和一次断线恢复待验 | P4p |
+| H-12 | CUAV USL 已接 GPS1；IO 协议/CRC/零 PWM、按键电平/短长按/蜂鸣、GPS1 I²C 灯及左右发光点实际归属 | LOG-A06、IO-H0/R0/R2 |
+| H-13 | IO 实物 MCU、原应用/bootloader 备份条件、SWD/电源、无应用依赖的 IO 恢复和受控更新条件 | IO-R0/R1/R4/R5 |
 
 ## 9. 记录与交付
 
