@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "ekf.h"
 #include "reference_params.h"
@@ -74,6 +75,16 @@ void write_header(std::ostream &out) {
         for (unsigned i = 0; i < 3; ++i) { out << ",mag_" << kind << '_' << i; }
     }
     out << ",mag_fused,mag_rejected";
+#if defined(CONFIG_EKF2_GNSS) && defined(CONFIG_EKF2_RANGE_FINDER)
+    for (const auto &[name, dimension] : {std::pair{"gnss_pos", 2u}, std::pair{"gnss_vel", 3u}, std::pair{"gnss_hgt", 1u}, std::pair{"range", 1u}}) {
+        out << ',' << name << "_timestamp_us";
+        for (const auto *kind : {"innovation", "variance", "ratio"}) {
+            for (unsigned i = 0; i < dimension; ++i) { out << ',' << name << '_' << kind << '_' << i; }
+        }
+        out << ',' << name << "_fused," << name << "_rejected";
+    }
+    out << ",gnss_quality_failure_bits";
+#endif
 #else
     for (unsigned index = 0; index < 25; ++index) {
         out << ",state_" << index;
@@ -86,6 +97,21 @@ void write_header(std::ostream &out) {
 #endif
     out << '\n';
 }
+
+#if defined(DUMP_AID_STATUS) && defined(CONFIG_EKF2_GNSS)
+template <unsigned N, typename Source> void write_vector_status(std::ostream &out, const Source &aid) {
+    out << ',' << aid.timestamp_sample;
+    for (const auto *values : {aid.innovation, aid.innovation_variance, aid.test_ratio}) {
+        for (unsigned i = 0; i < N; ++i) { out << ',' << values[i]; }
+    }
+    out << ',' << aid.fused << ',' << aid.innovation_rejected;
+}
+
+void write_scalar_status(std::ostream &out, const estimator_aid_source1d_s &aid) {
+    out << ',' << aid.timestamp_sample << ',' << aid.innovation << ',' << aid.innovation_variance
+        << ',' << aid.test_ratio << ',' << aid.fused << ',' << aid.innovation_rejected;
+}
+#endif
 
 void hash_word(uint64_t &hash, uint64_t value, unsigned bytes) {
     for (unsigned index = 0; index < bytes; ++index) {
@@ -124,7 +150,13 @@ public:
             throw std::runtime_error("empty aid input");
         }
         if (!header.empty() && header.back() == '\r') { header.pop_back(); }
+#if defined(CONFIG_EKF2_GNSS) && defined(CONFIG_EKF2_RANGE_FINDER)
+        constexpr std::string_view base_header = "timestamp_us,baro_altitude_m,mag_x_gauss,mag_y_gauss,mag_z_gauss,gps_valid,gps_latitude_deg,gps_longitude_deg,gps_altitude_m,gps_vn_m_s,gps_ve_m_s,gps_vd_m_s,range_distance_m,range_quality";
+        extended = header == std::string(base_header) + ",gps_fix_type,gps_hacc_m,gps_vacc_m,gps_sacc_m_s,gps_satellites,gps_pdop,gps_spoofed,range_valid";
+        if (header != base_header && !extended) {
+#else
         if (header != "timestamp_us,baro_altitude_m,mag_x_gauss,mag_y_gauss,mag_z_gauss") {
+#endif
             throw std::runtime_error("unexpected baro/mag CSV header");
         }
         advance();
@@ -135,6 +167,10 @@ public:
         while (ready && baro.time_us <= time) {
             ekf.setBaroData(baro);
             ekf.setMagData(mag);
+#if defined(CONFIG_EKF2_GNSS) && defined(CONFIG_EKF2_RANGE_FINDER)
+            if (gps_ready) { ekf.setGpsData(gps); }
+            if (range_ready) { ekf.setRangeData(range); }
+#endif
             ++consumed;
             advance();
         }
@@ -155,11 +191,17 @@ private:
         }
         if (!storage.empty() && storage.back() == '\r') { storage.pop_back(); }
         std::string_view line(storage);
+#if defined(CONFIG_EKF2_GNSS) && defined(CONFIG_EKF2_RANGE_FINDER)
+        std::array<std::string_view, 22> fields{};
+        const auto width = extended ? 22u : 14u;
+#else
         std::array<std::string_view, 5> fields{};
-        for (unsigned i = 0; i < fields.size(); ++i) {
+        const auto width = 5u;
+#endif
+        for (unsigned i = 0; i < width; ++i) {
             const auto comma = line.find(',');
-            if ((i + 1 < fields.size()) != (comma != std::string_view::npos)) {
-                throw std::runtime_error("expected five aid fields");
+            if ((i + 1 < width) != (comma != std::string_view::npos)) {
+                throw std::runtime_error("unexpected aid CSV field count");
             }
             fields[i] = line.substr(0, comma);
             if (comma != std::string_view::npos) { line.remove_prefix(comma + 1); }
@@ -174,12 +216,50 @@ private:
             mag.mag(i) = number<float>(fields[i + 2]);
             if (!std::isfinite(mag.mag(i))) { throw std::runtime_error("non-finite magnetic field"); }
         }
+#if defined(CONFIG_EKF2_GNSS) && defined(CONFIG_EKF2_RANGE_FINDER)
+        const auto valid = number<unsigned>(fields[5]);
+        if (valid > 1) { throw std::runtime_error("invalid GPS ready flag"); }
+        gps_ready = valid == 1;
+        gps.time_us = range.time_us = time;
+        gps.lat = number<double>(fields[6]); gps.lon = number<double>(fields[7]);
+        gps.alt = number<float>(fields[8]);
+        gps.hacc = 0.3f; gps.vacc = 0.5f; gps.sacc = 0.1f; gps.fix_type = 3; gps.nsats = 12; gps.pdop = 1.f;
+        gps.spoofed = false;
+        range_ready = true;
+        if (extended) {
+            const auto fix = number<unsigned>(fields[14]); const auto satellites = number<unsigned>(fields[18]);
+            const auto spoofed = number<unsigned>(fields[20]); const auto range_valid = number<unsigned>(fields[21]);
+            if (fix > 255 || satellites > 255 || spoofed > 1 || range_valid > 1) { throw std::runtime_error("invalid GNSS quality/range ready flag"); }
+            gps.fix_type = static_cast<uint8_t>(fix); gps.nsats = static_cast<uint8_t>(satellites); gps.spoofed = spoofed == 1;
+            gps.hacc = number<float>(fields[15]); gps.vacc = number<float>(fields[16]); gps.sacc = number<float>(fields[17]); gps.pdop = number<float>(fields[19]);
+            for (const auto value : {gps.hacc, gps.vacc, gps.sacc, gps.pdop}) { if (!std::isfinite(value) || value < 0.f) { throw std::runtime_error("invalid GNSS accuracy"); } }
+            range_ready = range_valid == 1;
+        }
+        for (unsigned i = 0; i < 3; ++i) {
+            gps.vel(i) = number<float>(fields[9 + i]);
+            if (!std::isfinite(gps.vel(i))) { throw std::runtime_error("non-finite GNSS velocity"); }
+        }
+        const auto quality = number<int>(fields[13]);
+        range.rng = number<float>(fields[12]);
+        if (!std::isfinite(gps.lat) || !std::isfinite(gps.lon) || !std::isfinite(gps.alt) ||
+            std::abs(gps.lat) > 90.0 || std::abs(gps.lon) > 180.0 || !std::isfinite(range.rng) || quality < -1 || quality > 100) {
+            throw std::runtime_error("invalid GNSS/range aid field");
+        }
+        range.quality = static_cast<int8_t>(quality);
+#endif
         ready = true;
     }
 
     std::ifstream input;
     estimator::baroSample baro{};
     estimator::magSample mag{};
+#if defined(CONFIG_EKF2_GNSS) && defined(CONFIG_EKF2_RANGE_FINDER)
+    estimator::gnssSample gps{};
+    estimator::sensor::rangeSample range{};
+    bool gps_ready{false};
+    bool range_ready{false};
+    bool extended{false};
+#endif
     uint64_t previous{0};
     unsigned consumed{0};
     bool ready{false};
@@ -261,6 +341,13 @@ int main(int argc, char **argv) {
                     for (unsigned i = 0; i < 3; ++i) { output << ',' << values[i]; }
                 }
                 output << ',' << mag.fused << ',' << mag.innovation_rejected;
+#if defined(CONFIG_EKF2_GNSS) && defined(CONFIG_EKF2_RANGE_FINDER)
+                write_vector_status<2>(output, ekf.aid_src_gnss_pos());
+                write_vector_status<3>(output, ekf.aid_src_gnss_vel());
+                write_scalar_status(output, ekf.aid_src_gnss_hgt());
+                write_scalar_status(output, ekf.aid_src_rng_hgt());
+                output << ',' << ekf.gps_check_fail_status().value;
+#endif
 #else
                 const auto state = ekf.state().Data();
                 for (unsigned index = 0; index < 25; ++index) {

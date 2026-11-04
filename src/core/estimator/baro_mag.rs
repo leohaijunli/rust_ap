@@ -2,7 +2,13 @@
 //! Copyright (c) 2015-2023 PX4 Development Team. All rights reserved.
 //! SPDX-License-Identifier: BSD-3-Clause; license: tools/px4_msgs/LICENSE.
 
-use super::super::{mag_generated, math, FilterFault, Timestamp};
+use super::super::{
+    bias_estimator::BiasEstimator,
+    mag_generated, math,
+    observation_buffer::ObservationBuffer,
+    wmm::{self, MagneticField},
+    FilterFault, Timestamp,
+};
 use super::{default_float, default_int, ImuEkf};
 
 pub(super) const MAG: u64 = 1 << 35;
@@ -90,67 +96,12 @@ impl Default for BaroMagParams {
     }
 }
 
-#[derive(Clone)]
-struct Buffer {
-    samples: [BaroMagSample; 64],
-    times: [u64; 64],
-    length: usize,
-    head: usize,
-    tail: usize,
-    first: bool,
-}
-
-impl Buffer {
-    fn new(length: usize) -> Self {
-        Self {
-            samples: [BaroMagSample::default(); 64],
-            times: [0; 64],
-            length,
-            head: 0,
-            tail: 0,
-            first: true,
-        }
-    }
-    fn push(&mut self, sample: BaroMagSample, time: u64) {
-        if !self.first {
-            self.head = (self.head + 1) % self.length;
-        }
-        self.samples[self.head] = sample;
-        self.times[self.head] = time;
-        if self.head == self.tail && !self.first {
-            self.tail = (self.tail + 1) % self.length;
-        } else {
-            self.first = false;
-        }
-    }
-    fn pop(&mut self, time: u64) -> Option<(BaroMagSample, u64)> {
-        for offset in 0..self.length {
-            let index = (self.head + self.length - offset) % self.length;
-            let timestamp = self.times[index];
-            if time >= timestamp && time < timestamp.saturating_add(100_000) {
-                if index == self.head {
-                    self.tail = self.head;
-                    self.first = true;
-                } else {
-                    self.tail = (index + 1) % self.length;
-                }
-                self.times[index] = 0;
-                return Some((self.samples[index], timestamp));
-            }
-            if index == self.tail {
-                return None;
-            }
-        }
-        None
-    }
-}
-
 pub(super) struct Aids {
     pub baro_status: AidStatus,
     pub mag_status: AidStatus,
     pub params: BaroMagParams,
-    baro: Buffer,
-    mag: Buffer,
+    baro: ObservationBuffer<BaroMagSample>,
+    mag: ObservationBuffer<BaroMagSample>,
     last_input: u64,
     last_baro_push: u64,
     last_mag_push: u64,
@@ -160,11 +111,14 @@ pub(super) struct Aids {
     mag_counter: usize,
     baro_lpf: f32,
     mag_lpf: [f32; 3],
-    baro_bias: f32,
+    baro_bias: BiasEstimator,
     last_baro_fuse: u64,
     last_mag_fuse: u64,
     last_mag_bad: u64,
     mag_heading_lpf: f32,
+    wmm: Option<MagneticField>,
+    wmm_earth: [f32; 3],
+    last_wmm_check: u64,
 }
 
 impl Aids {
@@ -192,8 +146,8 @@ impl Aids {
             baro_status: AidStatus::default(),
             mag_status: AidStatus::default(),
             params,
-            baro: Buffer::new(length),
-            mag: Buffer::new(length),
+            baro: ObservationBuffer::new(length),
+            mag: ObservationBuffer::new(length),
             last_input: 0,
             last_baro_push: 0,
             last_mag_push: 0,
@@ -203,11 +157,14 @@ impl Aids {
             mag_counter: 0,
             baro_lpf: 0.0,
             mag_lpf: [0.0; 3],
-            baro_bias: 0.0,
+            baro_bias: BiasEstimator::new(0.0, 0.0)?,
             last_baro_fuse: 0,
             last_mag_fuse: 0,
             last_mag_bad: 0,
             mag_heading_lpf: 0.0,
+            wmm: None,
+            wmm_earth: [0.0; 3],
+            last_wmm_check: 0,
         })
     }
 
@@ -239,7 +196,7 @@ impl Aids {
             let time = sample.timestamp as i64
                 - (delay * 1000.0) as i64
                 - (filter.average_dt_s * 5e5) as i64;
-            if time >= (buffer.times[buffer.head] + minimum_interval) as i64 {
+            if time >= (buffer.newest_time() + minimum_interval) as i64 {
                 buffer.push(sample, time as u64);
                 *latest = filter.latest_us;
                 *started = true;
@@ -248,7 +205,14 @@ impl Aids {
         Ok(())
     }
 
-    pub fn control_baro(&mut self, filter: &mut ImuEkf) {
+    pub fn shift_altitude(&mut self, delta: f32) -> Result<(), FilterFault> {
+        self.baro_bias.set_bias(self.baro_bias.bias() + delta)
+    }
+
+    pub fn control_baro(&mut self, filter: &mut ImuEkf) -> Result<(), FilterFault> {
+        if filter.control & BARO != 0 && filter.height_reference != 0 {
+            self.baro_bias.predict(filter.average_dt_s)?;
+        }
         if let Some((sample, time)) = self
             .baro_started
             .then(|| self.baro.pop(filter.delayed_us))
@@ -261,10 +225,13 @@ impl Aids {
             }
             self.baro_counter += 1;
             if self.baro_counter <= self.baro.length {
-                self.baro_bias = -filter.global.altitude_m + self.baro_lpf;
+                self.baro_bias
+                    .set_bias(-filter.global.altitude_m + self.baro_lpf)?;
             }
-            let variance = math::square(self.params.baro_noise);
-            let innovation = filter.state[9] + (sample.altitude_m - self.baro_bias);
+            let measurement_variance = math::square(self.params.baro_noise);
+            let variance = measurement_variance + self.baro_bias.variance();
+            let innovation =
+                -filter.global.altitude_m + (sample.altitude_m - self.baro_bias.bias());
             let innovation_variance = filter.covariance[8][8] + variance;
             let ratio = math::square(innovation)
                 / (math::square(self.params.baro_gate.max(1.0)) * innovation_variance);
@@ -276,6 +243,14 @@ impl Aids {
                 fused: false,
                 rejected: !ratio.is_finite() || ratio > 1.0,
             };
+            self.baro_bias
+                .set_noise(0.13, libm::sqrtf(measurement_variance))?;
+            if filter.control & BARO != 0 && filter.height_reference != 0 {
+                self.baro_bias.fuse(
+                    sample.altitude_m - filter.global.altitude_m,
+                    measurement_variance + filter.covariance[8][8],
+                )?;
+            }
             if filter.control & BARO != 0 {
                 if ratio.is_finite() && ratio <= 1.0 {
                     filter.fuse_direct(innovation, innovation_variance, variance, 8, true);
@@ -285,29 +260,36 @@ impl Aids {
                 }
                 if filter.timed_out(self.last_baro_fuse, 5_000_000) {
                     filter.control &= !BARO;
+                    if filter.height_reference == 0 {
+                        filter.height_reference = 4;
+                    }
                 }
             } else if self.baro_counter > self.baro.length
                 && self.last_baro_push + 400_000 > filter.latest_us
             {
                 if self.params.height_reference == 0 {
-                    filter.global.altitude_m = sample.altitude_m;
-                    filter.reset_variance(8, variance.max(0.0001));
-                    self.baro_bias = 0.0;
-                    filter.last_height_fuse = filter.delayed_us;
+                    filter.height_reference = 0;
+                    filter.initialize_altitude(sample.altitude_m, measurement_variance);
+                    self.baro_bias.reset();
                     self.baro_status.innovation[0] = 0.0;
-                    self.baro_status.variance[0] = variance;
+                    self.baro_status.variance[0] = measurement_variance;
                     self.baro_status.ratio[0] = 0.0;
                     self.baro_status.fused = true;
                     self.baro_status.rejected = false;
                 } else {
-                    self.baro_bias = -filter.global.altitude_m + self.baro_lpf;
+                    self.baro_bias
+                        .set_bias(-filter.global.altitude_m + self.baro_lpf)?;
                 }
                 filter.control |= BARO;
                 self.last_baro_fuse = filter.delayed_us;
             }
         } else if filter.control & BARO != 0 && self.last_baro_push + 400_000 <= filter.latest_us {
             filter.control &= !BARO;
+            if filter.height_reference == 0 {
+                filter.height_reference = 4;
+            }
         }
+        Ok(())
     }
 
     pub fn control_mag(&mut self, filter: &mut ImuEkf) {
@@ -339,6 +321,7 @@ impl Aids {
             }
         }
         self.mag_counter += 1;
+        let wmm_updated = self.update_wmm(filter);
         let observation_variance = math::square(self.params.mag_noise).max(0.0001);
         let (innovation, variance, h_x) = mag_generated::mag_x(
             &filter.state,
@@ -364,7 +347,8 @@ impl Aids {
             && self.mag_counter > 3
             && self.last_mag_push + 500_000 > filter.latest_us;
         self.check_heading(sample.field_gauss, filter);
-        let active = filter.control & MAG != 0 && filter.control & (1 << 16) == 0;
+        let consistent = filter.control & MAG_CONSISTENT != 0 || !filter.horizontal_aiding();
+        let active = filter.control & MAG != 0 && filter.control & (1 << 16) == 0 && consistent;
         if active && self.params.mag_type == 0 && filter.control & MAG_ALIGNED != 0 {
             filter.control |= MAG_3D;
         } else {
@@ -378,7 +362,7 @@ impl Aids {
         } else {
             filter.control &= !MAG_HDG;
         }
-        if filter.control & MAG != 0 {
+        if filter.control & MAG != 0 && !filter.horizontal_aiding() {
             filter.control |= MAG_DEC;
         } else {
             filter.control &= !MAG_DEC;
@@ -386,6 +370,20 @@ impl Aids {
         if filter.control & MAG != 0 {
             if !continuing || !previous_yaw {
                 self.stop_mag(filter);
+                return;
+            }
+            let hagl = if filter.terrain_valid {
+                filter.state[24] + filter.global.altitude_m
+            } else {
+                filter.global.altitude_m
+            };
+            let hagl_reset = filter.range_params.is_some()
+                && filter.control & MAG_ALIGNED == 0
+                && hagl > 1.5
+                && filter.control & (MAG_HDG | MAG_3D) != 0;
+            if hagl_reset || (wmm_updated && !filter.horizontal_aiding()) {
+                self.reset_mag(filter, filter.control & (MAG_HDG | MAG_3D) != 0);
+                self.last_mag_fuse = filter.delayed_us;
                 return;
             }
             let rejected = (0..3).any(|i| {
@@ -437,18 +435,21 @@ impl Aids {
                 }
             }
             if filter.control & MAG_DEC != 0 {
+                let r_decl = if self.wmm.is_some() { 0.5 } else { 0.25 };
                 let (prediction, s, h) = mag_generated::declination(
                     &filter.state,
                     &filter.covariance,
-                    0.25,
+                    r_decl,
                     f32::EPSILON,
                 );
                 let mut gain = filter.project_covariance(h).map(|v| v * (1.0 / s));
                 // With no WMM, a configured saved declination updates the
                 // active states; the zero fallback updates magnetic states only.
-                let saved = self.params.mag_declination_deg != 0.0;
+                let saved = self.params.mag_declination_deg != 0.0 || self.wmm.is_some();
                 Self::limit_gains(&mut gain, saved && update_all, saved && update_tilt);
-                let observation = if saved {
+                let observation = if let Some(wmm) = self.wmm {
+                    wmm.declination_deg.to_radians()
+                } else if saved {
                     self.params.mag_declination_deg.to_radians()
                 } else {
                     0.0
@@ -456,16 +457,21 @@ impl Aids {
                 filter.measurement_update(
                     gain,
                     h,
-                    0.25,
+                    r_decl,
                     math::wrap_pi_f32(prediction - observation),
                 );
             }
             if filter.timed_out(self.last_mag_fuse, 7_000_000) {
-                self.reset_mag(filter, update_all);
-                self.last_mag_fuse = filter.delayed_us;
+                if !filter.horizontal_aiding() {
+                    self.reset_mag(filter, update_all);
+                    self.last_mag_fuse = filter.delayed_us;
+                } else {
+                    self.stop_mag(filter);
+                }
             }
         } else if starting {
             let reset = !previous_yaw
+                || wmm_updated
                 || math::norm(&filter.state[16..19]) == 0.0
                 || (15..21).any(|i| filter.covariance[i][i] < 1e-9);
             if reset {
@@ -533,7 +539,7 @@ impl Aids {
         for i in 15..21 {
             filter.reset_variance(i, math::square(self.params.mag_noise));
         }
-        if filter.control & (MAG_HDG | MAG_3D) != 0 {
+        if filter.control & (MAG_HDG | MAG_3D) != 0 && !filter.horizontal_aiding() {
             filter.control &= !YAW;
         }
         filter.control &= !(MAG | MAG_HDG | MAG_3D | MAG_DEC | MAG_ALIGNED);
@@ -545,8 +551,24 @@ impl Aids {
             return true;
         }
         let strength = math::norm(&field);
-        let failing = self.params.mag_check & 4 != 0
-            || (self.params.mag_check & 1 != 0 && !(0.05..=0.85).contains(&strength));
+        let mut failing = false;
+        if self.params.mag_check & 1 != 0 {
+            failing = if let Some(wmm) = self.wmm {
+                (strength - wmm.strength_gauss).abs() > default_float("EKF2_MAG_CHK_STR")
+            } else {
+                self.params.mag_check & 4 != 0 || !(0.05..=0.85).contains(&strength)
+            };
+        }
+        if self.params.mag_check & 2 != 0 {
+            if let Some(wmm) = self.wmm {
+                let earth = math::rotate(math::rotation(filter.quaternion()), field);
+                let inclination = libm::asinf(earth[2] / math::norm(&earth).max(1e-4));
+                failing |= math::wrap_pi_f32(inclination - wmm.inclination_deg.to_radians()).abs()
+                    > default_float("EKF2_MAG_CHK_INC").to_radians();
+            } else {
+                failing |= self.params.mag_check & 4 != 0;
+            }
+        }
         if failing {
             filter.control |= 1 << 16;
         }
@@ -573,16 +595,44 @@ impl Aids {
         }
         if self.mag_heading_lpf.abs() >= filter.params.heading_noise {
             filter.control &= !MAG_CONSISTENT;
+        } else if filter.horizontal_aiding()
+            && math::norm(&filter.horizontal_accel_lpf) > default_float("EKF2_MAG_ACCLIM")
+        {
+            filter.control |= MAG_CONSISTENT;
         }
     }
     fn declination(&self, filter: &ImuEkf) -> f32 {
         if filter.control & MAG_ALIGNED != 0 {
             libm::atan2f(filter.state[17], filter.state[16])
+        } else if let Some(wmm) = self.wmm {
+            wmm.declination_deg.to_radians()
         } else {
             self.params.mag_declination_deg.to_radians()
         }
     }
     fn reset_mag(&mut self, filter: &mut ImuEkf, reset_heading: bool) {
+        if self.wmm.is_some() {
+            let changed = math::norm(&core::array::from_fn::<_, 3, _>(|i| {
+                filter.state[16 + i] - self.wmm_earth[i]
+            })) > 0.01;
+            if changed {
+                filter.state[16..19].copy_from_slice(&self.wmm_earth);
+                for i in 15..18 {
+                    filter.reset_variance(i, math::square(self.params.mag_noise));
+                }
+            }
+            if !reset_heading && filter.control & YAW != 0 {
+                if changed {
+                    let body =
+                        math::rotate_inverse(math::rotation(filter.quaternion()), self.wmm_earth);
+                    for (i, value) in body.iter().enumerate() {
+                        filter.state[19 + i] = self.mag_lpf[i] - value;
+                        filter.reset_variance(18 + i, math::square(self.params.mag_noise));
+                    }
+                }
+                return;
+            }
+        }
         filter.state[19..22].fill(0.0);
         for i in 18..21 {
             filter.reset_variance(i, math::square(self.params.mag_noise));
@@ -599,7 +649,11 @@ impl Aids {
             filter.control |= MAG_CONSISTENT | MAG_ALIGNED;
             self.mag_heading_lpf = 0.0;
         }
-        let earth = math::rotate(math::rotation(filter.quaternion()), self.mag_lpf);
+        let earth = if self.wmm.is_some() {
+            self.wmm_earth
+        } else {
+            math::rotate(math::rotation(filter.quaternion()), self.mag_lpf)
+        };
         if math::norm(&core::array::from_fn::<_, 3, _>(|i| {
             filter.state[16 + i] - earth[i]
         })) > 0.01
@@ -609,5 +663,49 @@ impl Aids {
                 filter.reset_variance(i, math::square(self.params.mag_noise));
             }
         }
+    }
+
+    fn update_wmm(&mut self, filter: &ImuEkf) -> bool {
+        let Some(origin) = filter.origin else {
+            return false;
+        };
+        let newer = filter.origin_timestamp > self.last_mag_fuse;
+        if !newer
+            && !(filter.horizontal_aiding() && filter.timed_out(self.last_wmm_check, 10_000_000))
+        {
+            return false;
+        }
+        let location = if filter.origin_altitude.is_some() {
+            filter.global
+        } else {
+            origin
+        };
+        let Ok(field) = wmm::lookup(
+            location.latitude_rad.to_degrees() as f32,
+            location.longitude_rad.to_degrees() as f32,
+        ) else {
+            return false;
+        };
+        if filter.origin_altitude.is_some() {
+            self.last_wmm_check = filter.delayed_us;
+        }
+        let changed = self.wmm.is_none_or(|previous| {
+            (field.declination_deg - previous.declination_deg).abs() > 1.0
+                || (field.inclination_deg - previous.inclination_deg).abs() > 1.0
+                || (field.strength_gauss - previous.strength_gauss).abs() > 0.01
+        });
+        if changed {
+            let (declination, inclination) = (
+                field.declination_deg.to_radians(),
+                field.inclination_deg.to_radians(),
+            );
+            self.wmm_earth = [
+                libm::cosf(inclination) * libm::cosf(declination) * field.strength_gauss,
+                libm::cosf(inclination) * libm::sinf(declination) * field.strength_gauss,
+                libm::sinf(inclination) * field.strength_gauss,
+            ];
+            self.wmm = Some(field);
+        }
+        changed
     }
 }

@@ -38,7 +38,16 @@ BARO_MAG_PARAMS = (
     "EKF2_DECL_TYPE", "EKF2_MAG_TYPE", "EKF2_MAG_ACCLIM", "EKF2_SYNT_MAG_Z",
     "EKF2_MAG_CHECK", "EKF2_MAG_CHK_STR", "EKF2_MAG_CHK_INC",
 )
-PROFILES = {"core_imu": CORE_PARAMS, "baro_mag": CORE_PARAMS + BARO_MAG_PARAMS}
+GNSS_RANGE_PARAMS = (
+    "EKF2_GPS_CTRL", "EKF2_GPS_MODE", "EKF2_GPS_DELAY", "EKF2_GPS_V_NOISE", "EKF2_GPS_P_NOISE",
+    "EKF2_GPS_V_GATE", "EKF2_GPS_P_GATE", "EKF2_GPS_CHECK", "EKF2_REQ_EPH", "EKF2_REQ_EPV",
+    "EKF2_REQ_SACC", "EKF2_REQ_NSATS", "EKF2_REQ_PDOP", "EKF2_REQ_HDRIFT", "EKF2_REQ_VDRIFT",
+    "EKF2_REQ_FIX", "EKF2_GSF_TAS", "EKF2_RNG_CTRL", "EKF2_RNG_DELAY", "EKF2_RNG_NOISE",
+    "EKF2_RNG_GATE", "EKF2_RNG_PITCH", "EKF2_RNG_SFE", "EKF2_RNG_A_HMAX", "EKF2_RNG_A_VMAX",
+    "EKF2_RNG_QLTY_T", "EKF2_RNG_K_GATE", "EKF2_RNG_FOG", "EKF2_TERR_NOISE", "EKF2_TERR_GRAD", "EKF2_MIN_RNG",
+)
+PROFILES = {"core_imu": CORE_PARAMS, "baro_mag": CORE_PARAMS + BARO_MAG_PARAMS,
+            "gnss_range": CORE_PARAMS + BARO_MAG_PARAMS + GNSS_RANGE_PARAMS}
 FIELD_TYPES = {
     "uint64": "uint64_t", "uint32": "uint32_t", "uint8": "uint8_t",
     "float32": "float", "float64": "double", "bool": "bool",
@@ -64,7 +73,7 @@ def aid_header(document, name):
     return "\n".join([*lines, "};", ""])
 
 
-def configure_header(definitions, profile="core_imu"):
+def configure_header(definitions, profile="core_imu", fixture="nominal"):
     catalog = {definition.name: definition for definition in definitions}
     lines = ["#pragma once", f'inline constexpr char REFERENCE_PX4_REF[] = "{REF}";',
              "inline void configure_reference(Ekf &ekf) {",
@@ -81,16 +90,29 @@ def configure_header(definitions, profile="core_imu"):
         value = catalog[name].default
         lines.append(f"    ekf.output_predictor().{setter}({gen_params.float_literal(value)}f);")
         applied[name] = value
+    if profile == "gnss_range":
+        value = catalog["EKF2_REQ_GPS_H"].default
+        lines.append(f"    ekf.set_min_required_gps_health_time({round(value * 1_000_000)}u);")
+        lines.append("    ekf.set_rangefinder_limits(0.1f, 30.0f); // Synthetic fixture limits, not hardware specifications.")
+        applied["EKF2_REQ_GPS_H"] = value
+        if fixture == "lever_arm":
+            for group, values in {"GPS": [0.2, 0.1, -0.05], "IMU": [0.03, -0.02, 0.01], "RNG": [0.1, -0.05, -0.1]}.items():
+                for axis, value in enumerate(values):
+                    name = f"EKF2_{group}_POS_{'XYZ'[axis]}"
+                    lines.append(f"    params.{group.lower()}_pos_body({axis}) = {gen_params.float_literal(value)}f;")
+                    applied[name] = value
     lines.extend(["    ekf.updateParameters();", "}", ""])
     return "\n".join(lines), applied
 
 
-def prepare(px4_root, output, profile="core_imu"):
+def prepare(px4_root, output, profile="core_imu", fixture="nominal"):
     # Never switch features inside an existing reference cache. That would
     # silently replace the executable/manifest used by another stage.
     manifest_path = output / "source_manifest.json"
     if manifest_path.exists() and json.loads(manifest_path.read_text(encoding="utf-8"))["profile"] != profile:
         raise ValueError("reference profile differs; select a separate output directory")
+    if manifest_path.exists() and json.loads(manifest_path.read_text(encoding="utf-8")).get("fixture", "nominal") != fixture:
+        raise ValueError("reference fixture differs; select a separate output directory")
     archive = subprocess.check_output(
         ["git", "-C", str(px4_root), "archive", REF, *SOURCE_PATHS]
     )
@@ -114,14 +136,17 @@ def prepare(px4_root, output, profile="core_imu"):
     definitions = gen_params.collect(gen_params.load_documents(px4_root, REF))
     for path in gen_params.yaml_paths(px4_root, REF):
         hashes[path] = hashlib.sha256(gen_params.git_show(px4_root, REF, path).encode("utf-8")).hexdigest()
-    header, applied = configure_header(definitions, profile)
+    header, applied = configure_header(definitions, profile, fixture)
     (include / "reference_params.h").write_text(header, encoding="utf-8")
     manifest = {"schema": 1, "px4_ref": REF, "profile": profile,
+                "fixture": fixture,
                 "error_state_count": 24, "nominal_state_count": 25,
                 "applied_parameters": applied, "source_sha256": hashes,
                 "tools_sha256": {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
                                  for path in [Path(__file__), Path(__file__).with_name("main.cpp"),
-                                              Path(__file__).with_name("CMakeLists.txt"), ROOT / "tools/gen_params.py"]}}
+                                               Path(__file__).with_name("CMakeLists.txt"), ROOT / "tools/gen_params.py"]}}
+    if profile == "gnss_range":
+        manifest["synthetic_rangefinder_limits_m"] = [0.1, 30.0]
     (output / "source_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return source, include
 
@@ -130,13 +155,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("PX4_ROOT", "/home/dev/PX4-Autopilot")))
     parser.add_argument("--profile", choices=PROFILES, default="core_imu")
+    parser.add_argument("--fixture", choices=("nominal", "lever_arm"), default="nominal")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
     try:
-        output = (args.output or ROOT / ("target/ekf2-host" if args.profile == "core_imu"
-                                        else "target/ekf2-host-baro-mag")).resolve()
-        source, include = prepare(args.root, output, args.profile)
+        defaults = {"core_imu": "target/ekf2-host", "baro_mag": "target/ekf2-host-baro-mag",
+                    "gnss_range": "target/ekf2-host-gnss-range"}
+        if args.fixture != "nominal" and args.profile != "gnss_range":
+            raise ValueError("lever-arm fixture requires the five-sensor profile")
+        default_output = defaults[args.profile] + ("-lever-arm" if args.fixture == "lever_arm" else "")
+        output = (args.output or ROOT / default_output).resolve()
+        source, include = prepare(args.root, output, args.profile, args.fixture)
         if not args.prepare_only:
             subprocess.run([
                 "cmake", "-S", str(Path(__file__).parent), "-B", str(output / "build"),
@@ -148,8 +178,10 @@ def main():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["compiler"] = subprocess.check_output(["c++", "--version"], text=True).splitlines()[0]
             manifest["executable_sha256"] = hashlib.sha256((output / "build/golden_cpp").read_bytes()).hexdigest()
-            if args.profile == "baro_mag":
+            if args.profile in ("baro_mag", "gnss_range"):
                 manifest["aids_executable_sha256"] = hashlib.sha256((output / "build/golden_cpp_aids").read_bytes()).hexdigest()
+            if args.profile == "gnss_range":
+                manifest["wmm_probe_sha256"] = hashlib.sha256((output / "build/wmm_probe").read_bytes()).hexdigest()
             manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"golden_cpp: fixed PX4 {REF}; profile={args.profile}; output={output}")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:

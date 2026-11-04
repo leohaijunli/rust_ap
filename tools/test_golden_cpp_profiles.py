@@ -41,6 +41,24 @@ class ProfileTests(unittest.TestCase):
                 build.prepare(Path("missing-source"), Path(directory), "baro_mag")
             self.assertEqual(path.read_text(encoding="utf-8"), saved)
 
+    def test_five_sensor_fixture_applies_health_delay_and_preserves_a_separate_lever_arm_cache(self):
+        names = set(build.PROFILES["gnss_range"]) | {"EKF2_TAU_POS", "EKF2_TAU_VEL", "EKF2_REQ_GPS_H"}
+        definitions = [SimpleNamespace(name=name, default=0.25, kind="Float") for name in names]
+        normal, applied = build.configure_header(definitions, "gnss_range")
+        lever, lever_applied = build.configure_header(definitions, "gnss_range", "lever_arm")
+        self.assertIn("set_min_required_gps_health_time(250000u)", normal)
+        self.assertEqual(applied["EKF2_REQ_GPS_H"], 0.25)
+        self.assertNotIn("params.gps_pos_body", normal)
+        self.assertIn("params.gps_pos_body(0) = 0.2f", lever)
+        self.assertEqual(lever_applied["EKF2_IMU_POS_Y"], -0.02)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source_manifest.json"
+            saved = json.dumps({"profile": "gnss_range", "fixture": "nominal"})
+            path.write_text(saved, encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "fixture differs"):
+                build.prepare(Path("missing-source"), Path(directory), "gnss_range", "lever_arm")
+            self.assertEqual(path.read_text(encoding="utf-8"), saved)
+
 
 if __name__ == "__main__":
     unittest.main()

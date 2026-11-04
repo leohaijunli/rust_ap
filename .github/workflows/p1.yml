@@ -36,6 +36,8 @@ jobs:
           .venv/bin/python tools/gen_params.py --root target/px4-ekf2-source --check
           .venv/bin/python tools/gen_ekf2_covariance.py --root target/px4-ekf2-source --check
           .venv/bin/python tools/gen_ekf2_mag.py --root target/px4-ekf2-source --check
+          .venv/bin/python tools/gen_ekf2_wmm.py --root target/px4-ekf2-source --check
+          .venv/bin/python tools/gen_ekf2_gsf.py --root target/px4-ekf2-source --check
       - name: Build fixed PX4 host golden reference
         run: .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source
       - name: Check shared IMU intake and committed golden baseline
@@ -56,6 +58,16 @@ jobs:
           for scenario in nominal outliers dropout_after_alignment; do
             .venv/bin/python tools/check_ekf2_baro_mag.py --case "$scenario" --rust "target/$host/release/examples/ekf2_input"
           done
+      - name: Qualify Rust GNSS and range fusion
+        run: |
+          .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source --profile gnss_range
+          .venv/bin/python tools/golden_cpp/build.py --root target/px4-ekf2-source --profile gnss_range --fixture lever_arm
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          cargo build --release --example ekf2_wmm --target "$host" --locked
+          .venv/bin/python tools/check_ekf2_wmm.py --rust "target/$host/release/examples/ekf2_wmm"
+          for scenario in nominal outliers dropout quality lever_arm; do
+            .venv/bin/python tools/check_ekf2_gnss_range.py --case "$scenario" --rust "target/$host/release/examples/ekf2_input"
+          done
       - name: Host tests, lint, H753 build and package checks
         run: bash tools/firmware.sh check
       - name: Separate fault-injection build (never flashed in CI)
@@ -74,4 +86,5 @@ jobs:
             target/ekf2-host/rust-imu/report.json
             target/ekf2-host/rust-noisy/report.json
             target/ekf2-host-baro-mag/**/report.json
+            target/ekf2-host-gnss-range*/**/report.json
             target/p1-fault-injection/thumbv7em-none-eabihf/release/disassembly.txt

@@ -11,7 +11,7 @@
   "_bucket_seconds": {
     "discovery": 0.0,
     "blueprint": 0.0,
-    "rewrite": 0.0,
+    "rewrite": 11638.506368875504,
     "test_heal": 0.0,
     "parity": 1691.2864503860474,
     "pgo_bench": 0.0
@@ -110,6 +110,86 @@
       "clippy_warnings": 0,
       "failures_summary": "After-alignment dropout scenario: full state/covariance, NIS and both-source stop/recovery checks pass at 1201 updates",
       "fix_applied": "Matched 1s mag stop timeout, magnetic covariance reset and yaw validity revocation; old golden fixtures retained"
+    },
+    {
+      "iteration": 6,
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "coverage_pct": null,
+      "clippy_warnings": 3,
+      "failures_summary": "E3 WMM unit checks pass; lint command rejects three faithfully copied source scale literals as excessive_precision",
+      "fix_applied": "Pending generator change to exact f32 bit-pattern constants, preserving PX4 decimal values and avoiding a broad lint exemption"
+    },
+    {
+      "iteration": 7,
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "E3 range-sensor targeted test passes (quality hysteresis, bounds, tilt and stale input); previous WMM Clippy pass reused",
+      "fix_applied": "No range-sensor test correction needed"
+    },
+    {
+      "iteration": 8,
+      "total": 21,
+      "passed": 21,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "Shared buffer/core refactor and first GNSS/range integration compile; 21 estimator tests pass. GSF and complete fusion parity not yet qualified",
+      "fix_applied": "Preserved no-GPS core independence with explicit extension phases; reference YAML revealed RNG_FOG=3m and fog median check was added"
+    },
+    {
+      "iteration": 9,
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "coverage_pct": null,
+      "clippy_warnings": 3,
+      "failures_summary": "E3 lib/example Clippy command failed: two GSF covariance-index loops and an approximate-constant lint on the exact PX4 0.7071f threshold. Separate WSL host build failed while starting the VM (0x800705b4); C++ build succeeded",
+      "fix_applied": "Use the three explicit symmetry assignments plus enumerated diagonals; retain 0.7071f as exact bits 0x3f350481. Retry the host build without changing flags"
+    },
+    {
+      "iteration": 10,
+      "total": 24,
+      "passed": 24,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "24 estimator tests pass, including GNSS lever arm/input lock and enabled-fog median blocking/recovery. WSL host release retry succeeded. E3 C++ state baseline and new immutable NIS baseline verified; full Rust parity now running",
+      "fix_applied": "No numerical tolerance or stored baseline changed"
+    },
+    {
+      "iteration": 11,
+      "total": 25,
+      "passed": 24,
+      "failed": 1,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "Native Windows Python suite: 24 pass; one existing real-ULog test cannot import pyulog in this interpreter. Final host lib/example Clippy passes; E1 and E2 normal/late-dropout regressions pass",
+      "fix_applied": "Use the previously configured WSL Python environment for the full related suite; do not skip the ULog test or install a second package environment"
+    },
+    {
+      "iteration": 12,
+      "total": 25,
+      "passed": 25,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "Full related Python suite passes in the existing WSL environment, including the real-ULog test. Native missing-pyulog error remains in historical iteration 11",
+      "fix_applied": "Selected the already configured interpreter; did not skip tests or install packages"
+    },
+    {
+      "iteration": 13,
+      "total": 25,
+      "passed": 25,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "E3 closure: 25 estimator passes (2 GNSS cases rerun after explicit mode rejection, 23 unaffected passes reused); 2 intake, 26 related Python including added NIS guard, 4 profile cases pass. Host/H753 Clippy, normal release/package/vector checks and GSF drift check pass",
+      "fix_applied": "No additional mathematical edits in local simplifier review; retain independent GNSS extension and exact expression order. Source c81859106448aa0c; no board flash, runtime profiling or safety/LED change"
     }
   ],
   "parity_iterations": [
@@ -120,6 +200,38 @@
       "max_abs_error": "state<5e-7; covariance<2e-6; fixed per-field tolerances respected",
       "divergence_cause": "One deterministic seed, three scenarios (not three seeds); old early-dropout fixture lacked mag-stop coverage and is retained as historical partial evidence",
       "fix_applied": "Added immutable after-alignment fixture; fixed vertical deadline plus 1s mag stop/covariance/yaw semantics; normal/outlier/NIS and both-source recovery pass"
+    },
+    {
+      "iteration": 2,
+      "seeds_tested": 1,
+      "seeds_passed": 0,
+      "max_abs_error": "first divergence row 1050: range-height flag and altitude after GNSS initialization",
+      "divergence_cause": "Range controller read cached nominal posD after a global altitude reset; pinned PX4 computes HAGL from terrain plus current global altitude. Earlier rows match fixed state/covariance gates",
+      "fix_applied": "Supply current global altitude to HAGL observation math. Root-cause repair 1/5; preserve the stationary/NIS archives and all tolerances"
+    },
+    {
+      "iteration": 3,
+      "seeds_tested": 1,
+      "seeds_passed": 0,
+      "max_abs_error": "full state/covariance gate passes; range NIS differs by one 7.63e-6 altitude ULP at row 1648",
+      "divergence_cause": "First state-bit divergence is the first range-height fusion. PX4 Matrix::operator/ multiplies by reciprocal, while Rust range gain used scalar division; that later crosses a cancellation ULP near 100m altitude",
+      "fix_applied": "Match reciprocal multiplication for range vector gain and the same GNSS/GSF vector operations. This root-cause repair is 1/5; keep NIS 1e-6/1e-4 and all archives unchanged"
+    },
+    {
+      "iteration": 4,
+      "seeds_tested": 1,
+      "seeds_passed": 0,
+      "max_abs_error": "normal, outliers and nonzero lever arms pass full state/covariance/NIS; dropout and quality differ only at row 1310 on the dead-reckoning bit",
+      "divergence_cause": "Pinned isRecent is strict (last+interval > now), unlike the complement of isTimedOut at exact equality. Rust used the latter for horizontal aiding",
+      "fix_applied": "Use the exact strict recent boundary; add a one-second boundary regression. Root-cause repair 1/5; no tolerance or baseline adjustment"
+    },
+    {
+      "iteration": 5,
+      "seeds_tested": 1,
+      "seeds_passed": 1,
+      "max_abs_error": "five scenarios / 12005 updates: state<5.1e-7; covariance<5.8e-6; fixed field tolerances and NIS respected",
+      "divergence_cause": "One deterministic seed across five scenarios; prior cached-altitude, vector reciprocal and strict recent-boundary failures retained",
+      "fix_applied": "Full state/covariance/NIS and actual source rejection/stop/recovery pass; no archive or threshold changed"
     }
   ],
   "benchmarks": [],

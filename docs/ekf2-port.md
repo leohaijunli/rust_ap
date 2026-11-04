@@ -287,4 +287,10 @@ NIS 首次对拍前固定绝对 `1e-6`、相对 `1e-4`，观测时间、fused/re
 - 固定 C++ `baro_mag` profile 已编译，独立缓存在 `target/ekf2-host-baro-mag/`；启用原版 barometer/magnetometer 源文件与固定 WMM 表，不下载更新地磁表。切换现有缓存的 profile 会被拒绝。
 - 从同一 YAML 应用额外 19 个气压/磁参数；合成观测以 50 Hz 压力高度与 body-FRD 磁场输入，CLI 为 `golden_cpp IMU.csv OUTPUT.csv BARO_MAG.csv`。输入显式标注合成，不是实际 BMP388/BMM150 数据。
 - Rust 气压/磁力计序贯更新、对准、磁协方差/偏航停止状态机与垂直 dead-reckoning 门已通过正常、离群值和对准后 1 s 中断三类状态/协方差/NIS 对拍；不逐位一致，不放宽容差。
-- 17 项核心、2 项 intake、22+3 项 Python、host Clippy 与普通 H753 release/打包/布局通过。新增中断场景为 12 s（9–10 s 中断），旧 5–6 s 场景保留但不能证明磁停止；完整边界、命令与历史失败见 [E2-H 记录](acceptance/ekf2/20261104-e2-host.md)。本次远程 CI 待核对，下一步 E3-H～E6-H，不等待工程师逐阶段确认。
+- 17 项核心、2 项 intake、22+3 项 Python、host Clippy 与普通 H753 release/打包/布局通过，E2 [CI success](https://github.com/leohaijunli/rust_ap/actions/runs/41809334671) 已核对。新增中断场景为 12 s（9–10 s 中断），旧 5–6 s 场景保留但不能证明磁停止；完整边界见 [E2-H 记录](acceptance/ekf2/20261104-e2-host.md)。
+
+## 15. E3-H 本地软件门（2026-11-04）
+
+GNSS/雷达的默认 Auto/in-air 通路、独立延迟、质量恢复、原点/高度偏置、杠杆臂与相关地形融合已接入。正常、离群、断线、fix 质量失败及非零杆臂五场景共 12005 更新的完整状态/协方差/NIS 和控制/故障标志通过；固定黄金数据已保存，不放宽容差或泛称全参数等价。
+
+25 项核心、2 项 intake、相关 Python/生成漂移与普通 H753 构建/打包/布局通过；[E3-H 证据与限制](acceptance/ekf2/20261104-e3-host.md)。本次 CI 提交后核对；下一步 E4-H 输出预测器，继续至 E6-H，不等待逐阶段确认。真实日志、板载参数桥、硬件与 E7 仍待验。

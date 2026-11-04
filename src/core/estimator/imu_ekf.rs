@@ -1,6 +1,6 @@
-//! E1 IMU-only delayed EKF core. No external aid, HAL, heap or output observer.
-//! This is the pinned PX4 `core_imu` profile, including internal pseudo updates;
-//! it does not provide valid absolute yaw, position or height for flight.
+//! Shared delayed EKF core and barometer/magnetometer/range aiding.
+//! GNSS lives in a separate extension; the common core has no GNSS input type.
+//! Pinned profiles include internal pseudo updates and are not flight-qualified.
 //! Copyright (c) 2015-2024 PX4 Development Team. All rights reserved.
 //! SPDX-License-Identifier: BSD-3-Clause
 //! Source mapping and license: docs/provenance.md, tools/px4_msgs/LICENSE.
@@ -17,6 +17,10 @@ use super::{
 #[path = "baro_mag.rs"]
 pub mod baro_mag;
 use baro_mag::{Aids, BaroMagParams, BaroMagSample};
+#[path = "range_fusion.rs"]
+pub mod range;
+use super::range_sensor::RangeObservation;
+use range::{RangeAids, RangeParams};
 
 const TILT_ALIGN: u64 = 1;
 const IN_AIR: u64 = 1 << 7;
@@ -29,6 +33,29 @@ const TILT_VARIANCE_LIMIT: f32 = square(3.0 * (core::f64::consts::PI / 180.0) as
 
 /// Rust boundary watchdog, independent of PX4 aid timeouts. A gap requires reset.
 pub const IMU_FRESH_US: u64 = 100_000;
+
+/// Extension phases follow PX4's ordering without making the common kernel
+/// depend on GNSS. The no-GPS instance uses the empty implementation.
+pub(super) trait ControlExtension {
+    fn push(&mut self, _filter: &ImuEkf) -> Result<(), FilterFault> {
+        Ok(())
+    }
+    fn control_horizontal(
+        &mut self,
+        _filter: &mut ImuEkf,
+        _imu: &ImuDelta,
+    ) -> Result<(), FilterFault> {
+        Ok(())
+    }
+    fn control_height(&mut self, _filter: &mut ImuEkf) -> Result<(), FilterFault> {
+        Ok(())
+    }
+    fn shift_altitude(&mut self, _delta: f32) -> Result<(), FilterFault> {
+        Ok(())
+    }
+}
+struct NoExtension;
+impl ControlExtension for NoExtension {}
 
 /// Snapshot of implemented IMU parameters from the single generated catalog.
 /// Changing it requires a new/reset core; it is not a parameter registry.
@@ -54,7 +81,7 @@ pub struct ImuEkfParams {
     pub accel_bias_time_constant: f32,
 }
 
-fn default_float(name: &str) -> f32 {
+pub(super) fn default_float(name: &str) -> f32 {
     match ekf2_parameter(name)
         .expect("implemented parameter in generated catalog")
         .default
@@ -64,7 +91,7 @@ fn default_float(name: &str) -> f32 {
     }
 }
 
-fn default_int(name: &str) -> i32 {
+pub(super) fn default_int(name: &str) -> i32 {
     match ekf2_parameter(name)
         .expect("implemented parameter in generated catalog")
         .default
@@ -151,38 +178,55 @@ impl ImuEkfParams {
 pub struct ImuEkf {
     aiding_params: Option<BaroMagParams>,
     aiding: Option<Aids>,
-    params: ImuEkfParams,
+    range_params: Option<RangeParams>,
+    range: Option<RangeAids>,
+    pub(super) params: ImuEkfParams,
+    horizontal_position_noise: f32,
+    horizontal_velocity_noise: f32,
     downsampler: DownSampler,
     buffer: ImuBuffer,
-    state: StateVector,
-    covariance: Covariance,
-    global: GlobalPosition,
+    pub(super) state: StateVector,
+    pub(super) covariance: Covariance,
+    pub(super) global: GlobalPosition,
+    pub(super) origin: Option<GlobalPosition>,
+    pub(super) origin_timestamp: Timestamp,
+    pub(super) origin_altitude: Option<f32>,
+    pub(super) height_reference: i32,
+    pub(super) altitude_delta: f32,
+    pub(super) previous_control: u64,
+    pub(super) last_horizontal_position_fuse: Timestamp,
+    pub(super) last_horizontal_velocity_fuse: Timestamp,
+    pub(super) last_vertical_velocity_fuse: Timestamp,
+    pub(super) last_terrain_fuse: Timestamp,
+    pub(super) terrain_valid: bool,
+    pub(super) horizontal_accel_lpf: [f32; 2],
     last_known_global: GlobalPosition,
     earth_rate: math::Vector3,
     earth_rate_latitude: f64,
     accel_lpf: math::Vector3,
     gyro_lpf: math::Vector3,
-    average_dt_s: f32,
+    pub(super) average_dt_s: f32,
     first_sample: bool,
     input_seen: bool,
     initialized: bool,
-    latest_us: Timestamp,
-    delayed_us: Timestamp,
-    control: u64,
-    px4_fault: u32,
+    pub(super) latest_us: Timestamp,
+    pub(super) delayed_us: Timestamp,
+    pub(super) control: u64,
+    pub(super) px4_fault: u32,
     fault: Option<FilterFault>,
     gyro_bias_inhibit: [bool; 3],
     accel_bias_inhibit: [bool; 3],
     gyro_magnitude: f32,
     accel_magnitude: f32,
     clipping_count: [u16; 3],
-    last_heading_fuse: Timestamp,
+    pub(super) last_heading_fuse: Timestamp,
     last_fake_pos_fuse: Timestamp,
     last_fake_hgt_fuse: Timestamp,
-    last_height_fuse: Timestamp,
+    pub(super) last_height_fuse: Timestamp,
     last_vertical_position_aiding: Timestamp,
     vertical_position_dead_reckoning: bool,
     vertical_velocity_dead_reckoning: bool,
+    last_vertical_velocity_aiding: Timestamp,
 }
 
 impl ImuEkf {
@@ -199,12 +243,28 @@ impl ImuEkf {
         Ok(Self {
             aiding_params: None,
             aiding: None,
+            range_params: None,
+            range: None,
             params,
+            horizontal_position_noise: params.no_aid_noise,
+            horizontal_velocity_noise: 0.5,
             downsampler: DownSampler::new(params.predict_us as u32),
             buffer: ImuBuffer::new(buffer_length),
             state,
             covariance: [[0.0; 24]; 24],
             global: GlobalPosition::default(),
+            origin: None,
+            origin_timestamp: 0,
+            origin_altitude: None,
+            height_reference: 4,
+            altitude_delta: 0.0,
+            previous_control: IN_AIR,
+            last_horizontal_position_fuse: 0,
+            last_horizontal_velocity_fuse: 0,
+            last_vertical_velocity_fuse: 0,
+            last_terrain_fuse: 0,
+            terrain_valid: false,
+            horizontal_accel_lpf: [0.0; 2],
             last_known_global: GlobalPosition::default(),
             earth_rate: [0.0; 3],
             earth_rate_latitude: 0.0,
@@ -232,16 +292,51 @@ impl ImuEkf {
             last_vertical_position_aiding: 0,
             vertical_position_dead_reckoning: true,
             vertical_velocity_dead_reckoning: true,
+            last_vertical_velocity_aiding: 0,
         })
     }
 
     /// Explicit recovery. No automatic acceptance of samples after a fault.
     pub fn reset(&mut self, t0: Timestamp) -> Result<(), FilterFault> {
-        *self = if let Some(params) = self.aiding_params {
+        *self = if let (Some(aids), Some(range)) = (self.aiding_params, self.range_params) {
+            Self::with_range(&self.params, aids, range, t0)?
+        } else if let Some(params) = self.aiding_params {
             Self::with_baro_mag(&self.params, params, t0)?
         } else {
             Self::new(&self.params, t0)?
         };
+        Ok(())
+    }
+
+    pub fn with_range(
+        params: &ImuEkfParams,
+        aiding: BaroMagParams,
+        range: RangeParams,
+        t0: Timestamp,
+    ) -> Result<Self, FilterFault> {
+        let mut result = Self::with_baro_mag(params, aiding, t0)?;
+        result.range = Some(RangeAids::new(range, params.buffer_length()?)?);
+        result.range_params = Some(range);
+        result.state[24] = range.minimum_ground_clearance_m;
+        Ok(result)
+    }
+
+    pub(super) fn initial_horizontal_noise(&mut self, position: f32, velocity: f32) {
+        self.horizontal_position_noise = position;
+        self.horizontal_velocity_noise = velocity;
+    }
+
+    fn push_range(&mut self, sample: Option<RangeObservation>) -> Result<(), FilterFault> {
+        if let Some(sample) = sample {
+            let Some(mut aids) = self.range.take() else {
+                return self.fail(FilterFault::Input);
+            };
+            let result = aids.push(sample, self);
+            self.range = Some(aids);
+            if let Err(fault) = result {
+                return self.fail(fault);
+            }
+        }
         Ok(())
     }
 
@@ -295,6 +390,59 @@ impl ImuEkf {
             .map(|aids| (aids.baro_status, aids.mag_status))
     }
 
+    pub fn range_status(&self) -> Option<baro_mag::AidStatus> {
+        self.range.as_ref().map(|aids| aids.status)
+    }
+
+    pub fn global_position(&self) -> (f64, f64, f32) {
+        (
+            self.global.latitude_rad.to_degrees(),
+            self.global.longitude_rad.to_degrees(),
+            self.global.altitude_m,
+        )
+    }
+
+    pub(super) fn horizontal_aiding(&self) -> bool {
+        self.control & ((1 << 2) | (1 << 44)) != 0
+    }
+    pub(super) fn aiding_height_reference(&self) -> i32 {
+        self.aiding_params.map(|p| p.height_reference).unwrap_or(4)
+    }
+    fn vertical_position_aiding(&self) -> bool {
+        self.control & ((1 << 11) | (1 << 9) | (1 << 10)) != 0
+    }
+
+    pub(super) fn reset_altitude(&mut self, altitude: f32, variance: f32) {
+        let delta = -(altitude - self.global.altitude_m);
+        self.global.altitude_m = altitude;
+        if variance.is_finite() {
+            self.reset_variance(8, variance.max(0.0001));
+        }
+        if self.range_params.is_some() {
+            self.state[24] += delta;
+        }
+        self.altitude_delta += delta;
+        self.last_height_fuse = self.delayed_us;
+    }
+
+    pub(super) fn initialize_altitude(&mut self, altitude: f32, variance: f32) {
+        if self.origin_altitude.is_none() {
+            self.origin_altitude = Some(if !self.vertical_position_dead_reckoning {
+                altitude - self.global.altitude_m
+            } else {
+                altitude
+            });
+        }
+        self.reset_altitude(altitude, variance);
+    }
+
+    pub(super) fn reset_yaw(&mut self, yaw: f32, variance: f32) {
+        let q = math::from_rotation(math::with_yaw(math::rotation(self.quaternion()), yaw));
+        self.state[..4].copy_from_slice(&q);
+        self.reset_variance(2, variance.max(0.0001));
+        self.last_heading_fuse = self.delayed_us;
+    }
+
     /// Relative attitude-core validity only; no navigation validity is implied.
     pub fn health(&self) -> FilterHealth {
         FilterHealth {
@@ -335,6 +483,25 @@ impl ImuEkf {
         input: &ImuDelta,
         aiding: Option<BaroMagSample>,
     ) -> Result<bool, FilterFault> {
+        self.update_extended(input, aiding, None, &mut NoExtension)
+    }
+
+    pub fn update_range(
+        &mut self,
+        input: &ImuDelta,
+        aiding: Option<BaroMagSample>,
+        range: Option<RangeObservation>,
+    ) -> Result<bool, FilterFault> {
+        self.update_extended(input, aiding, range, &mut NoExtension)
+    }
+
+    pub(super) fn update_extended<X: ControlExtension>(
+        &mut self,
+        input: &ImuDelta,
+        aiding: Option<BaroMagSample>,
+        range: Option<RangeObservation>,
+        extension: &mut X,
+    ) -> Result<bool, FilterFault> {
         if let Some(fault) = self.fault {
             return Err(fault);
         }
@@ -368,6 +535,10 @@ impl ImuEkf {
         }
         let Some(mut sample) = downsampled else {
             self.push_aiding(aiding)?;
+            self.push_range(range)?;
+            if let Err(fault) = extension.push(self) {
+                return self.fail(fault);
+            }
             return Ok(false);
         };
         if sample
@@ -384,6 +555,10 @@ impl ImuEkf {
         let delayed = self.buffer.push(sample);
         self.delayed_us = delayed.timestamp;
         self.push_aiding(aiding)?;
+        self.push_range(range)?;
+        if let Err(fault) = extension.push(self) {
+            return self.fail(fault);
+        }
         let mean_dt = (0.5 * (delayed.delta_angle_dt_s + delayed.delta_velocity_dt_s))
             .clamp(0.5 * period, 2.0 * period);
         let accel = delayed
@@ -420,14 +595,16 @@ impl ImuEkf {
         self.update_bias_inhibit(&delayed, accel, gyro);
         self.predict_covariance(&delayed, accel);
         self.predict_state(&delayed);
-        self.control_fusion(&delayed);
+        if let Err(fault) = self.control_fusion(&delayed, extension) {
+            return self.fail(fault);
+        }
         if !self.numerics_valid() {
             return self.fail(FilterFault::Numerics);
         }
         Ok(true)
     }
 
-    fn quaternion(&self) -> math::Quaternion {
+    pub(super) fn quaternion(&self) -> math::Quaternion {
         [self.state[0], self.state[1], self.state[2], self.state[3]]
     }
 
@@ -437,11 +614,11 @@ impl ImuEkf {
             square(self.params.angle_error_init.max(0.01)),
             square(self.params.angle_error_init.max(0.01)),
             0.0,
-            0.25,
-            0.25,
-            square(1.5) * 0.25,
-            square(self.params.no_aid_noise.max(0.01)),
-            square(self.params.no_aid_noise.max(0.01)),
+            square(self.horizontal_velocity_noise.max(0.01)),
+            square(self.horizontal_velocity_noise.max(0.01)),
+            square(1.5) * square(self.horizontal_velocity_noise.max(0.01)),
+            square(self.horizontal_position_noise.max(0.01)),
+            square(self.horizontal_position_noise.max(0.01)),
             1.0,
             square(self.params.gyro_bias_init),
             square(self.params.gyro_bias_init),
@@ -460,6 +637,9 @@ impl ImuEkf {
             for i in 15..21 {
                 self.covariance[i][i] = square(params.mag_noise);
             }
+        }
+        if let Some(params) = self.range_params {
+            self.covariance[23][23] = square(params.minimum_ground_clearance_m);
         }
     }
 
@@ -533,6 +713,14 @@ impl ImuEkf {
                 }
             }
         }
+        if let Some(params) = self.range_params {
+            if self.height_reference != 2 {
+                let noise = square(sample.delta_velocity_dt_s * params.terrain_noise_m_s)
+                    + square(sample.delta_velocity_dt_s * params.terrain_gradient)
+                        * (square(self.state[4]) + square(self.state[5]));
+                self.covariance[23][23] += noise;
+            }
+        }
         self.constrain_variances();
     }
 
@@ -582,84 +770,150 @@ impl ImuEkf {
             self.state[i] =
                 self.state[i].clamp(-self.params.velocity_limit, self.params.velocity_limit);
         }
+        let alpha = sample.delta_velocity_dt_s / (1.0 + sample.delta_velocity_dt_s);
+        for (i, value) in self.horizontal_accel_lpf.iter_mut().enumerate() {
+            *value += alpha * (delta_earth[i] / sample.delta_velocity_dt_s - *value);
+        }
     }
 
     fn tilt_variance(&self) -> f32 {
         self.covariance[0][0] + self.covariance[1][1]
     }
-    fn timed_out(&self, last: Timestamp, interval: u64) -> bool {
+    pub(super) fn timed_out(&self, last: Timestamp, interval: u64) -> bool {
         last == 0 || last.saturating_add(interval) < self.delayed_us
     }
 
-    fn control_fusion(&mut self, sample: &ImuDelta) {
-        if self.control & TILT_ALIGN == 0 && self.tilt_variance() < TILT_VARIANCE_LIMIT {
-            self.control |= TILT_ALIGN;
-        }
+    fn control_fusion<X: ControlExtension>(
+        &mut self,
+        sample: &ImuDelta,
+        extension: &mut X,
+    ) -> Result<(), FilterFault> {
+        self.previous_control = self.control;
+        self.altitude_delta = 0.0;
         let mut aiding = self.aiding.take();
-        if let Some(aiding) = &mut aiding {
-            aiding.control_mag(self);
-        }
-        let limit = (1.0 / self.average_dt_s) as u16;
-        for axis in 0..3 {
-            if sample.delta_velocity_clipping[axis] && self.clipping_count[axis] < limit {
-                self.clipping_count[axis] += 1;
-            } else if self.clipping_count[axis] > 0 {
-                self.clipping_count[axis] -= 1;
+        let mut range = self.range.take();
+        let result = (|| {
+            if self.control & TILT_ALIGN == 0 && self.tilt_variance() < TILT_VARIANCE_LIMIT {
+                self.control |= TILT_ALIGN;
             }
-        }
-        let warning = self.clipping_count.map(|count| count >= limit / 2);
-        let bad_clipping = warning.iter().all(|value| *value)
-            || self.clipping_count.iter().any(|count| *count >= limit);
-        if bad_clipping {
-            self.px4_fault |= BAD_ACCEL_CLIPPING;
-        } else {
-            self.px4_fault &= !BAD_ACCEL_CLIPPING;
-        }
-        // With all external aids compiled out there is no falling-likelihood
-        // evidence, and no at_rest system flag to enable zero gyro/velocity.
-        if let Some(aiding) = &mut aiding {
-            aiding.control_baro(self);
-        }
-        if self.control & ((1 << 4) | (1 << 5)) == 0
-            && self.timed_out(self.last_heading_fuse, 200_000)
-        {
-            let variance = if self.control & TILT_ALIGN != 0 {
-                0.25
-            } else {
-                0.001
-            };
-            let innovation_variance = self.covariance[2][2] + variance;
-            if self.control & TILT_ALIGN == 0
-                || innovation_variance - variance > square(self.params.heading_noise)
-            {
-                if innovation_variance >= variance {
-                    let gain = core::array::from_fn(|row| {
-                        self.covariance[row][2] * (1.0 / innovation_variance)
-                    });
-                    let mut observation = [0.0; STATE_COUNT];
-                    observation[2] = 1.0;
-                    self.measurement_update(gain, observation, variance, 0.0);
-                    self.last_heading_fuse = self.delayed_us;
-                    self.px4_fault &= !BAD_HEADING;
-                } else {
-                    self.px4_fault |= BAD_HEADING;
-                    self.initialize_covariance();
+            if let Some(aiding) = &mut aiding {
+                aiding.control_mag(self);
+            }
+            extension.control_horizontal(self, sample)?;
+            let limit = (1.0 / self.average_dt_s) as u16;
+            for axis in 0..3 {
+                if sample.delta_velocity_clipping[axis] && self.clipping_count[axis] < limit {
+                    self.clipping_count[axis] += 1;
+                } else if self.clipping_count[axis] > 0 {
+                    self.clipping_count[axis] -= 1;
                 }
             }
-        }
-        self.control_fake_position();
-        self.control_fake_height();
-        self.control |= DEAD_RECKONING;
-        if self.control & baro_mag::BARO != 0 {
-            self.last_vertical_position_aiding = self.last_height_fuse;
-            self.vertical_position_dead_reckoning = false;
-        } else if self.timed_out(
-            self.last_vertical_position_aiding,
-            default_int("EKF2_NOAID_TOUT") as u64,
-        ) {
-            self.vertical_position_dead_reckoning = true;
-        }
+            let warning = self.clipping_count.map(|count| count >= limit / 2);
+            let bad_clipping = warning.iter().all(|value| *value)
+                || self.clipping_count.iter().any(|count| *count >= limit);
+            if bad_clipping {
+                self.px4_fault |= BAD_ACCEL_CLIPPING;
+            } else {
+                self.px4_fault &= !BAD_ACCEL_CLIPPING;
+            }
+            // With all external aids compiled out there is no falling-likelihood
+            // evidence, and no at_rest system flag to enable zero gyro/velocity.
+            if let Some(aiding) = &mut aiding {
+                aiding.control_baro(self)?;
+            }
+            extension.shift_altitude(self.altitude_delta)?;
+            let before = self.altitude_delta;
+            extension.control_height(self)?;
+            if let Some(aiding) = &mut aiding {
+                aiding.shift_altitude(self.altitude_delta - before)?;
+            }
+            let before = self.altitude_delta;
+            if let Some(range) = &mut range {
+                range.control(self)?;
+            }
+            let delta = self.altitude_delta - before;
+            if let Some(aiding) = &mut aiding {
+                aiding.shift_altitude(delta)?;
+            }
+            extension.shift_altitude(delta)?;
+            if self.height_reference == 4 {
+                let order = match self.aiding_params.map(|p| p.height_reference) {
+                    Some(2) => [(2, 10), (0, 9), (1, 11)],
+                    Some(0) => [(0, 9), (1, 11), (2, 10)],
+                    _ => [(1, 11), (0, 9), (2, 10)],
+                };
+                if let Some((reference, _)) =
+                    order.iter().find(|(_, bit)| self.control & (1 << bit) != 0)
+                {
+                    self.height_reference = *reference;
+                }
+            }
+            if self.control & ((1 << 4) | (1 << 5)) == 0
+                && self.timed_out(self.last_heading_fuse, 200_000)
+            {
+                let variance = if self.control & TILT_ALIGN != 0 {
+                    0.25
+                } else {
+                    0.001
+                };
+                let innovation_variance = self.covariance[2][2] + variance;
+                if self.control & TILT_ALIGN == 0
+                    || innovation_variance - variance > square(self.params.heading_noise)
+                {
+                    if innovation_variance >= variance {
+                        let gain = core::array::from_fn(|row| {
+                            self.covariance[row][2] * (1.0 / innovation_variance)
+                        });
+                        let mut observation = [0.0; STATE_COUNT];
+                        observation[2] = 1.0;
+                        self.measurement_update(gain, observation, variance, 0.0);
+                        self.last_heading_fuse = self.delayed_us;
+                        self.px4_fault &= !BAD_HEADING;
+                    } else {
+                        self.px4_fault |= BAD_HEADING;
+                        self.initialize_covariance();
+                    }
+                }
+            }
+            self.control_fake_position();
+            self.control_fake_height();
+            if (self.control & (1 << 2) != 0
+                && self.last_horizontal_position_fuse != 0
+                && self.last_horizontal_position_fuse.saturating_add(1_000_000) > self.delayed_us)
+                || (self.control & (1 << 44) != 0
+                    && self.last_horizontal_velocity_fuse != 0
+                    && self.last_horizontal_velocity_fuse.saturating_add(1_000_000)
+                        > self.delayed_us)
+            {
+                self.control &= !DEAD_RECKONING;
+            } else {
+                self.control |= DEAD_RECKONING;
+            }
+            if self.vertical_position_aiding() {
+                self.last_vertical_position_aiding = self.last_height_fuse;
+                self.vertical_position_dead_reckoning = false;
+            } else if self.timed_out(
+                self.last_vertical_position_aiding,
+                default_int("EKF2_NOAID_TOUT") as u64,
+            ) {
+                self.vertical_position_dead_reckoning = true;
+            }
+            if self.control & (1 << 44) != 0 {
+                self.last_vertical_velocity_aiding = self.last_vertical_velocity_fuse;
+                self.vertical_velocity_dead_reckoning = false;
+            } else if self.vertical_position_dead_reckoning
+                && self.timed_out(
+                    self.last_vertical_velocity_aiding,
+                    default_int("EKF2_NOAID_TOUT") as u64,
+                )
+            {
+                self.vertical_velocity_dead_reckoning = true;
+            }
+            Ok(())
+        })();
         self.aiding = aiding;
+        self.range = range;
+        result
     }
 
     fn reset_fake_position(&mut self) {
@@ -674,6 +928,10 @@ impl ImuEkf {
     }
 
     fn control_fake_position(&mut self) {
+        if self.horizontal_aiding() {
+            self.control &= !FAKE_POS;
+            return;
+        }
         if !self.timed_out(self.last_fake_pos_fuse, 200_000) {
             return;
         }
@@ -721,7 +979,7 @@ impl ImuEkf {
     }
 
     fn control_fake_height(&mut self) {
-        if self.control & baro_mag::BARO != 0 {
+        if self.vertical_position_aiding() {
             self.control &= !FAKE_HGT;
             return;
         }
@@ -746,7 +1004,7 @@ impl ImuEkf {
         }
     }
 
-    fn reset_variance(&mut self, index: usize, variance: f32) {
+    pub(super) fn reset_variance(&mut self, index: usize, variance: f32) {
         for i in 0..STATE_COUNT {
             self.covariance[i][index] = 0.0;
             self.covariance[index][i] = 0.0;
@@ -754,7 +1012,7 @@ impl ImuEkf {
         self.covariance[index][index] = variance;
     }
 
-    fn fuse_direct(
+    pub(super) fn fuse_direct(
         &mut self,
         innovation: f32,
         innovation_variance: f32,
@@ -833,11 +1091,14 @@ impl ImuEkf {
                     (self.state[19 + i] - gain[18 + i] * innovation).clamp(-0.5, 0.5);
             }
         }
+        if self.range_params.is_some() {
+            self.state[24] = (self.state[24] - gain[23] * innovation).clamp(-1e4, 1e4);
+        }
     }
 
     /// Fixed PX4 measurementUpdate for a general error-state Jacobian.
     /// The second PH uses the already updated, potentially nonsymmetric P.
-    fn measurement_update(
+    pub(super) fn measurement_update(
         &mut self,
         mut gain: [f32; STATE_COUNT],
         observation: [f32; STATE_COUNT],
@@ -873,7 +1134,7 @@ impl ImuEkf {
         self.correct_state(gain, innovation);
     }
 
-    fn project_covariance(&self, observation: [f32; STATE_COUNT]) -> [f32; STATE_COUNT] {
+    pub(super) fn project_covariance(&self, observation: [f32; STATE_COUNT]) -> [f32; STATE_COUNT] {
         self.covariance.map(|row| {
             row.iter()
                 .zip(observation)
@@ -913,6 +1174,10 @@ impl ImuEkf {
                 self.constrain_group(start, (maximum / 1e6).clamp(1e-9, 1.0), maximum);
             }
         }
+        if self.range_params.is_some() && self.covariance[23][23] > 1e4 {
+            let variance = 10.0 * self.covariance[23][23];
+            self.fuse_direct(0.0, self.covariance[23][23] + variance, variance, 23, false);
+        }
     }
 
     fn numerics_valid(&self) -> bool {
@@ -933,6 +1198,25 @@ impl ImuEkf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_aiding_is_strict_at_the_one_second_dead_reckoning_boundary() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        filter.initialize_covariance();
+        filter.control = TILT_ALIGN | (1 << 1) | (1 << 2) | (1 << 11) | IN_AIR;
+        filter.last_horizontal_position_fuse = 1_000_000;
+        filter.delayed_us = 1_999_999;
+        filter.latest_us = 2_200_000;
+        filter
+            .control_fusion(&stationary(1_999_999), &mut NoExtension)
+            .unwrap();
+        assert_eq!(filter.control & DEAD_RECKONING, 0);
+        filter.delayed_us = 2_000_000;
+        filter
+            .control_fusion(&stationary(2_000_000), &mut NoExtension)
+            .unwrap();
+        assert_ne!(filter.control & DEAD_RECKONING, 0);
+    }
 
     #[test]
     fn aided_input_rejects_invalid_or_future_measurement_and_reset_preserves_profile() {

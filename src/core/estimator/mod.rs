@@ -6,11 +6,20 @@
 
 pub mod bias_estimator;
 mod covariance_generated;
+pub mod gnss;
+pub mod gnss_checks;
+mod gsf;
+mod gsf_generated;
 mod imu_downsampler;
 pub mod imu_ekf;
 mod mag_generated;
 mod math;
+mod observation_buffer;
 pub mod params_generated;
+pub mod range_math;
+pub mod range_sensor;
+pub mod wmm;
+mod wmm_generated;
 
 pub use params_generated::EKF2_PARAMS;
 
@@ -77,7 +86,7 @@ pub struct ImuDelta {
     pub delta_velocity_clipping: [bool; 3],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct GnssSample {
     pub timestamp: Timestamp,
     pub latitude_deg: f64,

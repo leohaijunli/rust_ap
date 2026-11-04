@@ -11,8 +11,11 @@ use std::{
 
 use v6x_rust_led::estimator::imu_ekf::baro_mag::{BaroMagParams, BaroMagSample};
 use v6x_rust_led::estimator::{
+    gnss::{GnssEkf, GnssObservation, GnssParams},
+    imu_ekf::range::RangeParams,
     imu_ekf::{ImuEkf, ImuEkfParams},
-    ImuDelta,
+    range_sensor::RangeObservation,
+    GnssSample, ImuDelta,
 };
 
 const HEADER: &str = concat!(
@@ -20,6 +23,47 @@ const HEADER: &str = concat!(
     "delta_angle_z_rad,delta_velocity_x_m_s,delta_velocity_y_m_s,delta_velocity_z_m_s,",
     "delta_velocity_clipping"
 );
+const BARO_MAG_HEADER: &str = "timestamp_us,baro_altitude_m,mag_x_gauss,mag_y_gauss,mag_z_gauss";
+const EXTRA_QUALITY_HEADER: &str = ",gps_fix_type,gps_hacc_m,gps_vacc_m,gps_sacc_m_s,gps_satellites,gps_pdop,gps_spoofed,range_valid";
+const FIVE_SENSOR_HEADER: &str = concat!("timestamp_us,baro_altitude_m,mag_x_gauss,mag_y_gauss,mag_z_gauss,",
+    "gps_valid,gps_latitude_deg,gps_longitude_deg,gps_altitude_m,gps_vn_m_s,gps_ve_m_s,gps_vd_m_s,range_distance_m,range_quality");
+
+#[derive(Clone, Copy)]
+struct AidInput {
+    baro_mag: BaroMagSample,
+    gnss: Option<GnssObservation>,
+    range: Option<RangeObservation>,
+}
+
+// Heap storage is confined to this std host harness, not the estimator kernel.
+enum HostFilter {
+    Basic(Box<ImuEkf>),
+    Main(Box<GnssEkf>),
+}
+
+impl HostFilter {
+    fn core(&self) -> &ImuEkf {
+        match self {
+            Self::Basic(filter) => filter,
+            Self::Main(filter) => filter.core(),
+        }
+    }
+    fn update(
+        &mut self,
+        imu: &ImuDelta,
+        aiding: Option<AidInput>,
+    ) -> Result<bool, v6x_rust_led::estimator::FilterFault> {
+        match self {
+            Self::Basic(filter) => filter.update_aided(imu, aiding.map(|a| a.baro_mag)),
+            Self::Main(filter) => filter.update(
+                imu,
+                aiding.map(|a| a.baro_mag),
+                aiding.and_then(|a| a.gnss),
+                aiding.and_then(|a| a.range),
+            ),
+        }
+    }
+}
 
 fn unsigned<T: std::str::FromStr>(text: &str) -> Result<T, &'static str> {
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -91,7 +135,14 @@ fn hash_sample(hash: &mut u64, imu: &ImuDelta) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
-    if !(2..=5).contains(&args.len()) || (args.len() == 5 && args[4] != "--nis") {
+    let flags = args.get(4..).unwrap_or_default();
+    let nis = flags.iter().any(|flag| flag == "--nis");
+    let lever_arm = flags.iter().any(|flag| flag == "--lever-arm");
+    if !(2..=6).contains(&args.len())
+        || flags
+            .iter()
+            .any(|flag| !["--nis", "--lever-arm"].contains(&flag.as_str()))
+    {
         return Err("Usage: ekf2_input INPUT.csv [OUTPUT.csv [BARO_MAG.csv [--nis]]]".into());
     }
     if args.len() >= 3
@@ -109,29 +160,110 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut first = 0;
     let mut previous = 0;
     let mut aid_samples = Vec::new();
+    let mut five_sensor = false;
     if args.len() >= 4 {
         let mut lines = BufReader::new(File::open(&args[3])?).lines();
-        if lines.next().ok_or("empty aid input")??
-            != "timestamp_us,baro_altitude_m,mag_x_gauss,mag_y_gauss,mag_z_gauss"
-        {
+        let header = lines.next().ok_or("empty aid input")??;
+        let extended = header == format!("{FIVE_SENSOR_HEADER}{EXTRA_QUALITY_HEADER}");
+        five_sensor = header == FIVE_SENSOR_HEADER || extended;
+        if header != BARO_MAG_HEADER && !five_sensor {
             return Err("unexpected baro/mag CSV header".into());
         }
         let mut previous = 0;
         for line in lines {
             let line = line?;
             let fields: Vec<_> = line.split(',').collect();
-            if fields.len() != 5 {
-                return Err("expected five aid fields".into());
+            if fields.len()
+                != if extended {
+                    22
+                } else if five_sensor {
+                    14
+                } else {
+                    5
+                }
+            {
+                return Err("unexpected aid field count".into());
             }
             let timestamp: u64 = unsigned(fields[0])?;
             if timestamp <= previous {
                 return Err("aid time is not strictly increasing".into());
             }
             previous = timestamp;
-            aid_samples.push(BaroMagSample {
+            let baro_mag = BaroMagSample {
                 timestamp,
                 altitude_m: finite(fields[1])?,
                 field_gauss: [finite(fields[2])?, finite(fields[3])?, finite(fields[4])?],
+            };
+            let (gnss, range) = if five_sensor {
+                let ready: u8 = unsigned(fields[5])?;
+                if ready > 1 {
+                    return Err("invalid GNSS ready flag".into());
+                }
+                let mut sample = GnssSample {
+                    timestamp,
+                    latitude_deg: fields[6].parse()?,
+                    longitude_deg: fields[7].parse()?,
+                    altitude_msl_m: finite(fields[8])?,
+                    velocity_ned_m_s: [
+                        finite(fields[9])?,
+                        finite(fields[10])?,
+                        finite(fields[11])?,
+                    ],
+                    horizontal_accuracy_m: 0.3,
+                    vertical_accuracy_m: 0.5,
+                    speed_accuracy_m_s: 0.1,
+                    fix_type: 3,
+                    satellites: 12,
+                };
+                let (pdop, spoofed, range_ready) = if extended {
+                    sample.fix_type = unsigned(fields[14])?;
+                    sample.horizontal_accuracy_m = finite(fields[15])?;
+                    sample.vertical_accuracy_m = finite(fields[16])?;
+                    sample.speed_accuracy_m_s = finite(fields[17])?;
+                    sample.satellites = unsigned(fields[18])?;
+                    let spoofed: u8 = unsigned(fields[20])?;
+                    let range_ready: u8 = unsigned(fields[21])?;
+                    if spoofed > 1 || range_ready > 1 {
+                        return Err("invalid GNSS/range readiness".into());
+                    }
+                    (finite(fields[19])?, spoofed == 1, range_ready == 1)
+                } else {
+                    (1.0, false, true)
+                };
+                if !sample.latitude_deg.is_finite()
+                    || !sample.longitude_deg.is_finite()
+                    || sample.latitude_deg.abs() > 90.0
+                    || sample.longitude_deg.abs() > 180.0
+                {
+                    return Err("invalid GNSS coordinate".into());
+                }
+                let range = RangeObservation {
+                    timestamp,
+                    distance_m: finite(fields[12])?,
+                    quality_percent: fields[13].parse()?,
+                };
+                if !(-1..=100).contains(&range.quality_percent) {
+                    return Err("invalid range quality".into());
+                }
+                (
+                    if ready == 1 {
+                        Some(GnssObservation {
+                            sample,
+                            pdop,
+                            spoofed,
+                        })
+                    } else {
+                        None
+                    },
+                    if range_ready { Some(range) } else { None },
+                )
+            } else {
+                (None, None)
+            };
+            aid_samples.push(AidInput {
+                baro_mag,
+                gnss,
+                range,
             });
         }
         if aid_samples.is_empty() {
@@ -140,12 +272,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     let mut aid_samples = aid_samples.into_iter().peekable();
     let mut consumed_aids = 0;
-    let mut filter = if args.len() >= 4 {
-        ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0)
+    let mut filter = if five_sensor {
+        let mut gnss_params = GnssParams::default();
+        let mut range_params = RangeParams::default();
+        if lever_arm {
+            let imu = [0.03_f32, -0.02, 0.01];
+            gnss_params.offset_body_m = core::array::from_fn(|i| [0.2, 0.1, -0.05][i] - imu[i]);
+            range_params.offset_body_m = core::array::from_fn(|i| [0.1, -0.05, -0.1][i] - imu[i]);
+        }
+        HostFilter::Main(Box::new(
+            GnssEkf::new(
+                ImuEkfParams::default(),
+                BaroMagParams::default(),
+                range_params,
+                gnss_params,
+                0,
+            )
+            .map_err(|fault| format!("EKF parameters: {fault:?}"))?,
+        ))
     } else {
-        ImuEkf::new(&ImuEkfParams::default(), 0)
-    }
-    .map_err(|fault| format!("EKF parameters: {fault:?}"))?;
+        let basic = if args.len() >= 4 {
+            ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0)
+        } else {
+            ImuEkf::new(&ImuEkfParams::default(), 0)
+        };
+        HostFilter::Basic(Box::new(
+            basic.map_err(|fault| format!("EKF parameters: {fault:?}"))?,
+        ))
+    };
     let mut output = if args.len() >= 3 {
         Some(BufWriter::new(File::create_new(&args[2])?))
     } else {
@@ -156,7 +310,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             output,
             "timestamp_us,imu_timestamp_us,control_status,fault_status"
         )?;
-        if args.len() == 5 {
+        if nis {
             write!(output, ",baro_timestamp_us,baro_innovation,baro_variance,baro_ratio,baro_fused,baro_rejected,mag_timestamp_us")?;
             for kind in ["innovation", "variance", "ratio"] {
                 for i in 0..3 {
@@ -164,6 +318,23 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             write!(output, ",mag_fused,mag_rejected")?;
+            if five_sensor {
+                for (name, dimensions) in [
+                    ("gnss_pos", 2),
+                    ("gnss_vel", 3),
+                    ("gnss_hgt", 1),
+                    ("range", 1),
+                ] {
+                    write!(output, ",{name}_timestamp_us")?;
+                    for kind in ["innovation", "variance", "ratio"] {
+                        for i in 0..dimensions {
+                            write!(output, ",{name}_{kind}_{i}")?;
+                        }
+                    }
+                    write!(output, ",{name}_fused,{name}_rejected")?;
+                }
+                write!(output, ",gnss_quality_failure_bits")?;
+            }
         } else {
             for index in 0..25 {
                 write!(output, ",state_{index}")?;
@@ -188,7 +359,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if let Some(output) = &mut output {
             let aiding = if aid_samples
                 .peek()
-                .is_some_and(|sample| sample.timestamp <= imu.timestamp)
+                .is_some_and(|sample| sample.baro_mag.timestamp <= imu.timestamp)
             {
                 consumed_aids += 1;
                 aid_samples.next()
@@ -197,25 +368,26 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
             if aid_samples
                 .peek()
-                .is_some_and(|sample| sample.timestamp <= imu.timestamp)
+                .is_some_and(|sample| sample.baro_mag.timestamp <= imu.timestamp)
             {
                 return Err("more than one aid event per IMU sample is not supported".into());
             }
             if filter
-                .update_aided(&imu, aiding)
+                .update(&imu, aiding)
                 .map_err(|fault| format!("IMU EKF: {fault:?}"))?
             {
                 updates += 1;
+                let core = filter.core();
                 write!(
                     output,
                     "{},{},{},{}",
-                    filter.timestamp(),
+                    core.timestamp(),
                     imu.timestamp,
-                    filter.control_status(),
-                    filter.fault_status()
+                    core.control_status(),
+                    core.fault_status()
                 )?;
-                if args.len() == 5 {
-                    let (baro, mag) = filter.aid_status().ok_or("missing aid status")?;
+                if nis {
+                    let (baro, mag) = core.aid_status().ok_or("missing aid status")?;
                     write!(
                         output,
                         ",{},{:.9e},{:.9e},{:.9e},{},{},{}",
@@ -238,11 +410,34 @@ fn main() -> Result<(), Box<dyn Error>> {
                         u8::from(mag.fused),
                         u8::from(mag.rejected)
                     )?;
+                    if let HostFilter::Main(main) = &filter {
+                        let statuses = main.status();
+                        for (status, dimensions) in [
+                            (statuses[0], 2),
+                            (statuses[1], 3),
+                            (statuses[2], 1),
+                            (core.range_status().ok_or("missing range status")?, 1),
+                        ] {
+                            write!(output, ",{}", status.timestamp)?;
+                            for values in [status.innovation, status.variance, status.ratio] {
+                                for value in values.iter().take(dimensions) {
+                                    write!(output, ",{value:.9e}")?;
+                                }
+                            }
+                            write!(
+                                output,
+                                ",{},{}",
+                                u8::from(status.fused),
+                                u8::from(status.rejected)
+                            )?;
+                        }
+                        write!(output, ",{}", main.quality_failure_bits())?;
+                    }
                 } else {
-                    for value in filter
+                    for value in core
                         .state()
                         .iter()
-                        .chain(filter.covariance().iter().flatten())
+                        .chain(core.covariance().iter().flatten())
                     {
                         write!(output, ",{value:.9e}")?;
                     }
