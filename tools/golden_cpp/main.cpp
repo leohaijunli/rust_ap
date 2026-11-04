@@ -68,6 +68,13 @@ estimator::imuSample sample(std::string_view line) {
 
 void write_header(std::ostream &out) {
     out << "timestamp_us,imu_timestamp_us,control_status,fault_status";
+#ifdef DUMP_AID_STATUS
+    out << ",baro_timestamp_us,baro_innovation,baro_variance,baro_ratio,baro_fused,baro_rejected,mag_timestamp_us";
+    for (const auto *kind : {"innovation", "variance", "ratio"}) {
+        for (unsigned i = 0; i < 3; ++i) { out << ",mag_" << kind << '_' << i; }
+    }
+    out << ",mag_fused,mag_rejected";
+#else
     for (unsigned index = 0; index < 25; ++index) {
         out << ",state_" << index;
     }
@@ -76,6 +83,7 @@ void write_header(std::ostream &out) {
             out << ",cov_" << row << '_' << column;
         }
     }
+#endif
     out << '\n';
 }
 
@@ -107,12 +115,97 @@ void hash_sample(uint64_t &hash, const estimator::imuSample &imu) {
     hash_word(hash, clipping, 1);
 }
 
+#if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
+class AidInput {
+public:
+    explicit AidInput(const char *path) : input(path) {
+        std::string header;
+        if (!std::getline(input, header)) {
+            throw std::runtime_error("empty aid input");
+        }
+        if (!header.empty() && header.back() == '\r') { header.pop_back(); }
+        if (header != "timestamp_us,baro_altitude_m,mag_x_gauss,mag_y_gauss,mag_z_gauss") {
+            throw std::runtime_error("unexpected baro/mag CSV header");
+        }
+        advance();
+        if (!ready) { throw std::runtime_error("no aid samples"); }
+    }
+
+    void push_until(Ekf &ekf, uint64_t time) {
+        while (ready && baro.time_us <= time) {
+            ekf.setBaroData(baro);
+            ekf.setMagData(mag);
+            ++consumed;
+            advance();
+        }
+    }
+
+    void finish() const {
+        if (ready) { throw std::runtime_error("aid sample lies after last IMU sample"); }
+    }
+    unsigned count() const { return consumed; }
+
+private:
+    void advance() {
+        std::string storage;
+        if (!std::getline(input, storage)) {
+            if (input.bad()) { throw std::runtime_error("aid input read failed"); }
+            ready = false;
+            return;
+        }
+        if (!storage.empty() && storage.back() == '\r') { storage.pop_back(); }
+        std::string_view line(storage);
+        std::array<std::string_view, 5> fields{};
+        for (unsigned i = 0; i < fields.size(); ++i) {
+            const auto comma = line.find(',');
+            if ((i + 1 < fields.size()) != (comma != std::string_view::npos)) {
+                throw std::runtime_error("expected five aid fields");
+            }
+            fields[i] = line.substr(0, comma);
+            if (comma != std::string_view::npos) { line.remove_prefix(comma + 1); }
+        }
+        const auto time = number<uint64_t>(fields[0]);
+        if (time <= previous) { throw std::runtime_error("aid time is not strictly increasing"); }
+        previous = time;
+        baro.time_us = mag.time_us = time;
+        baro.hgt = number<float>(fields[1]);
+        if (!std::isfinite(baro.hgt)) { throw std::runtime_error("non-finite baro altitude"); }
+        for (unsigned i = 0; i < 3; ++i) {
+            mag.mag(i) = number<float>(fields[i + 2]);
+            if (!std::isfinite(mag.mag(i))) { throw std::runtime_error("non-finite magnetic field"); }
+        }
+        ready = true;
+    }
+
+    std::ifstream input;
+    estimator::baroSample baro{};
+    estimator::magSample mag{};
+    uint64_t previous{0};
+    unsigned consumed{0};
+    bool ready{false};
+};
+#endif
+
 int main(int argc, char **argv) {
+#if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
+    if (argc != 4) {
+        std::cerr << "Usage: golden_cpp IMU.csv OUTPUT.csv BARO_MAG.csv (distinct paths)\n";
+        return 2;
+    }
+#else
     if (argc != 3) {
         std::cerr << "Usage: golden_cpp INPUT.csv OUTPUT.csv (distinct paths)\n";
         return 2;
     }
+#endif
     try {
+#if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
+        if (std::filesystem::weakly_canonical(argv[3]) == std::filesystem::weakly_canonical(argv[2]) ||
+            (std::filesystem::exists(argv[2]) && std::filesystem::equivalent(argv[3], argv[2]))) {
+            throw std::runtime_error("aid input and output must be distinct files");
+        }
+        AidInput aids(argv[3]);
+#endif
         if (std::filesystem::weakly_canonical(argv[1]) ==
                 std::filesystem::weakly_canonical(argv[2]) ||
             (std::filesystem::exists(argv[2]) && std::filesystem::equivalent(argv[1], argv[2]))) {
@@ -152,10 +245,23 @@ int main(int argc, char **argv) {
             ++samples;
             hash_sample(digest, imu);
             ekf.setIMUData(imu);
+#if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
+            aids.push_until(ekf, imu.time_us);
+#endif
             if (ekf.update()) {
                 ++updates;
                 output << ekf.time_delayed_us() << ',' << imu.time_us << ','
                        << ekf.control_status().value << ',' << ekf.fault_status().value;
+#ifdef DUMP_AID_STATUS
+                const auto &baro = ekf.aid_src_baro_hgt();
+                const auto &mag = ekf.aid_src_mag();
+                output << ',' << baro.timestamp_sample << ',' << baro.innovation << ',' << baro.innovation_variance
+                       << ',' << baro.test_ratio << ',' << baro.fused << ',' << baro.innovation_rejected << ',' << mag.timestamp_sample;
+                for (const auto *values : {mag.innovation, mag.innovation_variance, mag.test_ratio}) {
+                    for (unsigned i = 0; i < 3; ++i) { output << ',' << values[i]; }
+                }
+                output << ',' << mag.fused << ',' << mag.innovation_rejected;
+#else
                 const auto state = ekf.state().Data();
                 for (unsigned index = 0; index < 25; ++index) {
                     output << ',' << state(index);
@@ -165,16 +271,24 @@ int main(int argc, char **argv) {
                         output << ',' << ekf.stateCovariance(row, column);
                     }
                 }
+#endif
                 output << '\n';
             }
         }
+#if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
+        aids.finish();
+#endif
         output.close();
         if (samples == 0 || input.bad() || !output) {
             throw std::runtime_error("no samples or input/output failure");
         }
         std::cout << "{\"px4_ref\":\"" << REFERENCE_PX4_REF << "\",\"samples\":" << samples
                   << ",\"updates\":" << updates << ",\"input_digest\":\"" << std::hex
-                  << std::setw(16) << std::setfill('0') << digest << "\"}\n";
+                  << std::setw(16) << std::setfill('0') << digest << "\""
+#if defined(CONFIG_EKF2_BAROMETER) && defined(CONFIG_EKF2_MAGNETOMETER)
+                  << ",\"aid_samples\":" << std::dec << aids.count()
+#endif
+                  << "}\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "golden_cpp: " << error.what() << '\n';

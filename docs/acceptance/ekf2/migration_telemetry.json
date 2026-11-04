@@ -1,0 +1,136 @@
+{
+  "project_name": "rust-ap-ekf2-host",
+  "legacy_language": "C++",
+  "user": "engineer",
+  "model": "agentrouter/gpt-6.1-sol",
+  "source_url": "https://github.com/PX4/PX4-Autopilot",
+  "scope_summary": "E-series host math only; timing starts at skill activation; hardware and PGO not measured",
+  "started_at_epoch": 1793782759.1266398,
+  "completed_at": null,
+  "_active_bucket": null,
+  "_bucket_seconds": {
+    "discovery": 0.0,
+    "blueprint": 0.0,
+    "rewrite": 0.0,
+    "test_heal": 0.0,
+    "parity": 1691.2864503860474,
+    "pgo_bench": 0.0
+  },
+  "story": {
+    "headline": "",
+    "intro": "",
+    "ch1_narrative": "",
+    "ch2_narrative": "",
+    "ch3_narrative": "",
+    "ch4_narrative": "",
+    "ch5_narrative": ""
+  },
+  "census": {
+    "before": {
+      "scanned": false,
+      "files": 0,
+      "code_loc": 0,
+      "comment_loc": 0,
+      "comment_pct": null,
+      "max_file_loc": 0,
+      "avg_file_loc": 0,
+      "files_under_400_pct": null,
+      "doc_tests": 0,
+      "max_nesting_depth": null,
+      "avg_fn_loc": null,
+      "hazards_count": null,
+      "latent_bugs_found": null
+    },
+    "after": {
+      "scanned": false,
+      "files": 0,
+      "code_loc": 0,
+      "comment_loc": 0,
+      "comment_pct": null,
+      "max_file_loc": 0,
+      "avg_file_loc": 0,
+      "files_under_400_pct": null,
+      "doc_tests": 0,
+      "max_nesting_depth": null,
+      "avg_fn_loc": null,
+      "unsafe_blocks": null,
+      "forbid_unsafe": false,
+      "branch_coverage_pct": null,
+      "clippy_warnings": 0
+    }
+  },
+  "opportunities": [],
+  "test_iterations": [
+    {
+      "iteration": 1,
+      "total": 16,
+      "passed": 16,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 1,
+      "failures_summary": "Reused 16 passing estimator tests; latest host Clippy failed on one new needless_range_loop in mag restart path",
+      "fix_applied": "Pending: preserve arithmetic order using enumerate over innovation"
+    },
+    {
+      "iteration": 2,
+      "total": 16,
+      "passed": 16,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "Reused 16 estimator passes; host and normal H753 Clippy now both pass",
+      "fix_applied": "Used enumerate in magnetic restart path without changing arithmetic; stale artifact report correctly requires rebuild"
+    },
+    {
+      "iteration": 3,
+      "total": 3,
+      "passed": 2,
+      "failed": 1,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "Three final scenario-harness checks, not unit tests: nominal and outliers pass; old dropout case never activated mag before the gap, so both-source stop coverage fails despite numerical parity",
+      "fix_applied": "Pending: preserve old baseline and add a new dropout-after-alignment fixture"
+    },
+    {
+      "iteration": 4,
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "coverage_pct": null,
+      "clippy_warnings": null,
+      "failures_summary": "After-alignment dropout first comparison differs at row 952: Rust uses 500ms stop interval instead of pinned PX4 2*MAG_MAX_INTERVAL=1s; stop path must reset mag covariance and revoke yaw alignment",
+      "fix_applied": "Pending exact timeout and stop-state translation; keep all stored golden data unchanged"
+    },
+    {
+      "iteration": 5,
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "coverage_pct": null,
+      "clippy_warnings": 0,
+      "failures_summary": "After-alignment dropout scenario: full state/covariance, NIS and both-source stop/recovery checks pass at 1201 updates",
+      "fix_applied": "Matched 1s mag stop timeout, magnetic covariance reset and yaw validity revocation; old golden fixtures retained"
+    }
+  ],
+  "parity_iterations": [
+    {
+      "iteration": 1,
+      "seeds_tested": 1,
+      "seeds_passed": 1,
+      "max_abs_error": "state<5e-7; covariance<2e-6; fixed per-field tolerances respected",
+      "divergence_cause": "One deterministic seed, three scenarios (not three seeds); old early-dropout fixture lacked mag-stop coverage and is retained as historical partial evidence",
+      "fix_applied": "Added immutable after-alignment fixture; fixed vertical deadline plus 1s mag stop/covariance/yaw semantics; normal/outlier/NIS and both-source recovery pass"
+    }
+  ],
+  "benchmarks": [],
+  "time_buckets": [],
+  "scorecard": [],
+  "roi": {},
+  "spotlight": {
+    "explanation": "",
+    "legacy_file": "",
+    "legacy_code": "",
+    "rust_file": "",
+    "rust_code": ""
+  }
+}

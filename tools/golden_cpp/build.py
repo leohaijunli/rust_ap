@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a host-only IMU reference from the fixed PX4 EKF source, not HEAD."""
+"""Build a profiled host-only reference from fixed PX4 EKF sources, not HEAD."""
 
 import argparse
 import hashlib
@@ -31,6 +31,14 @@ CORE_PARAMS = (
     "EKF2_ABL_ACCLIM", "EKF2_ABL_GYRLIM", "EKF2_ABL_TAU", "EKF2_GYR_B_LIM",
     "EKF2_NOAID_TOUT",
 )
+BARO_MAG_PARAMS = (
+    "EKF2_BARO_CTRL", "EKF2_BARO_DELAY", "EKF2_BARO_NOISE", "EKF2_BARO_GATE",
+    "EKF2_GND_EFF_DZ", "EKF2_GND_MAX_HGT", "EKF2_MAG_DELAY", "EKF2_MAG_E_NOISE",
+    "EKF2_MAG_B_NOISE", "EKF2_MAG_NOISE", "EKF2_MAG_DECL", "EKF2_MAG_GATE",
+    "EKF2_DECL_TYPE", "EKF2_MAG_TYPE", "EKF2_MAG_ACCLIM", "EKF2_SYNT_MAG_Z",
+    "EKF2_MAG_CHECK", "EKF2_MAG_CHK_STR", "EKF2_MAG_CHK_INC",
+)
+PROFILES = {"core_imu": CORE_PARAMS, "baro_mag": CORE_PARAMS + BARO_MAG_PARAMS}
 FIELD_TYPES = {
     "uint64": "uint64_t", "uint32": "uint32_t", "uint8": "uint8_t",
     "float32": "float", "float64": "double", "bool": "bool",
@@ -56,13 +64,13 @@ def aid_header(document, name):
     return "\n".join([*lines, "};", ""])
 
 
-def configure_header(definitions):
+def configure_header(definitions, profile="core_imu"):
     catalog = {definition.name: definition for definition in definitions}
     lines = ["#pragma once", f'inline constexpr char REFERENCE_PX4_REF[] = "{REF}";',
              "inline void configure_reference(Ekf &ekf) {",
              "    auto &params = *ekf.getParamHandle();"]
     applied = {}
-    for name in CORE_PARAMS:
+    for name in PROFILES[profile]:
         definition = catalog[name]
         value = definition.default
         literal = gen_params.float_literal(value) + "f" if definition.kind == "Float" else str(value)
@@ -77,7 +85,12 @@ def configure_header(definitions):
     return "\n".join(lines), applied
 
 
-def prepare(px4_root, output):
+def prepare(px4_root, output, profile="core_imu"):
+    # Never switch features inside an existing reference cache. That would
+    # silently replace the executable/manifest used by another stage.
+    manifest_path = output / "source_manifest.json"
+    if manifest_path.exists() and json.loads(manifest_path.read_text(encoding="utf-8"))["profile"] != profile:
+        raise ValueError("reference profile differs; select a separate output directory")
     archive = subprocess.check_output(
         ["git", "-C", str(px4_root), "archive", REF, *SOURCE_PATHS]
     )
@@ -101,9 +114,9 @@ def prepare(px4_root, output):
     definitions = gen_params.collect(gen_params.load_documents(px4_root, REF))
     for path in gen_params.yaml_paths(px4_root, REF):
         hashes[path] = hashlib.sha256(gen_params.git_show(px4_root, REF, path).encode("utf-8")).hexdigest()
-    header, applied = configure_header(definitions)
+    header, applied = configure_header(definitions, profile)
     (include / "reference_params.h").write_text(header, encoding="utf-8")
-    manifest = {"schema": 1, "px4_ref": REF, "profile": "core_imu",
+    manifest = {"schema": 1, "px4_ref": REF, "profile": profile,
                 "error_state_count": 24, "nominal_state_count": 25,
                 "applied_parameters": applied, "source_sha256": hashes,
                 "tools_sha256": {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
@@ -116,25 +129,29 @@ def prepare(px4_root, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(os.environ.get("PX4_ROOT", "/home/dev/PX4-Autopilot")))
-    parser.add_argument("--output", type=Path, default=ROOT / "target/ekf2-host")
+    parser.add_argument("--profile", choices=PROFILES, default="core_imu")
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--prepare-only", action="store_true")
     args = parser.parse_args()
     try:
-        output = args.output.resolve()
-        source, include = prepare(args.root, output)
+        output = (args.output or ROOT / ("target/ekf2-host" if args.profile == "core_imu"
+                                        else "target/ekf2-host-baro-mag")).resolve()
+        source, include = prepare(args.root, output, args.profile)
         if not args.prepare_only:
             subprocess.run([
                 "cmake", "-S", str(Path(__file__).parent), "-B", str(output / "build"),
                 "-G", "Ninja", f"-DPX4_SOURCE_ROOT={source}", f"-DHOST_INCLUDE={include}",
-                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_BUILD_TYPE=Release", f"-DREFERENCE_PROFILE={args.profile}",
             ], check=True)
             subprocess.run(["cmake", "--build", str(output / "build"), "--parallel", "2"], check=True)
             manifest_path = output / "source_manifest.json"
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest["compiler"] = subprocess.check_output(["c++", "--version"], text=True).splitlines()[0]
             manifest["executable_sha256"] = hashlib.sha256((output / "build/golden_cpp").read_bytes()).hexdigest()
+            if args.profile == "baro_mag":
+                manifest["aids_executable_sha256"] = hashlib.sha256((output / "build/golden_cpp_aids").read_bytes()).hexdigest()
             manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-        print(f"golden_cpp: fixed PX4 {REF}; output={output}")
+        print(f"golden_cpp: fixed PX4 {REF}; profile={args.profile}; output={output}")
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(f"golden_cpp: {error}", file=sys.stderr)
         return 1

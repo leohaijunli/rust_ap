@@ -1,10 +1,14 @@
+#![forbid(unsafe_code)]
+
 //! Estimator boundary: sensor samples, replaceable filter traits and the
 //! generated PX4 EKF2 parameter catalog. No HAL, transport or allocator
 //! dependency, so firmware and host tests share one contract.
 
+pub mod bias_estimator;
 mod covariance_generated;
 mod imu_downsampler;
 pub mod imu_ekf;
+mod mag_generated;
 mod math;
 pub mod params_generated;
 

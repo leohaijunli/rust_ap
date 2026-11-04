@@ -16,11 +16,12 @@ SOURCE = "src/modules/ekf2/EKF/python/ekf_derivation/generated/predict_covarianc
 OUTPUT = ROOT / "src/core/estimator/covariance_generated.rs"
 
 
-def expression(text, known):
+def expression(text, known, functions=None, arrays=None):
     text = re.sub(r"std::pow\((state\(\d+,\s*0\)|_tmp\d+|dt),\s*Scalar\(2\)\)", r"square(\1)", text)
     text = re.sub(r"\bP\((\d+),\s*(\d+)\)", r"p[\1][\2]", text)
     text = re.sub(r"\b(state|accel|accel_var)\((\d+),\s*0\)", r"\1[\2]", text)
     tree = ast.parse(" ".join(text.split()), mode="eval")
+    functions = {"square": ("square", 1)} | (functions or {})
 
     def render(node, parent_precedence=0, right=False):
         if isinstance(node, ast.Constant) and type(node.value) in (int, float):
@@ -38,14 +39,16 @@ def expression(text, known):
                 base = base.value
             require(isinstance(base, ast.Name), "invalid matrix reference")
             bounds = {"p": (24, 24), "state": (25,), "accel": (3,), "accel_var": (3,)}
+            bounds.update(arrays or {})
             limits = bounds.get(base.id, ())
             require(len(indices) == len(limits) and bool(limits)
                     and all(0 <= i < limit for i, limit in zip(indices, limits)), "matrix index out of range")
             return base.id + "".join(f"[{index}]" for index in indices)
         if isinstance(node, ast.Call):
-            require(isinstance(node.func, ast.Name) and node.func.id == "square"
-                    and len(node.args) == 1 and not node.keywords, "unsupported symbolic function")
-            return f"square({render(node.args[0])})"
+            require(isinstance(node.func, ast.Name) and node.func.id in functions, "unsupported symbolic function")
+            function, argument_count = functions[node.func.id]
+            require(len(node.args) == argument_count and not node.keywords, "unsupported symbolic function arguments")
+            return f"{function}({', '.join(render(argument) for argument in node.args)})"
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
             sign = "-" if isinstance(node.op, ast.USub) else "+"
             return sign + render(node.operand, 3)

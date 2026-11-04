@@ -277,3 +277,14 @@ python3 tools/ekf2_replay.py ulog recording.ulg target/ekf2-host/imu.csv --sourc
 - 新增黄金数据与真值保存在 `tests/data/ekf2/imu_noisy_clipped/`，噪声/短时 clipping 明确为合成输入；旧 `imu_yaw` 不改写。CI 校验两场景与生成漂移，不记录/覆盖基线。
 - `ImuEkfParams` 默认值与范围复用唯一生成表，配置改变须重新构造/显式 reset；超出 64 槽容量的配置拒绝。非法/非有限输入、>100 ms IMU 中断与数值异常锁定失效，显式 reset 才恢复。
 - 当前只提供延迟数学核心，相对 yaw 不代表绝对航向，伪高度/位置不代表有效导航。没有输出预测器、完整 `NavFilter` 适配、8 kHz 板载输入桥、传感器融合或 Mahony 板载回退；这些仍按后续阶段实现/验收。下一软件门为 E2-H，不等待 M1 实物验收来编写 host 代码。
+
+## 14. E2-H 本地软件门（2026-11-04）
+
+首次 Rust 对拍前沿用 E1-H 的固定全状态/协方差及四元数容差；不因 E2 差异放宽。新的 C++ 参考场景先独立记录，现有基线不覆盖。状态/协方差通过后仍须补 NIS 与关键失败路径，不能只看最终对准标志关闭 E2-H。
+
+NIS 首次对拍前固定绝对 `1e-6`、相对 `1e-4`，观测时间、fused/rejected 和控制/故障标志逐项相等。使用独立 NIS CSV，不改已记录的状态/协方差基线格式。
+
+- 固定 C++ `baro_mag` profile 已编译，独立缓存在 `target/ekf2-host-baro-mag/`；启用原版 barometer/magnetometer 源文件与固定 WMM 表，不下载更新地磁表。切换现有缓存的 profile 会被拒绝。
+- 从同一 YAML 应用额外 19 个气压/磁参数；合成观测以 50 Hz 压力高度与 body-FRD 磁场输入，CLI 为 `golden_cpp IMU.csv OUTPUT.csv BARO_MAG.csv`。输入显式标注合成，不是实际 BMP388/BMM150 数据。
+- Rust 气压/磁力计序贯更新、对准、磁协方差/偏航停止状态机与垂直 dead-reckoning 门已通过正常、离群值和对准后 1 s 中断三类状态/协方差/NIS 对拍；不逐位一致，不放宽容差。
+- 17 项核心、2 项 intake、22+3 项 Python、host Clippy 与普通 H753 release/打包/布局通过。新增中断场景为 12 s（9–10 s 中断），旧 5–6 s 场景保留但不能证明磁停止；完整边界、命令与历史失败见 [E2-H 记录](acceptance/ekf2/20261104-e2-host.md)。本次远程 CI 待核对，下一步 E3-H～E6-H，不等待工程师逐阶段确认。

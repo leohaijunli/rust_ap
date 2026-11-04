@@ -14,6 +14,10 @@ use super::{
     STATE_COUNT,
 };
 
+#[path = "baro_mag.rs"]
+pub mod baro_mag;
+use baro_mag::{Aids, BaroMagParams, BaroMagSample};
+
 const TILT_ALIGN: u64 = 1;
 const IN_AIR: u64 = 1 << 7;
 const DEAD_RECKONING: u64 = 1 << 29;
@@ -145,6 +149,8 @@ impl ImuEkfParams {
 /// Streaming host/MCU-buildable mathematical core; firmware does not instantiate
 /// it yet. Raw control bits are PX4 fixture state, not vehicle arming state.
 pub struct ImuEkf {
+    aiding_params: Option<BaroMagParams>,
+    aiding: Option<Aids>,
     params: ImuEkfParams,
     downsampler: DownSampler,
     buffer: ImuBuffer,
@@ -173,6 +179,10 @@ pub struct ImuEkf {
     last_heading_fuse: Timestamp,
     last_fake_pos_fuse: Timestamp,
     last_fake_hgt_fuse: Timestamp,
+    last_height_fuse: Timestamp,
+    last_vertical_position_aiding: Timestamp,
+    vertical_position_dead_reckoning: bool,
+    vertical_velocity_dead_reckoning: bool,
 }
 
 impl ImuEkf {
@@ -187,6 +197,8 @@ impl ImuEkf {
         params.gyro_bias_noise = params.gyro_bias_noise.clamp(0.0, 1.0);
         params.accel_bias_noise = params.accel_bias_noise.clamp(0.0, 1.0);
         Ok(Self {
+            aiding_params: None,
+            aiding: None,
             params,
             downsampler: DownSampler::new(params.predict_us as u32),
             buffer: ImuBuffer::new(buffer_length),
@@ -216,12 +228,45 @@ impl ImuEkf {
             last_heading_fuse: 0,
             last_fake_pos_fuse: 0,
             last_fake_hgt_fuse: 0,
+            last_height_fuse: 0,
+            last_vertical_position_aiding: 0,
+            vertical_position_dead_reckoning: true,
+            vertical_velocity_dead_reckoning: true,
         })
     }
 
     /// Explicit recovery. No automatic acceptance of samples after a fault.
     pub fn reset(&mut self, t0: Timestamp) -> Result<(), FilterFault> {
-        *self = Self::new(&self.params, t0)?;
+        *self = if let Some(params) = self.aiding_params {
+            Self::with_baro_mag(&self.params, params, t0)?
+        } else {
+            Self::new(&self.params, t0)?
+        };
+        Ok(())
+    }
+
+    pub fn with_baro_mag(
+        params: &ImuEkfParams,
+        aiding: BaroMagParams,
+        t0: Timestamp,
+    ) -> Result<Self, FilterFault> {
+        let mut result = Self::new(params, t0)?;
+        result.aiding = Some(Aids::new(aiding, params.buffer_length()?)?);
+        result.aiding_params = Some(aiding);
+        Ok(result)
+    }
+
+    fn push_aiding(&mut self, sample: Option<BaroMagSample>) -> Result<(), FilterFault> {
+        if let Some(sample) = sample {
+            let Some(mut aiding) = self.aiding.take() else {
+                return self.fail(FilterFault::Input);
+            };
+            let result = aiding.push(sample, self);
+            self.aiding = Some(aiding);
+            if let Err(fault) = result {
+                return self.fail(fault);
+            }
+        }
         Ok(())
     }
 
@@ -242,6 +287,12 @@ impl ImuEkf {
     }
     pub fn fault_status(&self) -> u32 {
         self.px4_fault
+    }
+
+    pub fn aid_status(&self) -> Option<(baro_mag::AidStatus, baro_mag::AidStatus)> {
+        self.aiding
+            .as_ref()
+            .map(|aids| (aids.baro_status, aids.mag_status))
     }
 
     /// Relative attitude-core validity only; no navigation validity is implied.
@@ -276,6 +327,14 @@ impl ImuEkf {
     /// Consume one body-frame integral. `true` means one delayed EKF update,
     /// not one raw IMU sample, and not that absolute navigation is valid.
     pub fn update(&mut self, input: &ImuDelta) -> Result<bool, FilterFault> {
+        self.update_aided(input, None)
+    }
+
+    pub fn update_aided(
+        &mut self,
+        input: &ImuDelta,
+        aiding: Option<BaroMagSample>,
+    ) -> Result<bool, FilterFault> {
         if let Some(fault) = self.fault {
             return Err(fault);
         }
@@ -308,6 +367,7 @@ impl ImuEkf {
             return self.fail(FilterFault::Numerics);
         }
         let Some(mut sample) = downsampled else {
+            self.push_aiding(aiding)?;
             return Ok(false);
         };
         if sample
@@ -323,6 +383,7 @@ impl ImuEkf {
         sample.delta_velocity_dt_s = sample.delta_velocity_dt_s.clamp(0.5 * period, 2.0 * period);
         let delayed = self.buffer.push(sample);
         self.delayed_us = delayed.timestamp;
+        self.push_aiding(aiding)?;
         let mean_dt = (0.5 * (delayed.delta_angle_dt_s + delayed.delta_velocity_dt_s))
             .clamp(0.5 * period, 2.0 * period);
         let accel = delayed
@@ -394,6 +455,12 @@ impl ImuEkf {
         {
             self.covariance[i][i] = value;
         }
+        if let Some(params) = self.aiding_params {
+            self.covariance[8][8] = square(params.baro_noise.max(0.01));
+            for i in 15..21 {
+                self.covariance[i][i] = square(params.mag_noise);
+            }
+        }
     }
 
     fn update_bias_inhibit(
@@ -455,6 +522,15 @@ impl ImuEkf {
         for row in 0..STATE_COUNT {
             for column in 0..row {
                 self.covariance[row][column] = self.covariance[column][row];
+            }
+        }
+        if let Some(params) = self.aiding_params {
+            for (start, noise) in [(15, params.mag_earth_noise), (18, params.mag_bias_noise)] {
+                for i in start..start + 3 {
+                    if self.covariance[i][i] < square(params.mag_noise) {
+                        self.covariance[i][i] += square(dt * noise.clamp(0.0, 1.0));
+                    }
+                }
             }
         }
         self.constrain_variances();
@@ -519,6 +595,10 @@ impl ImuEkf {
         if self.control & TILT_ALIGN == 0 && self.tilt_variance() < TILT_VARIANCE_LIMIT {
             self.control |= TILT_ALIGN;
         }
+        let mut aiding = self.aiding.take();
+        if let Some(aiding) = &mut aiding {
+            aiding.control_mag(self);
+        }
         let limit = (1.0 / self.average_dt_s) as u16;
         for axis in 0..3 {
             if sample.delta_velocity_clipping[axis] && self.clipping_count[axis] < limit {
@@ -537,7 +617,12 @@ impl ImuEkf {
         }
         // With all external aids compiled out there is no falling-likelihood
         // evidence, and no at_rest system flag to enable zero gyro/velocity.
-        if self.timed_out(self.last_heading_fuse, 200_000) {
+        if let Some(aiding) = &mut aiding {
+            aiding.control_baro(self);
+        }
+        if self.control & ((1 << 4) | (1 << 5)) == 0
+            && self.timed_out(self.last_heading_fuse, 200_000)
+        {
             let variance = if self.control & TILT_ALIGN != 0 {
                 0.25
             } else {
@@ -551,7 +636,9 @@ impl ImuEkf {
                     let gain = core::array::from_fn(|row| {
                         self.covariance[row][2] * (1.0 / innovation_variance)
                     });
-                    self.update_with_gain(gain, 2, variance, 0.0, true);
+                    let mut observation = [0.0; STATE_COUNT];
+                    observation[2] = 1.0;
+                    self.measurement_update(gain, observation, variance, 0.0);
                     self.last_heading_fuse = self.delayed_us;
                     self.px4_fault &= !BAD_HEADING;
                 } else {
@@ -563,6 +650,16 @@ impl ImuEkf {
         self.control_fake_position();
         self.control_fake_height();
         self.control |= DEAD_RECKONING;
+        if self.control & baro_mag::BARO != 0 {
+            self.last_vertical_position_aiding = self.last_height_fuse;
+            self.vertical_position_dead_reckoning = false;
+        } else if self.timed_out(
+            self.last_vertical_position_aiding,
+            default_int("EKF2_NOAID_TOUT") as u64,
+        ) {
+            self.vertical_position_dead_reckoning = true;
+        }
+        self.aiding = aiding;
     }
 
     fn reset_fake_position(&mut self) {
@@ -624,6 +721,10 @@ impl ImuEkf {
     }
 
     fn control_fake_height(&mut self) {
+        if self.control & baro_mag::BARO != 0 {
+            self.control &= !FAKE_HGT;
+            return;
+        }
         if !self.timed_out(self.last_fake_hgt_fuse, 200_000) {
             return;
         }
@@ -639,7 +740,7 @@ impl ImuEkf {
             if self.timed_out(self.last_fake_hgt_fuse, 400_000) {
                 self.reset_fake_height();
             }
-        } else {
+        } else if self.vertical_position_dead_reckoning && self.vertical_velocity_dead_reckoning {
             self.control |= FAKE_HGT;
             self.reset_fake_height();
         }
@@ -681,6 +782,9 @@ impl ImuEkf {
                 gain[12 + axis] = 0.0;
             }
         }
+        if self.aiding_params.is_some() && self.control & baro_mag::MAG == 0 {
+            gain[15..21].fill(0.0);
+        }
         let ph = self.covariance[index];
         for (i, gain_i) in gain.iter().enumerate() {
             for (j, ph_j) in ph.iter().enumerate() {
@@ -721,6 +825,60 @@ impl ImuEkf {
             self.state[13 + i] = (self.state[13 + i] - gain[12 + i] * innovation)
                 .clamp(-self.params.accel_bias_limit, self.params.accel_bias_limit);
         }
+        if self.control & baro_mag::MAG != 0 {
+            for i in 0..3 {
+                self.state[16 + i] =
+                    (self.state[16 + i] - gain[15 + i] * innovation).clamp(-1.0, 1.0);
+                self.state[19 + i] =
+                    (self.state[19 + i] - gain[18 + i] * innovation).clamp(-0.5, 0.5);
+            }
+        }
+    }
+
+    /// Fixed PX4 measurementUpdate for a general error-state Jacobian.
+    /// The second PH uses the already updated, potentially nonsymmetric P.
+    fn measurement_update(
+        &mut self,
+        mut gain: [f32; STATE_COUNT],
+        observation: [f32; STATE_COUNT],
+        variance: f32,
+        innovation: f32,
+    ) {
+        for axis in 0..3 {
+            if self.gyro_bias_inhibit[axis] {
+                gain[9 + axis] = 0.0;
+            }
+            if self.accel_bias_inhibit[axis] {
+                gain[12 + axis] = 0.0;
+            }
+        }
+        if self.aiding_params.is_some() && self.control & baro_mag::MAG == 0 {
+            gain[15..21].fill(0.0);
+        }
+        let ph = self.project_covariance(observation);
+        for (i, gain_i) in gain.iter().enumerate() {
+            for (j, ph_j) in ph.iter().enumerate() {
+                self.covariance[i][j] -= gain_i * ph_j;
+            }
+        }
+        let ph = self.project_covariance(observation);
+        for i in 0..STATE_COUNT {
+            for j in 0..=i {
+                self.covariance[i][j] =
+                    self.covariance[i][j] - ph[i] * gain[j] + gain[i] * variance * gain[j];
+                self.covariance[j][i] = self.covariance[i][j];
+            }
+        }
+        self.constrain_variances();
+        self.correct_state(gain, innovation);
+    }
+
+    fn project_covariance(&self, observation: [f32; STATE_COUNT]) -> [f32; STATE_COUNT] {
+        self.covariance.map(|row| {
+            row.iter()
+                .zip(observation)
+                .fold(0.0, |sum, (value, h)| sum + value * h)
+        })
     }
 
     fn constrain_group(&mut self, start: usize, min: f32, max: f32) {
@@ -746,6 +904,15 @@ impl ImuEkf {
                 .clamp(1e-9, 1.0);
             self.constrain_group(start, (maximum / 1e6).clamp(1e-9, 1.0), maximum);
         }
+        if self.control & baro_mag::MAG != 0 {
+            for start in [15, 18] {
+                let maximum = (start..start + 3)
+                    .map(|i| self.covariance[i][i])
+                    .fold(0.0, f32::max)
+                    .clamp(1e-9, 1.0);
+                self.constrain_group(start, (maximum / 1e6).clamp(1e-9, 1.0), maximum);
+            }
+        }
     }
 
     fn numerics_valid(&self) -> bool {
@@ -767,6 +934,85 @@ impl ImuEkf {
 mod tests {
     use super::*;
 
+    #[test]
+    fn aided_input_rejects_invalid_or_future_measurement_and_reset_preserves_profile() {
+        let mut filter =
+            ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0).unwrap();
+        let future = BaroMagSample {
+            timestamp: 5000,
+            altitude_m: 100.0,
+            field_gauss: [0.2, 0.0, 0.4],
+        };
+        assert_eq!(
+            filter.update_aided(&stationary(2500), Some(future)),
+            Err(FilterFault::Input)
+        );
+        assert_eq!(filter.update(&stationary(5000)), Err(FilterFault::Input));
+        filter.reset(0).unwrap();
+        assert!(filter.aiding_params.is_some());
+        let invalid = BaroMagSample {
+            timestamp: 2500,
+            altitude_m: f32::NAN,
+            field_gauss: [0.2, 0.0, 0.4],
+        };
+        assert_eq!(
+            filter.update_aided(&stationary(2500), Some(invalid)),
+            Err(FilterFault::Input)
+        );
+        filter.reset(0).unwrap();
+        for timestamp in [2500, 5000, 7500] {
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        assert!(filter.numerics_valid());
+    }
+
+    #[test]
+    fn generated_magnetic_y_z_jacobians_match_identity_frame() {
+        let mut state = [0.0; 25];
+        state[0] = 1.0;
+        state[16..19].copy_from_slice(&[0.2, 0.1, 0.4]);
+        let mut covariance = [[0.0; 24]; 24];
+        for (i, row) in covariance.iter_mut().enumerate() {
+            row[i] = 1.0;
+        }
+        let (variance_y, h_y) = super::super::mag_generated::mag_y(&state, &covariance, 0.01);
+        let (variance_z, h_z) = super::super::mag_generated::mag_z(&state, &covariance, 0.01);
+        let mut expected_y = [0.0; 24];
+        expected_y[0] = 0.4;
+        expected_y[2] = -0.2;
+        expected_y[16] = 1.0;
+        expected_y[19] = 1.0;
+        let mut expected_z = [0.0; 24];
+        expected_z[0] = -0.1;
+        expected_z[1] = 0.2;
+        expected_z[17] = 1.0;
+        expected_z[20] = 1.0;
+        assert_eq!(h_y, expected_y);
+        assert_eq!(h_z, expected_z);
+        assert!((variance_y - 2.21).abs() < 1e-6);
+        assert!((variance_z - 2.06).abs() < 1e-6);
+        let (innovation, variance, h_x) =
+            super::super::mag_generated::mag_x(&state, &covariance, [0.2, 0.1, 0.4], 0.01);
+        assert_eq!(innovation, [0.0; 3]);
+        let mut expected_x = [0.0; 24];
+        expected_x[1] = -0.4;
+        expected_x[2] = 0.1;
+        expected_x[15] = 1.0;
+        expected_x[18] = 1.0;
+        assert_eq!(h_x, expected_x);
+        for (actual, expected) in variance.into_iter().zip([2.18, 2.21, 2.06]) {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        let (prediction, variance, h) =
+            super::super::mag_generated::declination(&state, &covariance, 0.01, f32::EPSILON);
+        let x = 0.2 + 1.5 * f32::EPSILON;
+        let inverse = 1.0 / (x * x + 0.1_f32 * 0.1_f32);
+        assert_eq!(prediction, libm::atan2f(0.1, x));
+        assert_eq!(h[15], -inverse * 0.1);
+        assert_eq!(h[16], inverse * x);
+        assert!((variance - (0.01 + h[15] * h[15] + h[16] * h[16])).abs() < 1e-5);
+    }
+
     fn stationary(timestamp: u64) -> ImuDelta {
         ImuDelta {
             timestamp,
@@ -776,6 +1022,27 @@ mod tests {
             delta_velocity_dt_s: 0.0025,
             delta_velocity_clipping: [false; 3],
         }
+    }
+
+    #[test]
+    fn general_observation_joseph_update_keeps_correlated_velocity_covariance() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        filter.initialize_covariance();
+        filter.reset_variance(3, 1.0);
+        filter.reset_variance(4, 4.0);
+        let mut observation = [0.0; STATE_COUNT];
+        observation[3] = 1.0;
+        observation[4] = 2.0;
+        let gain = filter
+            .project_covariance(observation)
+            .map(|value| value / 18.0);
+        filter.measurement_update(gain, observation, 1.0, -10.0);
+        assert!((filter.state[4] - 10.0 / 18.0).abs() < 1e-6);
+        assert!((filter.state[5] - 80.0 / 18.0).abs() < 1e-6);
+        assert!((filter.covariance[3][3] - 17.0 / 18.0).abs() < 1e-6);
+        assert!((filter.covariance[4][4] - 8.0 / 18.0).abs() < 1e-6);
+        assert!((filter.covariance[3][4] + 8.0 / 18.0).abs() < 1e-6);
+        assert!(filter.numerics_valid());
     }
 
     #[test]

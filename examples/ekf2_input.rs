@@ -9,6 +9,7 @@ use std::{
     path::Path,
 };
 
+use v6x_rust_led::estimator::imu_ekf::baro_mag::{BaroMagParams, BaroMagSample};
 use v6x_rust_led::estimator::{
     imu_ekf::{ImuEkf, ImuEkfParams},
     ImuDelta,
@@ -90,10 +91,10 @@ fn hash_sample(hash: &mut u64, imu: &ImuDelta) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
-    if !(2..=3).contains(&args.len()) {
-        return Err("Usage: ekf2_input INPUT.csv [RUST_OUTPUT.csv]".into());
+    if !(2..=5).contains(&args.len()) || (args.len() == 5 && args[4] != "--nis") {
+        return Err("Usage: ekf2_input INPUT.csv [OUTPUT.csv [BARO_MAG.csv [--nis]]]".into());
     }
-    if args.len() == 3
+    if args.len() >= 3
         && Path::new(&args[2]).exists()
         && Path::new(&args[1]).canonicalize()? == Path::new(&args[2]).canonicalize()?
     {
@@ -107,9 +108,45 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut count = 0u64;
     let mut first = 0;
     let mut previous = 0;
-    let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0)
-        .map_err(|fault| format!("EKF parameters: {fault:?}"))?;
-    let mut output = if args.len() == 3 {
+    let mut aid_samples = Vec::new();
+    if args.len() >= 4 {
+        let mut lines = BufReader::new(File::open(&args[3])?).lines();
+        if lines.next().ok_or("empty aid input")??
+            != "timestamp_us,baro_altitude_m,mag_x_gauss,mag_y_gauss,mag_z_gauss"
+        {
+            return Err("unexpected baro/mag CSV header".into());
+        }
+        let mut previous = 0;
+        for line in lines {
+            let line = line?;
+            let fields: Vec<_> = line.split(',').collect();
+            if fields.len() != 5 {
+                return Err("expected five aid fields".into());
+            }
+            let timestamp: u64 = unsigned(fields[0])?;
+            if timestamp <= previous {
+                return Err("aid time is not strictly increasing".into());
+            }
+            previous = timestamp;
+            aid_samples.push(BaroMagSample {
+                timestamp,
+                altitude_m: finite(fields[1])?,
+                field_gauss: [finite(fields[2])?, finite(fields[3])?, finite(fields[4])?],
+            });
+        }
+        if aid_samples.is_empty() {
+            return Err("no aid samples".into());
+        }
+    }
+    let mut aid_samples = aid_samples.into_iter().peekable();
+    let mut consumed_aids = 0;
+    let mut filter = if args.len() >= 4 {
+        ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0)
+    } else {
+        ImuEkf::new(&ImuEkfParams::default(), 0)
+    }
+    .map_err(|fault| format!("EKF parameters: {fault:?}"))?;
+    let mut output = if args.len() >= 3 {
         Some(BufWriter::new(File::create_new(&args[2])?))
     } else {
         None
@@ -119,12 +156,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             output,
             "timestamp_us,imu_timestamp_us,control_status,fault_status"
         )?;
-        for index in 0..25 {
-            write!(output, ",state_{index}")?;
-        }
-        for row in 0..24 {
-            for column in 0..24 {
-                write!(output, ",cov_{row}_{column}")?;
+        if args.len() == 5 {
+            write!(output, ",baro_timestamp_us,baro_innovation,baro_variance,baro_ratio,baro_fused,baro_rejected,mag_timestamp_us")?;
+            for kind in ["innovation", "variance", "ratio"] {
+                for i in 0..3 {
+                    write!(output, ",mag_{kind}_{i}")?;
+                }
+            }
+            write!(output, ",mag_fused,mag_rejected")?;
+        } else {
+            for index in 0..25 {
+                write!(output, ",state_{index}")?;
+            }
+            for row in 0..24 {
+                for column in 0..24 {
+                    write!(output, ",cov_{row}_{column}")?;
+                }
             }
         }
         writeln!(output)?;
@@ -139,8 +186,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         count += 1;
         hash_sample(&mut digest, &imu);
         if let Some(output) = &mut output {
+            let aiding = if aid_samples
+                .peek()
+                .is_some_and(|sample| sample.timestamp <= imu.timestamp)
+            {
+                consumed_aids += 1;
+                aid_samples.next()
+            } else {
+                None
+            };
+            if aid_samples
+                .peek()
+                .is_some_and(|sample| sample.timestamp <= imu.timestamp)
+            {
+                return Err("more than one aid event per IMU sample is not supported".into());
+            }
             if filter
-                .update(&imu)
+                .update_aided(&imu, aiding)
                 .map_err(|fault| format!("IMU EKF: {fault:?}"))?
             {
                 updates += 1;
@@ -152,12 +214,38 @@ fn main() -> Result<(), Box<dyn Error>> {
                     filter.control_status(),
                     filter.fault_status()
                 )?;
-                for value in filter
-                    .state()
-                    .iter()
-                    .chain(filter.covariance().iter().flatten())
-                {
-                    write!(output, ",{value:.9e}")?;
+                if args.len() == 5 {
+                    let (baro, mag) = filter.aid_status().ok_or("missing aid status")?;
+                    write!(
+                        output,
+                        ",{},{:.9e},{:.9e},{:.9e},{},{},{}",
+                        baro.timestamp,
+                        baro.innovation[0],
+                        baro.variance[0],
+                        baro.ratio[0],
+                        u8::from(baro.fused),
+                        u8::from(baro.rejected),
+                        mag.timestamp
+                    )?;
+                    for values in [mag.innovation, mag.variance, mag.ratio] {
+                        for value in values {
+                            write!(output, ",{value:.9e}")?;
+                        }
+                    }
+                    write!(
+                        output,
+                        ",{},{}",
+                        u8::from(mag.fused),
+                        u8::from(mag.rejected)
+                    )?;
+                } else {
+                    for value in filter
+                        .state()
+                        .iter()
+                        .chain(filter.covariance().iter().flatten())
+                    {
+                        write!(output, ",{value:.9e}")?;
+                    }
                 }
                 writeln!(output)?;
             }
@@ -166,11 +254,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     if count == 0 {
         return Err("no IMU samples".into());
     }
+    if aid_samples.peek().is_some() {
+        return Err("aid sample lies after last IMU sample".into());
+    }
     if let Some(output) = &mut output {
         output.flush()?;
     }
     println!(
-        "{{\"samples\":{count},\"updates\":{updates},\"first_timestamp_us\":{first},\"last_timestamp_us\":{previous},\"input_digest\":\"{digest:016x}\"}}"
+        "{{\"samples\":{count},\"updates\":{updates},\"aid_samples\":{consumed_aids},\"first_timestamp_us\":{first},\"last_timestamp_us\":{previous},\"input_digest\":\"{digest:016x}\"}}"
     );
     Ok(())
 }

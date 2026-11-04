@@ -117,6 +117,96 @@ pub(super) fn rotate_inverse(r: Rotation, v: Vector3) -> Vector3 {
     core::array::from_fn(|i| r[0][i] * v[0] + r[1][i] * v[1] + r[2][i] * v[2])
 }
 
+/// PX4 Utilities chooses 321/312 according to tilt to avoid gimbal lock.
+pub(super) fn yaw(r: Rotation) -> f32 {
+    if r[2][0].abs() < r[2][1].abs() {
+        libm::atan2f(r[1][0], r[0][0])
+    } else {
+        libm::atan2f(-r[0][1], r[1][1])
+    }
+}
+
+pub(super) fn wrap_pi_f32(value: f32) -> f32 {
+    if (-core::f32::consts::PI..core::f32::consts::PI).contains(&value) {
+        value
+    } else {
+        value
+            - core::f32::consts::TAU
+                * libm::floorf((value + core::f32::consts::PI) * (1.0 / core::f32::consts::TAU))
+    }
+}
+
+pub(super) fn with_yaw(r: Rotation, yaw: f32) -> Rotation {
+    if r[2][0].abs() < r[2][1].abs() {
+        let pitch = libm::asinf(-r[2][0]);
+        let roll = if (pitch.abs() - core::f32::consts::FRAC_PI_2).abs() < 1e-3 {
+            0.0
+        } else {
+            libm::atan2f(r[2][1], r[2][2])
+        };
+        let (cp, sp) = (libm::cosf(roll), libm::sinf(roll));
+        let (ct, st) = (libm::cosf(pitch), libm::sinf(pitch));
+        let (cy, sy) = (libm::cosf(yaw), libm::sinf(yaw));
+        [
+            [ct * cy, -cp * sy + sp * st * cy, sp * sy + cp * st * cy],
+            [ct * sy, cp * cy + sp * st * sy, -sp * cy + cp * st * sy],
+            [-st, sp * ct, cp * ct],
+        ]
+    } else {
+        let roll = libm::asinf(r[2][1]);
+        let pitch = libm::atan2f(-r[2][0], r[2][2]);
+        let (c0, s0) = (libm::cosf(yaw), libm::sinf(yaw));
+        let (c1, s1) = (libm::cosf(roll), libm::sinf(roll));
+        let (c2, s2) = (libm::cosf(pitch), libm::sinf(pitch));
+        [
+            [c0 * c2 - s0 * s1 * s2, -c1 * s0, s2 * c0 + c2 * s1 * s0],
+            [c2 * s0 + s2 * s1 * c0, c0 * c1, s0 * s2 - s1 * c0 * c2],
+            [-s2 * c1, s1, c2 * c1],
+        ]
+    }
+}
+
+pub(super) fn from_rotation(r: Rotation) -> Quaternion {
+    let trace = r[0][0] + r[1][1] + r[2][2];
+    if trace > 0.0 {
+        let t = libm::sqrtf(1.0 + trace);
+        let scale = 0.5 / t;
+        [
+            0.5 * t,
+            (r[2][1] - r[1][2]) * scale,
+            (r[0][2] - r[2][0]) * scale,
+            (r[1][0] - r[0][1]) * scale,
+        ]
+    } else if r[0][0] > r[1][1] && r[0][0] > r[2][2] {
+        let t = libm::sqrtf(1.0 + r[0][0] - r[1][1] - r[2][2]);
+        let scale = 0.5 / t;
+        [
+            (r[2][1] - r[1][2]) * scale,
+            0.5 * t,
+            (r[1][0] + r[0][1]) * scale,
+            (r[0][2] + r[2][0]) * scale,
+        ]
+    } else if r[1][1] > r[2][2] {
+        let t = libm::sqrtf(1.0 - r[0][0] + r[1][1] - r[2][2]);
+        let scale = 0.5 / t;
+        [
+            (r[0][2] - r[2][0]) * scale,
+            (r[1][0] + r[0][1]) * scale,
+            0.5 * t,
+            (r[2][1] + r[1][2]) * scale,
+        ]
+    } else {
+        let t = libm::sqrtf(1.0 - r[0][0] - r[1][1] + r[2][2]);
+        let scale = 0.5 / t;
+        [
+            (r[1][0] - r[0][1]) * scale,
+            (r[0][2] + r[2][0]) * scale,
+            (r[2][1] + r[1][2]) * scale,
+            0.5 * t,
+        ]
+    }
+}
+
 /// The fixed core accumulates position in WGS84, not nominal state xy.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct GlobalPosition {
