@@ -13,6 +13,16 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/pip install -r tools/requirements.txt
+      - name: Fetch fixed PX4 EKF2 parameter source
+        uses: actions/checkout@v4
+        with:
+          repository: PX4/PX4-Autopilot
+          ref: d6f12ad1c4f70ad3230afd7d86e971421e02fef4
+          path: target/px4-ekf2-source
+          sparse-checkout: src/modules/ekf2
+          persist-credentials: false
+      - name: Check EKF2 parameter catalog
+        run: .venv/bin/python tools/gen_params.py --root target/px4-ekf2-source --check
       - name: Host tests, lint, H753 build and package checks
         run: bash tools/firmware.sh check
       - name: Separate fault-injection build (never flashed in CI)

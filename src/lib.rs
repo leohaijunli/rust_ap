@@ -11,6 +11,8 @@ pub mod component_metadata;
 pub mod config;
 #[path = "core/dronecan/mod.rs"]
 pub mod dronecan;
+#[path = "core/estimator/mod.rs"]
+pub mod estimator;
 #[path = "core/fault_record.rs"]
 pub mod fault_record;
 #[path = "core/gps.rs"]

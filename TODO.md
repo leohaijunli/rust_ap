@@ -69,7 +69,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [ ] **PL-b / LOG-B01～02**：软件与有限 HIL 通过：QGC 协议列出 2 个日志，分块下载 306176 B 后 pyulog 无 corruption；MAVLink Console start/sync/stop 通过，restart 的直接证据待补录；心跳改 PX4 兼容后 QGC 下载应命名为 `.ulg`。待 QGC GUI Refresh/Download、断链与速率边界收口。[证据](docs/acceptance/pl-b/README.md)。依赖 M1、PL-a、P2。
 - [x] **RTC-01 / TIME-01**：source=`81d6c1221048f08a` 实测 LSE `ticking=true counting=true`，30 s 增加 31 s，`!time set 1700000000` 回读 `ok=true`，`SYSTEM_TIME` 与 `LOG_ENTRY.time_utc=1700000004` 非零。根因是清 `RSF` 未解锁 WPR，且 `DR` 后再次读 `SSR` 会重新锁住影子寄存器；见[时间基准](docs/time-sync.md)。
 - [ ] **TIME-02**：H-RTK GNSS 授时待 P4b-g；3D fix 且样本新鲜才采纳，GNSS > 地面站 `SYSTEM_TIME` > 继承 RTC，偏差 ≥5 s 才写；LSI 后备额外周期校准。无 GPS 驱动前，时间来自继承 RTC 或入站 `SYSTEM_TIME`。
-- [ ] **P6a-e / EKF-01～03**：固定 PX4 v1.17.0 数学核心的纯 Rust 移植；不含 uORB/NuttX/FFI。先 IMU 预测与数值对拍，再接 GNSS aiding、健康/复位和 Mahony 回退。依赖 M1、P6a、P4b-g、P2、PL-b。
+- [ ] **P6a-e / EKF-01～03**：纯 Rust EKF2，不含 uORB/NuttX/FFI。E0 部分完成：142 条 `EKF2_*` 参数生成/漂移检查、`NavFilter`/`AidSource` 骨架及 host 测试；黄金数据、合成仿真器与 ULog 回放尚未完成，随 E1 排期。之后再做预测/aiding、健康/复位与 Mahony 回退。依赖 M1、P6a、P4b-g、P2、PL-b。[方案](docs/ekf2-port.md)
 - [ ] **P4b-r / RTK-01～02**：RTCM 转发、RTK 与中断恢复。依赖 M1、P2、P4b-g、H-10。
 - [ ] **P5a / OUT-A01～02**：单一仲裁、限时授权/撤销、看门狗及零输出门控。依赖 M1、P4b-a、PL-a、H-06。
 - [ ] **P4b-b / CAN-B01～03**：拆桨电机映射/旋向与故障停转；恢复不自动解锁。依赖 P5a、P4b-a、PL-a。

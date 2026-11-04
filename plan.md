@@ -166,11 +166,12 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 ### EKF2 后续移植约束
 
 1. **范围**：M1 仍用 Mahony 建立可运行姿态基线。新增 `P6a-e / EKF-01～03` 作为 M1 后续阶段，移植 PX4 v1.17.0 中 EKF 的 state、predict、covariance、aiding、innovation gate 与 health/reset 逻辑；不移植 uORB 和模块调度层。
-2. **Rust 接口**：在 `src/core/estimator/` 定义 `AttitudeEstimator` / `NavigationEstimator`、`EstimatorInput` 和 `EstimatorState`。IMU 通过现有 16 槽有界队列输入；GNSS/后续传感器用带时间与有效性的快照；输出通过 `Watch` 独立给控制、ULog 和 MAVLink。
+2. **Rust 接口**：在 `src/core/estimator/` 定义固件唯一依赖的 `NavFilter`（`new/push_imu/push_measurement/step/output/health`）、内部 `AidSource`，以及 `ImuDelta` / `Measurement` / `NavOutput` DTO；接口与分层见 [EKF2 移植方案](docs/ekf2-port.md)。IMU 通过现有 16 槽有界队列输入；GNSS/后续传感器用带时间与有效性的快照；输出通过 `Watch` 独立给控制、ULog 和 MAVLink。
 3. **首个融合子集**：EKF-01 先做 IMU 预测、roll/pitch 与相对 yaw；EKF-02 在 P4b-g 后加入 GNSS 位置/速度和固定容量延迟缓冲。磁力计、气压计、空速不以虚构数据占位，只有实际硬件阶段才加入。
 4. **配置/切换**：`v6x_rust_led::config::Algorithm` 后续扩展 `Ekf2`；参数映射必须有范围校验和显式 reset/apply。EKF 无效、NaN、协方差异常、输入陈旧或 deadline miss 时撤销有效性并回退到已验证 Mahony，不无缝伪造连续状态。
 5. **数值验证**：用同一固定输入分别运行 PX4 v1.17.0 参考核心和 Rust 版本，按状态、创新、方差及拒绝/复位事件对拍；容差在测试前固定。未通过 replay、边界失败路径和实际 GNSS HIL 前，不称为“等价 EKF2”。
 6. **许可/来源**：逐文件记录 PX4/ECL 原路径、commit、BSD-3-Clause 版权与 Rust 修改点；估计数学输入保留独立 DTO，标准 PX4 消息用于数据边界，不链接 PX4 C++。
+7. **E0 部分完成（2026-11-04）**：142 条 `EKF2_*` 参数生成/漂移检查、参数契约 host 测试与 `NavFilter`/`AidSource` 骨架已落地；黄金数据/合成仿真器/回放与 `Core`/`Gate`/`Supervisor` 尚未开始，未满足完整 E0 退出条件。E1 起的放行条件不变。详见 [EKF2 移植方案](docs/ekf2-port.md#12-e0-当前状态2026-11-04)。
 
 ### INA219 支路电流（工程师新增）
 

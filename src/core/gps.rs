@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn process_fix2_matches_px4_semantics_on_reference_vector() {
         let fix = reference_fix();
-        let mut auxiliary = AuxiliaryCache::default();
+        let auxiliary = AuxiliaryCache::default();
         let snapshot = process_fix2(&fix, 25, 1_000_000, &auxiliary);
         // PX4: degrees = 1e8 field / 1e8; heights mm -> m.
         assert!((snapshot.latitude_deg - 47.12345678).abs() < 1e-9);
