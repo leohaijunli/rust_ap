@@ -1,13 +1,13 @@
 # Pixhawk 6X Rust 飞控实施计划
 
-更新：2026-11-02。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
-状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md)。
+更新：2026-11-04。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
+状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)。
 
 ## 1. 当前进度与执行原则
 
-- P0、P1、P3a、RTC-01/TIME-01 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-a/P4/PL-b 正常路径有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b 仍待 H-02/03/04、QGC GUI 与工程师操作，GNSS 授时和 M1 未开始。
-- P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**最近实测板载为普通 Rust `81d6c1221048f08a`：RTC LSE 走时/写后回读、`SYSTEM_TIME`、日志 UTC 和短时自定义 IMU ULog 通过；心跳 `autopilot=PX4`，QGC `.ulg` 文件名/日期显示仍待 GUI 确认。**
-- 标准消息软件 source=`c2f3128aecc8a70b` 已通过必要检查/普通打包，见[记录](docs/acceptance/messages/README.md)；新 ULog schema 的实物核对并入下一次 P4 必验记录。
+- P0、P1、P3a、RTC-01/TIME-01 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-a/P4/PL-b 正常路径有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。MAVCAN（CAN2）已收口；参数自动保存与 QGC 分组元数据已实现并板载校验；P4b-g 软件已实现并刷入板载，`NO_GPS` 断链帧已验。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b、P4b-g GPS 实物与 TIME-02 仍待 H-02/03/04、H-10、QGC GUI 与工程师操作，M1 未开始。
+- P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**最近实测板载为普通 Rust `588ab77941985319`（P4b-g）：`NO_GPS` 断链帧 1 Hz 逐字段符合 PX4 语义；此前 `81d6c1221048f08a` 的 RTC LSE 走时/写后回读、`SYSTEM_TIME`、日志 UTC 和短时自定义 IMU ULog 结果继续有效。心跳 `autopilot=PX4`，QGC `.ulg` 文件名/日期显示仍待 GUI 确认。**
+- 标准消息软件 source=`c2f3128aecc8a70b` 已通过必要检查/普通打包，见[记录](docs/acceptance/messages/README.md)；新 ULog schema 的实物核对并入下一次 P4 必验记录（当前 P4b-g 固件已含标准 `sensor_accel` / `sensor_gyro`，但尚未完成 60 s 实物日志）。
 - 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - 本计划的精简验收取代早期操作单中的重复次数、长时压测和截图齐套要求。历史测试结果及缺失记录仍按实保存。
 - 只实现当前阶段所需功能；清晰命名、小而直接的函数、复用现有工具。遵循 KISS/YAGNI，避免提前抽象、重复实现及无用注释。
@@ -104,7 +104,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P3a / P3A-01～04 | FRAM 识别/备份、参数注册表、持久化；已完成 | P1 |
 | P4b-a / CAN-A01～04 | DroneCAN 节点、ESC 状态和零命令；软件门通过，实物待验 | P1、P3a、H-02/03 |
 | PL-a / LOG-A01～05 | ULog、缓冲、SDMMC2/FAT、LoggerControl/MAVLink Console；软件门/正常路径有限 HIL 通过，故障门待验 | P3a、P4b-a、H-04 |
-| P4b-g / GNSS-01～03 | H-RTK 接收、有效性和日志 | P4b-a、PL-a、H-10 |
+| P4b-g / GNSS-01～03 | H-RTK 接收、有效性和日志；软件/刷写完成，实物待验 | P4b-a、PL-a、H-10 |
 | P2 / MAV-01～03 | USB/TELEM1 双链路、消息/命令和重连；软件门通过，实物待验 | P1、P3a |
 | P3 / PARAM-01～02 | QGC 标准参数读设；软件/工具路径就绪，双链路实物待验 | P3a、P2 |
 | P4 / SENS-01～04 | 单 IMU 驱动、校准及采样；软件门通过，实物待验 | P1、P3a、PL-a |
@@ -133,6 +133,11 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 3. **CAN-A03**：NodeStatus/GetNodeInfo、参数 GetSet/保存、节点目录、四槽零 RawCommand 与 DISARMED 已接入；RestartNode 当前安全返回失败。
 4. **CAN-A04 待验**：H-02/03 提供后，由工程师核对四个 ESC 身份/index、零输出、Status 和一次断线失效/恢复。当前不自动信任 candidate，不关闭 P4b-a；PL-a 仅先行软件开发。
 
+### P4b-g 当前结果
+
+1. **GNSS-01/02 软件门通过**：Fix2(1063)/Auxiliary(1061) 解码、`process_fix2` 的 PX4 语义、标准 `sensor_gps` ULog 与 `GPS_RAW_INT` 遥测已实现；host 向量对拍、fmt/Clippy 与普通打包通过，source=`588ab77941985319`。
+2. **GNSS-03 待验**：固件已刷入板载；`NO_GPS` 断链帧 1 Hz 已逐字段核对。GPS 正常帧速率/数值、`sensor_gps` pyulog 解析、断线恢复与 TIME-02 仍待 H-10 和 GPS 实物数据；按依赖顺序在 P4b-a/PL-a 实物门具备后收口。详情见 [P4b-g 记录](docs/acceptance/p4b-g/README.md)。
+
 ### PL-a 当前结果
 
 1. **LOG-A01/02**：固定 ULog schema、pyulog 1.3.0 独立解析、136 KiB 有界 MPSC 队列、事件保留和 dropout 已通过软件测试。
@@ -156,7 +161,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 2. **P3 实物待验**：P2 闭合且 H-03 接线后，一条链路设值、另一条链路读回同一当前值，再复用既有保存/掉电读回路径；通过后关闭 PARAM-01/02。
 3. **P4 软件门通过**：`src/core/icm42688.rs` 与 `src/core/config.rs` 提供寄存器策略、8 kHz 高分辨率 FIFO 解码、SI 单位、YAW270/FLU→FRD、陈旧判断与配置 API；`src/drivers/imu.rs` 接 SPI2 DMA1_CH2/3、PF4/PH5、PA10 EXTI、复位/回读/FIFO 恢复和周期寄存器核对。
 4. **P4 fan-out**：AHRS 使用按需启用的 16 槽有界队列，满时丢弃积压并从最新样本重同步；ULog 按 `LOG_IMU_HZ`（默认 200 Hz，每 40 样本各记录一个，按样本时间戳抽取，不受 FIFO 批次抖动影响）记录标准 `sensor_accel` / `sensor_gyro`（FRD/SI、`samples=1`，不是 8 样本平均）；USB/TELEM1 各 20 Hz `HIGHRES_IMU`，慢消费者不反压采样。标准消息软件检查见[记录](docs/acceptance/messages/README.md)，新 schema 随下一次 P4 必验记录核对实物。
-5. **P4 有限 HIL**：普通包已由原 bootloader 上传/校验；WHO_AM_I=`0x47`、SPI=24 MHz、短时约 8.08 kHz、错误计数 0，USB `HIGHRES_IMU` 合理。旧 `imu_icm42688` 有 2686 条/2.652 s、约 1012.5 Hz、无 corruption；仍待 DRDY 仪器测量、60 s 日志、六面 YAW270、校准与故障恢复，不关闭 SENS-01～04。详情见 [P4 记录](docs/acceptance/p4/README.md)。
+5. **P4 有限 HIL**：普通包已由原 bootloader 上传/校验；WHO_AM_I=`0x47`、SPI=24 MHz、短时约 8.08 kHz、错误计数 0，USB `HIGHRES_IMU` 合理。旧 `imu_icm42688` 有 2686 条/2.652 s、约 1012.5 Hz、无 corruption；该历史结果保留。200 Hz 标准 topic 抽取修正已包含在当前 `588ab77941985319` 固件中；仍待 DRDY 仪器测量、60 s 日志、六面 YAW270、校准与故障恢复，不关闭 SENS-01～04。详情见 [P4 记录](docs/acceptance/p4/README.md)。
 
 ### EKF2 后续移植约束
 

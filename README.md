@@ -19,11 +19,17 @@ with source **`a946a529360eac83`**, disarmed, fault injection disabled, and no v
 retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
 [essential-check plan](plan.md). **P3a is complete:** FRAM backup, parameter API,
 atomic save and power-cycle readback passed; `LINK_LED_HZ=2.0` remains saved.
-The latest verified board source is **`81d6c1221048f08a`**: RTC/LSE timekeeping,
-UTC telemetry/log timestamps and short IMU ULog capture passed. The heartbeat is
-`autopilot=PX4` for QGC `.ulg` naming; GUI confirmation is pending. See
+The latest flashed board source is **`588ab77941985319`** (P4b-g): the 1 Hz
+`NO_GPS` frame matches PX4 semantics. The earlier
+`81d6c1221048f08a` build passed RTC/LSE timekeeping, UTC telemetry/log timestamps
+and short IMU ULog capture. The heartbeat is `autopilot=PX4` for QGC `.ulg`
+naming; GUI confirmation is pending. See [P4b-g](docs/acceptance/p4b-g/README.md),
 [P3a](docs/acceptance/p3a/README.md), [P4](docs/acceptance/p4/README.md) and
 [PL-b](docs/acceptance/pl-b/README.md) evidence.
+**MAVCAN (CAN2) is closed:** classic `CAN_FRAME` passthrough, GUI node visibility
+and bidirectional traffic passed; see [MAVCAN evidence](docs/acceptance/mavcan/README.md).
+**Parameter auto-save and QGC grouped metadata** (397 + MAVFTP) are implemented
+and verified on board; see [P3a evidence](docs/acceptance/p3a/README.md).
 **P4b-a software is ready:** the
 bounded DroneCAN v0 core, node services, FDCAN1 adapter, and zero-only periodic
 output passed host/build checks; hardware mapping remains blocked by H-02/03.

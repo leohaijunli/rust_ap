@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-03。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据待接；实物集中待 H-02/03/04、QGC GUI 目视与工程师操作，GNSS 授时和 M1 未开始。**
+更新：2026-11-04。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；实物集中待 H-02/03/04、H-10、QGC GUI 目视与工程师操作，M1 未开始。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -11,14 +11,19 @@
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
-## 当前优先工作 — MAVCAN
+## 当前优先工作 — P4b-g / GNSS
 
-工程师要求先完成飞控 MAVCAN passthrough，再开发 GPS；范围与必要检查见 [CAN-BRD](plan.md#can-brd-当前范围)。
+MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门具备后验证 GPS 实物数据。
+
+### MAVCAN（已完成）
 
 - [x] 固定并核对 VimDrones `7bfe9963` / pydronecan `092d09cb` 协议：经典 DroneCAN 用 `CAN_FRAME`（386）、`MAV_CMD_CAN_FORWARD`（32000）握手，ID bit31=扩展、bit30=RTR。
 - [x] 修正 CAN2/FDCAN2（PB12/PB13）桥接，补全总线/目标/长度校验、转发租约、过滤、固定队列、超时取消及 USB 会话清理。[证据](docs/acceptance/mavcan/README.md)
 - [x] MAVCAN 核心/协议测试、fmt/Clippy、普通固件构建与资源核对（source=`a2b91d35630180da`）。
 - [x] **烧录核对 CAN2→USB 经典 `CAN_FRAME` 转发通过**（`usb_frames=10`，匿名 Allocation 请求），**DroneCAN GUI 节点可见性与数据通过**：工程师修正 GUI bus number（CAN2=bus 2）后，GPS 节点在 GUI 中可见且数据正常显示；Allocation 分配与出向 GetNodeInfo 已验证，`tx_frames` 递增确认双向收发。MAVCAN（CAN2）已收口。SLCAN 保留，未接入。
+
+### P4b-g（当前）
+
 - [ ] **P4b-g / GNSS-01～03**：软件实现完成并已刷入板载（source=`588ab77941985319`，raw/padded=412624/412640 B，static RAM=268680 B）。Fix2(1063)/Auxiliary(1061) 纯 Rust 解码与 P0 参考向量对拍（4 项 host 测试）；`process_fix2` 按固定 PX4 `gnss.cpp` process_fixx 翻译（covariance 1/6 有效、Auxiliary 2 s DOP、UTC 换算、未知字段不虚构）；标准 `sensor_gps` ULog（完整 37 字段，147 B）+ `GPS_RAW_INT`（USB/TELEM1 5 Hz，按 PX4 GPS_RAW_INT.hpp 换算，断链 1 s 后 1 Hz NO_GPS 帧）；`!dronecan` 增 GNSS 诊断行。日志队列扩容（RUNTIME_RECORD_LEN=152、QUEUE_BYTES=168 KiB、MAX_RECORD_LEN=800）支持完整标准字段。**板载已验：NO_GPS 断链帧 1 Hz 逐字段符合 PX4 语义，发送链路连通**；[证据](docs/acceptance/p4b-g/README.md)。待验：GPS 连接后正常帧速率与数值、sensor_gps 日志 pyulog 解析、一次断线失效/恢复、TIME-02 授时；dropout 复验并入联合负载。依赖 P4b-a、PL-a、H-10。
 
 ## 已确认范围
@@ -40,7 +45,7 @@
 - [x] **独立 QGC 恢复**：USB 重插、Stable 上传/校验和 PX4 v1.17.0 运行已留档。
 - [x] **P1-01 / H-05 / P1-04 收口**：21:28 UTC 从 PX4 直接回装普通包，CRC/source、disarmed、fault_injection=false、故障 valid=false 全部通过；[最终回装](docs/acceptance/p1/20261031-hil.md#最终普通回装与p1结论)。
 
-P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `81d6c1221048f08a`（raw/padded=`370064/370080 B`、static RAM=`231704 B`），经原 PX4 bootloader 上传/校验；心跳 `autopilot=PX4`，disarmed、输出关闭，`LINK_LED_HZ=2.0` 的 P3a 保存值有效。RTC LSE 走时、写后回读、`SYSTEM_TIME`、日志 UTC 及短时旧 IMU ULog 已通过。Inspector 版本显示及主机重启后 CDC 零数据问题归 P2；FMU 灯目视项不适用。项目开始前原配置仍无备份，P3a 已备份写入前当前 FRAM。
+P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普通 Rust `81d6c1221048f08a`（raw/padded=`370064/370080 B`、static RAM=`231704 B`），经原 PX4 bootloader 上传/校验；心跳 `autopilot=PX4`，disarmed、输出关闭，`LINK_LED_HZ=2.0` 的 P3a 保存值有效。RTC LSE 走时、写后回读、`SYSTEM_TIME`、日志 UTC 及短时旧 IMU ULog 已通过。Inspector 版本显示及主机重启后 CDC 零数据问题归 P2；FMU 灯目视项不适用。项目开始前原配置仍无备份，P3a 已备份写入前当前 FRAM。
 
 ## M1 前置阶段
 
@@ -50,10 +55,10 @@ P1 最终普通回装为 `a946a529360eac83`；最近实测板载为普通 Rust `
 - [x] **MSG-01 标准消息软件检查**：`sensor_accel` / `sensor_gyro`、`actuator_armed` 与固定 PX4 定义对齐；fmt/Clippy、4 项受影响核心用例、pyulog 与普通打包/布局通过，软件 source=`c2f3128aecc8a70b`。[记录](docs/acceptance/messages/README.md)；实物核对并入 P4 下一次必验记录。
 - [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
 - [ ] **PL-a / LOG-A01～05**：LOG-A01～04 及 LoggerControl/MAVLink Console 软件门已通过；实物正常 start/stop、MAVLink 下载和 pyulog 解析已通过；restart 先补录已有通过结果的直接证据，H-04 仍待受控断电恢复、缺卡/拔卡和时延边界。[证据](docs/acceptance/pl-a/README.md)；P4b-a 未关闭，不放行依赖阶段。
-- [ ] **P4b-g / GNSS-01～03**：GPS 已接 CAN1；MAVCAN 收口后接入 H-RTK Fix2/Auxiliary、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志并实测。CAN2 桥不自动转发 CAN1。阶段依赖 P4b-a、PL-a、H-10。
+- [ ] **P4b-g / GNSS-01～03**：GPS 已接 CAN1；软件已实现并刷入，待 H-10 与依赖门具备后验证 H-RTK Fix2/Auxiliary 实物数据、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志。CAN2 桥不自动转发 CAN1。阶段依赖 P4b-a、PL-a、H-10。
 - [ ] **P2 / MAV-01～03**：USB/TELEM1 双链路、QGC 连接/重连及版本显示；MAV-01 软件门已通过，待 H-03 与工程师接线做双链路/重连实测。[证据](docs/acceptance/p2/README.md)。依赖 P1、P3a。
 - [ ] **P3 / PARAM-01～02**：软件/工具路径已由 P3a/P2 就绪；待 P2 闭合与 H-03 接线后做双链路一致性、合法/非法值回显及保存重启读回。依赖 P3a、P2。
-- [ ] **P4 / SENS-01～04**：软件门、实物 WHO_AM_I/SPI/短时 8 kHz 计数、USB `HIGHRES_IMU` 与旧 `imu_icm42688` 短时 1 kHz ULog 已通过；标准 `sensor_accel` / `sensor_gyro` 速率确认为 200 Hz（`LOG_IMU_HZ` 默认，按样本时间戳抽取，不受批次抖动影响），文档与日志预算已同步，抽取实现修正后随下次刷写与 P4 必验核对（修正 build source=`023c2163007a9ddf`，raw/padded=`397952 B`，static RAM=`236872 B`，未刷写）；待 DRDY 仪器测量、60 s 标准 `sensor_accel` / `sensor_gyro` 日志、六面方向、校准与故障恢复。[证据](docs/acceptance/p4/README.md)。依赖 P1、P3a、PL-a。
+- [ ] **P4 / SENS-01～04**：软件门、实物 WHO_AM_I/SPI/短时 8 kHz 计数、USB `HIGHRES_IMU` 与旧 `imu_icm42688` 短时 1 kHz ULog 已通过；标准 `sensor_accel` / `sensor_gyro` 速率确认为 200 Hz（`LOG_IMU_HZ` 默认，按样本时间戳抽取，不受批次抖动影响），文档与日志预算已同步；抽取实现修正已包含在当前 `588ab77941985319` 固件（此前修正 build source=`023c2163007a9ddf`，raw/padded=`397952 B`，static RAM=`236872 B`，未单独刷写），随下一次 P4 必验核对；待 DRDY 仪器测量、60 s 标准 `sensor_accel` / `sensor_gyro` 日志、六面方向、校准与故障恢复。[证据](docs/acceptance/p4/README.md)。依赖 P1、P3a、PL-a。
 - [ ] **P4p / PWR-01～04**：INA219 单条 V/A/W、Windows Inspector 同显和短时 ULog 已通过。日志参数默认值读取 bug 已修复并验证参数回显；实际停录/变速、保存后掉电恢复仍待验。曾见 dropout 已定位为 IMU 1 kHz 日志时代的 SD 稳态亏空（产生 ≈98 kB/s > 隐含吞吐 ≈45 kB/s，见[定量分析](docs/logging-budget.md#31-dropout-定量分析2026-11-03)）；200 Hz 现状余量 ≈2.1×，复验并入联合负载（[analyze_dropout.py](tools/analyze_dropout.py)）。参考负载精度、支路供电和断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
 - [ ] **P6a / EST-01～02**：Mahony AHRS、姿态日志/QGC 方向；相对 yaw。依赖 P4、P2、PL-a。
 - [ ] **P7 / TEL-01～02**：随真实数据源补遥测与速率控制。依赖相应数据源、P2。

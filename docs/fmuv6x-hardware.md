@@ -1,6 +1,6 @@
 # Pixhawk 6X Rev 3 硬件台账
 
-审查日期：2026-10-31；状态更新：2026-11-02。计划与进度见 [plan.md](../plan.md)、[TODO.md](../TODO.md)。
+审查日期：2026-10-31；状态更新：2026-11-04。计划与进度见 [plan.md](../plan.md)、[TODO.md](../TODO.md)。
 
 ## 来源与证据边界
 
@@ -215,7 +215,7 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 | 安装 bootloader 的识别 | 实测3185:0035、`PX4 BL FMU v6X.x`、协议v5、board ID=53；构建版本未知；独立QGC往返及普通回装通过 | [HIL](acceptance/p1/20261031-hil.md) |
 | QGC / Inspector 实测 | QGC 5.1.5连接Rust；截图确认HEARTBEAT、SYS_STATUS、SYSTEM_TIME；AUTOPILOT_VERSION固件已就绪，连接/重连显示待 HIL 复核 | [QGC记录](qgc-notes.md)、[P2 软件记录](acceptance/p2/README.md) |
 
-P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。最近实测板载为普通 Rust source=`81d6c1221048f08a`；RTC、正常 SD/短时 IMU 日志已有有限 HIL，新标准消息软件见[记录](acceptance/messages/README.md)，未完成实物项仍按阶段验收。P4p INA219 实测板载为 `b2e70b0ecc7ab844`：单条 `DEBUG_VECT` V/A/W 在 Windows Inspector 同显、ULog `rust_current_sensor` 干净短日志 10 Hz 通过，见 [P4p](acceptance/ina219/README.md)。
+P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。最近实测板载为普通 Rust source=`588ab77941985319`（P4b-g，`NO_GPS` 断链帧已验）；此前 `81d6c1221048f08a` 的 RTC、正常 SD/短时 IMU 日志有限 HIL 继续有效。新标准消息软件见[记录](acceptance/messages/README.md)，未完成实物项仍按阶段验收。P4p INA219 实测板载为 `b2e70b0ecc7ab844`：单条 `DEBUG_VECT` V/A/W 在 Windows Inspector 同显、ULog `rust_current_sensor` 干净短日志 10 Hz 通过，见 [P4p](acceptance/ina219/README.md)。
 
 ## 验收与后续待核实
 

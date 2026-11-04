@@ -1,6 +1,6 @@
 # 日志控制：启动、状态与故障定位
 
-更新时间：2026-11-02。实现见 `src/storage/sd_logger.rs`、`src/core/logger.rs`、`src/comms/usb_console.rs`。
+更新时间：2026-11-04。实现见 `src/storage/sd_logger.rs`、`src/core/logger.rs`、`src/comms/usb_console.rs`。
 
 ## 1. 启动方式
 
@@ -79,10 +79,10 @@ LOGGER schema=2 status=2 stage=... file_index=0 bytes_written=... flushes=... er
 - 角速率：`sensor_gyro.x/y/z`，FRD、rad/s；
 - 两者都包含 `timestamp`、`timestamp_sample`、`device_id`、`temperature`、`error_count`、`clip_counter[0..2]` 和 `samples`；当前各 200 Hz、`samples=1`。
 
-最近实测板载 source `81d6c1221048f08a` 仍写旧 `imu_icm42688`：
+2026-11-02 实测板载 source `81d6c1221048f08a` 当时仍写旧 `imu_icm42688`：
 `gyro_rad_s[0..2]` / `accel_m_s2[0..2]` 为内部 FLU，2686 条/2.652 s、约 1012.5 Hz、
-`file_corruption=false`。该历史结果保留；新 schema 的实物核对并入 P4 下一次必验记录，
-软件互操作结果见[记录](acceptance/messages/README.md)。
+`file_corruption=false`。该历史结果保留。当前 `588ab77941985319` 固件已包含 200 Hz
+标准 topic 抽取修正；新 schema 的实物核对并入 P4 下一次必验记录，软件互操作结果见[记录](acceptance/messages/README.md)。
 
 ## 6. 验证命令序列
 

@@ -49,4 +49,4 @@ source=c2f3128aecc8a70b; report=/home/dev/work/px4/target/thumbv7em-none-eabihf/
 
 ## 下一步
 
-最近实测板载仍为 `81d6c1221048f08a`，短时日志使用旧 `imu_icm42688`。新 schema 实物核对复用下一次 P4 60 s/六面必验记录；CAN 映射、异常卡、双链路/QGC、GNSS 授时和 M1 依赖门继续待验。restart 原有通过标记先补直接证据引用。
+最近实测板载为 `588ab77941985319`（P4b-g，`NO_GPS` 断链帧已验）；此前 `81d6c1221048f08a` 的短时日志使用旧 `imu_icm42688`。新 schema 实物核对复用下一次 P4 60 s/六面必验记录；CAN 映射、异常卡、双链路/QGC、GNSS 授时和 M1 依赖门继续待验。restart 原有通过标记先补直接证据引用。
