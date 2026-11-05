@@ -146,28 +146,29 @@ pub async fn handle(
         }
         MavMessage::PARAM_SET(data) => {
             if let Some(id) = data.param_id.to_str().ok().and_then(Id::from_name) {
+                let value = if data.param_type == MavParamType::MAV_PARAM_TYPE_INT32 {
+                    // Ground stations send the integer as its raw bit pattern.
+                    (data.param_value.to_bits() as i32) as f32
+                } else {
+                    data.param_value
+                };
                 let outcome = if matches!(
-                data.param_type,
-                MavParamType::MAV_PARAM_TYPE_REAL32 | MavParamType::MAV_PARAM_TYPE_INT32
-            ) {
-                parameters
-                    .set(id, data.param_value)
-                    .map_err(|error| error.message())
-            } else {
-                Err("PARAM_SET: expected REAL32 or INT32")
-            };
+                    data.param_type,
+                    MavParamType::MAV_PARAM_TYPE_REAL32 | MavParamType::MAV_PARAM_TYPE_INT32
+                ) {
+                    parameters.set(id, value).map_err(|error| error.message())
+                } else {
+                    Err("PARAM_SET: expected REAL32 or INT32")
+                };
                 reply.push(parameter(parameters, id));
                 match outcome {
                     // Ground stations expect a changed value to survive a power
                     // cycle, so persist it right away when storage allows. Only
                     // disarmed vehicles with outputs closed may write FRAM.
                     Ok(true) => {
-                        if id.definition().name.starts_with("EKF2_") && !crate::estimator::maps(id)
-                        {
-                            reply.push(parameter_warning(
-                                "EKF2 parameter stored but unused by current core",
-                            ));
-                        }
+                        // No "unused" warning here: PX4 accepts and persists any
+                        // registered EKF2 parameter. The estimator reconfigures
+                        // through parameter_manager::set when the value maps.
                         if parameters.save(crate::OUTPUT_STATE).await.is_err() {
                             reply.push(parameter_warning(
                                 "PARAM_SET: RAM only; save blocked while outputs active",
@@ -589,9 +590,18 @@ fn wrap_2pi_degrees(cog_rad: f32) -> f32 {
 
 pub fn parameter(parameters: &ParameterManager<'_>, id: Id) -> MavMessage {
     let definition = id.definition();
+    let value = parameters.get(id);
+    // MAVLink carries the raw union: INT32 parameters travel as the bit pattern
+    // of the integer, so a ground station reading `param_type == INT32` sees the
+    // correct integer instead of a float bit-cast.
+    let param_value = if definition.kind == Kind::Integer {
+        f32::from_bits((value as i32) as u32)
+    } else {
+        value
+    };
     MavMessage::PARAM_VALUE(PARAM_VALUE_DATA {
         param_id: definition.name.into(),
-        param_value: parameters.get(id),
+        param_value,
         param_type: if definition.kind == Kind::Integer {
             MavParamType::MAV_PARAM_TYPE_INT32
         } else {
