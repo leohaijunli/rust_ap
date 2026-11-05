@@ -76,14 +76,15 @@ pub fn decode(bytes: &[u8]) -> Result<Record, DecodeError> {
     if u16::from_le_bytes(bytes[6..8].try_into().unwrap()) != FORMAT_VERSION {
         return Err(DecodeError::Version);
     }
-    if word(bytes, 8) != parameters::schema_tag()
-        || usize::from(u16::from_le_bytes(bytes[16..18].try_into().unwrap())) != COUNT
-        || payload_len != COUNT * 4
-    {
+    let count = usize::from(u16::from_le_bytes(bytes[16..18].try_into().unwrap()));
+    let schema = word(bytes, 8);
+    let current = schema == parameters::schema_tag() && count == COUNT;
+    let legacy = schema == parameters::legacy_schema_tag() && count == 11;
+    if (!current && !legacy) || payload_len != count * 4 {
         return Err(DecodeError::Schema);
     }
-    let mut values = [0.0; COUNT];
-    for (index, value) in values.iter_mut().enumerate() {
+    let mut values = *Snapshot::default().values();
+    for (index, value) in values[..count].iter_mut().enumerate() {
         *value = f32::from_bits(word(bytes, HEADER_SIZE + index * 4));
     }
     Ok(Record {
@@ -214,6 +215,31 @@ fn checksum(bytes: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prior_eleven_parameter_record_loads_without_losing_values_or_enabling_estimator() {
+        let mut bytes = [0_u8; 68];
+        bytes[0] = COMMITTED;
+        bytes[1..5].copy_from_slice(MAGIC);
+        bytes[6..8].copy_from_slice(&FORMAT_VERSION.to_le_bytes());
+        bytes[8..12].copy_from_slice(&parameters::legacy_schema_tag().to_le_bytes());
+        bytes[12..16].copy_from_slice(&7_u32.to_le_bytes());
+        bytes[16..18].copy_from_slice(&11_u16.to_le_bytes());
+        bytes[18..20].copy_from_slice(&44_u16.to_le_bytes());
+        let mut values = *Snapshot::default().values();
+        values[parameters::Id::LinkLedHz as usize] = 2.0;
+        for (index, value) in values[..11].iter().enumerate() {
+            bytes[20 + index * 4..24 + index * 4].copy_from_slice(&value.to_le_bytes());
+        }
+        let crc = checksum(&bytes[1..64]);
+        bytes[64..68].copy_from_slice(&crc.to_le_bytes());
+        let record = decode(&bytes).unwrap();
+        assert_eq!(record.generation, 7);
+        assert_eq!(record.snapshot.get(parameters::Id::LinkLedHz), 2.0);
+        assert_eq!(record.snapshot.get(parameters::Id::LogImuHz), 200.0);
+        assert_eq!(record.snapshot.get(parameters::Id::EstEnable), 0.0);
+        assert_eq!(record.snapshot.get(parameters::Id::Ekf2PredictUs), 10_000.0);
+    }
     use crate::parameters::{Id, Parameters};
 
     const OFF: OutputState = OutputState {

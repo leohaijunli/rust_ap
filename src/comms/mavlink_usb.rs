@@ -74,13 +74,21 @@ impl embassy_usb::Handler for UsbSessionEvents<'_> {
     }
 }
 
-pub async fn run<'d, D: Driver<'d>>(
-    class: CdcAcmClass<'d, D>,
-    phy: &RefCell<Lan8742<'_>>,
-    eth_power: &Output<'_>,
-    session: &UsbSession,
-    parameters: &ParameterManager<'_>,
-    dronecan: &dronecan_can::State,
+type BoardUsbDriver = embassy_stm32::usb::Driver<'static, embassy_stm32::peripherals::USB_OTG_FS>;
+
+#[embassy_executor::task]
+pub async fn device_task(mut usb: embassy_usb::UsbDevice<'static, BoardUsbDriver>) -> ! {
+    usb.run().await
+}
+
+#[embassy_executor::task]
+pub async fn run(
+    class: CdcAcmClass<'static, BoardUsbDriver>,
+    phy: &'static RefCell<Lan8742<'static>>,
+    eth_power: &'static Output<'static>,
+    session: &'static UsbSession,
+    parameters: &'static ParameterManager<'static>,
+    dronecan: &'static dronecan_can::State,
 ) -> ! {
     let (mut sender, mut receiver) = class.split();
     let replies = Replies::new();
@@ -125,6 +133,8 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
     const GPS_PERIOD: Duration = Duration::from_millis(200);
     const GPS_NO_FIX_PERIOD: Duration = Duration::from_secs(1);
     let mut sequence = 0u8;
+    let mut independent_sequence = 0u8;
+    let mut estimator_tick = 0u8;
     'connection: loop {
         sender.wait_connection().await;
         let mut ticks = 0u32;
@@ -162,7 +172,29 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
                         if let Some(message) = mavlink_core::highres_imu() {
                             result = send_message(sender, &mut sequence, &message).await;
                         }
+                        if result.is_ok() {
+                            if let Some(message) = mavlink_core::scaled_pressure() {
+                                result = send_message(sender, &mut sequence, &message).await;
+                            }
+                        }
                         next_imu = now + IMU_PERIOD;
+                        estimator_tick = estimator_tick.wrapping_add(1);
+                        if result.is_ok() && estimator_tick.is_multiple_of(2) {
+                            for (component, message) in
+                                mavlink_core::estimator_messages().into_iter().flatten()
+                            {
+                                let sequence = if component == mavlink_core::COMPONENT_ID {
+                                    &mut sequence
+                                } else {
+                                    &mut independent_sequence
+                                };
+                                result =
+                                    send_message_from(sender, sequence, component, &message).await;
+                                if result.is_err() {
+                                    break;
+                                }
+                            }
+                        }
                     }
                     if result.is_ok() && now >= next_power {
                         if let Some(message) = mavlink_core::ina219_status() {
@@ -265,8 +297,17 @@ async fn send_message<'d, D: Driver<'d>>(
     sequence: &mut u8,
     message: &MavMessage,
 ) -> Result<(), EndpointError> {
+    send_message_from(sender, sequence, mavlink_core::COMPONENT_ID, message).await
+}
+
+async fn send_message_from<'d, D: Driver<'d>>(
+    sender: &mut Sender<'d, D>,
+    sequence: &mut u8,
+    component: u8,
+    message: &MavMessage,
+) -> Result<(), EndpointError> {
     let mut frame = [0u8; mavlink::MAX_FRAME_SIZE];
-    let len = mavlink_core::encode(sequence, message, &mut frame);
+    let len = mavlink_core::encode_from(sequence, component, message, &mut frame);
     write_transfer(sender, &frame[..len]).await
 }
 
@@ -356,6 +397,10 @@ async fn receive<'d, D: Driver<'d>>(
                         #[cfg(feature = "fault-injection")]
                         Some(Command::HardFault) => {
                             replies.send(Outbound::InjectFault { hard: true }).await
+                        }
+                        Some(command @ (Command::EstimatorStart | Command::EstimatorStop)) => {
+                            let response = usb_console::estimator_report(command, parameters);
+                            replies.send(Outbound::Console(response)).await;
                         }
                         Some(command) => {
                             replies

@@ -1,3 +1,5 @@
 {
-    "cmake.sourceDirectory": "C:/Users/leeli/Downloads/rust_ap/ina219"
+  "rust-analyzer.cargo.target": "thumbv7em-none-eabihf",
+  "rust-analyzer.cargo.allTargets": false,
+  "cmake.sourceDirectory": "/Artemis/Users/HLi/Documents/rust_ap/tools/golden_cpp"
 }

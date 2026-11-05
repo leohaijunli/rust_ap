@@ -17,14 +17,18 @@ pub struct ResetReport {
 
 impl Default for ResetReport {
     fn default() -> Self {
-        Self {
-            counts: [0; 6],
-            quaternion_delta: math::IDENTITY,
-            velocity_delta: [0.0; 3],
-            position_delta: [0.0; 3],
-            hagl_delta: 0.0,
-        }
+        Self::EMPTY
     }
+}
+
+impl ResetReport {
+    pub const EMPTY: Self = Self {
+        counts: [0; 6],
+        quaternion_delta: math::IDENTITY,
+        velocity_delta: [0.0; 3],
+        position_delta: [0.0; 3],
+        hagl_delta: 0.0,
+    };
 }
 
 #[derive(Default)]
@@ -34,6 +38,12 @@ pub(super) struct ResetStatus {
 }
 
 impl ResetStatus {
+    pub const fn new() -> Self {
+        Self {
+            report: ResetReport::EMPTY,
+            previous: [0; 6],
+        }
+    }
     pub fn begin_update(&mut self) {
         self.previous = self.report.counts;
     }

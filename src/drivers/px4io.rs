@@ -217,6 +217,7 @@ impl Serial {
     }
 }
 
+#[embassy_executor::task]
 pub async fn run(uart: Uart<'static, Async>) -> ! {
     let (tx, rx) = uart.split();
     let mut serial = Serial { tx, rx };

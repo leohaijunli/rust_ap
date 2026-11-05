@@ -50,6 +50,14 @@ MAVLink 使用固定 rust-mavlink 0.17.1 的 `mavlink::common` 生成类型；US
 
 9 份消息的运行字段摘录位于 `tools/px4_msgs/{Vehicle*,Estimator*}.msg`；常量/注释不进入 payload。独立解析器比较完整字段顺序/类型/数组，整数时间/标志逐项相等，f64 经纬度绝对容差 1e-10°。固定上游源码核对与 hash 见 [E6-H 记录](acceptance/ekf2/20261104-e6-host.md)；CI 同时核对固定 checkout，不能仅通过换 topic 名称。
 
+### E7 / BARO 当前接入状态
+
+上述 E6-H 独立注册表的历史边界保持。E7 代码新增 `sensor_baro`（id=35，32 B payload）和 `rust_estimator_runtime`（id=36，44 B）；基础 13 个 topic 与 estimator id=11–34 不冲突。队列改为 512 槽、每记录最多 218 B，120 KiB 预算，64 槽事件保留；默认每实例 estimator=5 Hz、baro=10 Hz，真实日志/吞吐待验。
+
+`SensorBaro.msg` 完整 6 字段保留压力 Pa、温度 °C、采样/发布时间与 error_count；设备 ID=0x677721（BMP388/I2C4/0x77）。HIGHRES_IMU 的 abs_pressure 为 hPa、pressure_alt 为标准气压高度、温度仍是 IMU；`SCALED_PRESSURE` 单独携带气压计温度 centi-°C，差压未知为 NaN。BMP388 首读已通过，标准流/日志实物校验尚待，见 [BARO 记录](acceptance/barometer/20261104-bringup.md)。
+
+E7 task 尚未在板上启动；软件中的相对 yaw 独立 ODOMETRY 用 LOCAL_FRD，主/独立导航有效位保持假。设备 ID 来自真实驱动，`rust_estimator_runtime` 明示选择源/故障/epoch/未资格化；不能把 host NED 例程的假设直接当真北实物证据。
+
 标准 topic 完整匹配固定 `.msg` 字段；附加诊断不混入其 schema。`dronecan_raw_command` / `dronecan_esc_status` / `dronecan_node_status` 记录原始协议，`rust_*` 记录本项目运行与持久状态；`esc_status` 名称留给真实 PX4 汇总结构。
 
 新增数据源时再加入其标准定义、Rust 类型和实际发布路径。当前日志注册 10 个已接入 topic，新增 `rust_current_sensor`；旧 9-topic 软件和 `imu_icm42688` HIL 保留历史语义。

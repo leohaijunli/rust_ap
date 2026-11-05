@@ -1,0 +1,21 @@
+{
+  "source_id": "f9d3004c0cf4691e",
+  "mode": "EST_EN=0 default boot/recovery",
+  "thread_direct_paths_max": 15304,
+  "thread_entry_overhead": 176,
+  "interrupt_software_path_envelope": {
+    "7": 208,
+    "6": 208,
+    "5": 208,
+    "4": 2884,
+    "3": 3960,
+    "2": 1012,
+    "1": 208,
+    "0": 208
+  },
+  "hardware_exception_per_priority": 108,
+  "priority_levels": 8,
+  "nested_sum_bytes": 25240,
+  "stack_bytes": 65536,
+  "exclusions": "Indirect formatting callbacks and cold error recursion not formally bounded; source/assembly reviewed and board watermark required. Enabled EKF maximum is assessed separately."
+}

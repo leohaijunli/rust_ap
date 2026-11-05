@@ -49,6 +49,12 @@ mod tests {
 
 impl Default for OutputParams {
     fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl OutputParams {
+    pub(super) const fn defaults() -> Self {
         Self {
             position_time_constant_s: default_float("EKF2_TAU_POS"),
             velocity_time_constant_s: default_float("EKF2_TAU_VEL"),
@@ -78,18 +84,28 @@ struct OutputState {
 }
 impl Default for OutputState {
     fn default() -> Self {
-        Self {
-            q: math::IDENTITY,
-            velocity: [0.0; 3],
-            position: [0.0; 3],
-        }
+        Self::EMPTY
     }
+}
+impl OutputState {
+    const EMPTY: Self = Self {
+        q: math::IDENTITY,
+        velocity: [0.0; 3],
+        position: [0.0; 3],
+    };
 }
 #[derive(Clone, Copy, Default)]
 struct VerticalState {
     velocity: f32,
     integral: f32,
     dt: f32,
+}
+impl VerticalState {
+    const EMPTY: Self = Self {
+        velocity: 0.0,
+        integral: 0.0,
+        dt: 0.0,
+    };
 }
 
 struct History<T: Copy + Default> {
@@ -100,9 +116,9 @@ struct History<T: Copy + Default> {
     first: bool,
 }
 impl<T: Copy + Default> History<T> {
-    fn new(length: usize) -> Self {
+    const fn new(length: usize, initial: T) -> Self {
         Self {
-            samples: [T::default(); 64],
+            samples: [initial; 64],
             length,
             head: 0,
             tail: 0,
@@ -155,15 +171,24 @@ pub(super) struct OutputPredictor {
 }
 
 impl OutputPredictor {
-    pub fn new(length: usize, params: OutputParams) -> Self {
+    #[inline(never)]
+    pub fn reset_to(&mut self, length: usize, params: OutputParams) {
+        const INITIAL: OutputPredictor = OutputPredictor::new(2, OutputParams::defaults());
+        *self = INITIAL;
+        self.params = params;
+        self.output.length = length;
+        self.vertical.length = length;
+    }
+
+    pub const fn new(length: usize, params: OutputParams) -> Self {
         Self {
             params,
-            output: History::new(length),
-            vertical: History::new(length),
-            new: OutputState::default(),
-            new_vertical: VerticalState::default(),
-            global_reference: GlobalPosition::default(),
-            rotation_now: math::rotation(math::IDENTITY),
+            output: History::new(length, OutputState::EMPTY),
+            vertical: History::new(length, VerticalState::EMPTY),
+            new: OutputState::EMPTY,
+            new_vertical: VerticalState::EMPTY,
+            global_reference: GlobalPosition::ZERO,
+            rotation_now: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
             gyro_bias: [0.0; 3],
             accel_bias: [0.0; 3],
             angle_correction: [0.0; 3],

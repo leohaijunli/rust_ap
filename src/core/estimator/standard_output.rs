@@ -33,6 +33,40 @@ pub struct Attitude {
     pub quat_reset_counter: u8,
 }
 
+/// FRD body to local-world intrinsic ZYX angles, in radians. Derived once from
+/// the selected quaternion; relative yaw does not establish a north reference.
+#[derive(Clone, Copy, Debug)]
+pub struct EulerAttitude {
+    pub timestamp: u64,
+    pub timestamp_sample: u64,
+    pub roll: f32,
+    pub pitch: f32,
+    pub yaw: f32,
+    pub quat_reset_counter: u8,
+    pub relative_yaw: bool,
+}
+
+impl EulerAttitude {
+    pub fn from_attitude(attitude: Attitude, relative_yaw: bool) -> Option<Self> {
+        let q = attitude.q;
+        if q.iter().any(|value| !value.is_finite())
+            || (q.iter().map(|value| value * value).sum::<f32>() - 1.0).abs() > 1e-3
+        {
+            return None;
+        }
+        let rotation = math::rotation(q);
+        Some(Self {
+            timestamp: attitude.timestamp,
+            timestamp_sample: attitude.timestamp_sample,
+            roll: libm::atan2f(rotation[2][1], rotation[2][2]),
+            pitch: libm::asinf((-rotation[2][0]).clamp(-1.0, 1.0)),
+            yaw: libm::atan2f(rotation[1][0], rotation[0][0]),
+            quat_reset_counter: attitude.quat_reset_counter,
+            relative_yaw,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct AngularVelocity {
     pub timestamp: u64,
@@ -178,6 +212,7 @@ pub struct EstimatorStates {
 pub struct AidSource {
     pub timestamp: u64,
     pub estimator_instance: u8,
+    pub device_id: u32,
     pub status: AidStatus,
 }
 
@@ -374,6 +409,7 @@ impl Snapshot {
             (status.timestamp != 0).then_some(AidSource {
                 timestamp: now,
                 estimator_instance: source.instance(),
+                device_id: 0,
                 status,
             })
         };
@@ -551,6 +587,40 @@ fn odometry_reset_counter(resets: ResetReport) -> u8 {
 mod tests {
     use super::*;
     use crate::estimator::{imu_ekf::ImuEkfParams, ImuDelta};
+
+    #[test]
+    fn euler_angles_keep_zyx_axes_radians_and_reject_invalid_quaternions() {
+        let mut attitude = Attitude {
+            timestamp: 1_234_567,
+            timestamp_sample: 1_234_500,
+            q: math::multiply(
+                math::multiply(
+                    math::from_axis_angle([0.0, 0.0, 1.1]),
+                    math::from_axis_angle([0.0, -0.25, 0.0]),
+                ),
+                math::from_axis_angle([0.35, 0.0, 0.0]),
+            ),
+            delta_q_reset: math::IDENTITY,
+            quat_reset_counter: 255,
+        };
+        let euler = EulerAttitude::from_attitude(attitude, true).unwrap();
+        for (actual, expected) in [euler.roll, euler.pitch, euler.yaw]
+            .into_iter()
+            .zip([0.35, -0.25, 1.1])
+        {
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        assert_eq!(
+            (euler.timestamp, euler.timestamp_sample),
+            (1_234_567, 1_234_500)
+        );
+        assert_eq!(euler.quat_reset_counter, 255);
+        assert!(euler.relative_yaw);
+        attitude.q = [0.0; 4];
+        assert!(EulerAttitude::from_attitude(attitude, true).is_none());
+        attitude.q[0] = f32::NAN;
+        assert!(EulerAttitude::from_attitude(attitude, true).is_none());
+    }
 
     fn aligned() -> ImuEkf {
         let mut core = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();

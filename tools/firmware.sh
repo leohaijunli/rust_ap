@@ -66,6 +66,7 @@ build_firmware() {
     "$llvm/llvm-objcopy" -O binary "$release/v6x-rust-led" "$release/v6x-rust-led.bin"
     "$python" tools/package.py
     "$python" tools/build_report.py --release "$release" "${report_flags[@]}"
+    "$python" tools/check_stack_frames.py --elf "$release/v6x-rust-led"
     "$llvm/llvm-size" -A "$release/v6x-rust-led" > "$release/sections.txt"
     "$llvm/llvm-objdump" --disassemble "$release/v6x-rust-led" > "$release/disassembly.txt"
 }

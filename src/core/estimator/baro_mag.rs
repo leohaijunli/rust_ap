@@ -31,6 +31,13 @@ pub struct BaroMagSample {
     pub field_gauss: [f32; 3],
 }
 
+/// A real pressure-height observation does not imply a magnetometer sample.
+#[derive(Clone, Copy, Debug)]
+pub struct BaroAltitude {
+    pub timestamp: Timestamp,
+    pub altitude_m: f32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +113,7 @@ pub(super) struct Aids {
     baro: ObservationBuffer<BaroMagSample>,
     mag: ObservationBuffer<BaroMagSample>,
     last_input: u64,
+    last_baro_input: u64,
     last_baro_push: u64,
     last_mag_push: u64,
     baro_started: bool,
@@ -152,6 +160,7 @@ impl Aids {
             baro: ObservationBuffer::new(length),
             mag: ObservationBuffer::new(length),
             last_input: 0,
+            last_baro_input: 0,
             last_baro_push: 0,
             last_mag_push: 0,
             baro_started: false,
@@ -204,6 +213,35 @@ impl Aids {
                 *latest = filter.latest_us;
                 *started = true;
             }
+        }
+        Ok(())
+    }
+
+    pub fn push_baro(&mut self, sample: BaroAltitude, filter: &ImuEkf) -> Result<(), FilterFault> {
+        if sample.timestamp <= self.last_baro_input
+            || sample.timestamp > filter.latest_us
+            || !sample.altitude_m.is_finite()
+        {
+            return Err(FilterFault::Input);
+        }
+        self.last_baro_input = sample.timestamp;
+        let interval = (filter.latest_us - filter.delayed_us) / (self.baro.length as u64 - 1);
+        let time = sample.timestamp as i64
+            - (self.params.baro_delay_ms * 1000.0) as i64
+            - (filter.average_dt_s * 5e5) as i64;
+        if time >= (self.baro.newest_time() + interval) as i64 {
+            // The existing baro buffer's unused magnetic fields are explicitly
+            // unknown. Nothing is pushed into mag; no magnetic aid is invented.
+            self.baro.push(
+                BaroMagSample {
+                    timestamp: sample.timestamp,
+                    altitude_m: sample.altitude_m,
+                    field_gauss: [f32::NAN; 3],
+                },
+                time as u64,
+            );
+            self.last_baro_push = filter.latest_us;
+            self.baro_started = true;
         }
         Ok(())
     }

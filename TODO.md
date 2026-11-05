@@ -15,10 +15,10 @@
 
 MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门具备后验证 GPS 实物数据。
 
-**当前软件工作：E1-H～E5-H 已通过（E5 CI 正确性由工程师确认）；E6-H 独立无 GPS 与标准输出本地通过，新增 CI 待执行。** 两种合成模式各 65 s，9 份 `.msg` / 165 个字段与 MAVLink 独立解析通过；[证据](docs/acceptance/ekf2/20261104-e6-host.md)。随后工程师授权回装普通合并包 `c6fe90f898b68f8f`，上传/校验、版本/心跳/无启动故障通过；PX4IO Timeout、实体按键禁用，未启动板载 EKF。[回装记录](docs/acceptance/px4io/20261104-merged-flash.md)。
+**当前板载：`34ef7adba931a677`（诊断包）。E6-H/PX4IO 合并已推送 `1c34dcd`；栈整改包 `f9d3004c0cf4691e` 实测启动余量 44524 B（门通过），但 EKF 更新 1117 µs 超 1 ms 期限后自动回退 Mahony。性能整改后（TIM5 独立执行器 + opt-level=3）发现 reconfigure 窗口内存损坏：参数被写为 230/290 等垃圾值，EKF2 无法激活；损坏定位到 `enable_gnss` 窗口，软件越界写（非硬件），EKF `update()` 路径 14 万样本无损坏。**[分析链](docs/acceptance/ekf2/20261104-e7-bringup.md)。日志/欧拉角输出已验证（858 KiB 完整下载，pyulog 无损坏）。PX4IO Timeout/实体按键禁用仍未解决，不称 E7 完成。
 
 - [x] **E6-H 标准输出/日志 host 门**：独立无 GPS 输入类型、状态隔离、标准姿态/角速度/局部/全球/诊断 schema、MAVLink 编码与 pyulog/pymavlink 独立解析通过；无 GPS 只发独立 `ODOMETRY` / 健康状态，水平无界协方差明确，全球位置禁发。未启用固件 estimator 日志注册表或输出任务。[证据](docs/acceptance/ekf2/20261104-e6-host.md)。
-- [ ] **E7 真实输出/日志**：工程师要求下一步启动板载 EKF2，但目前没有任务或启动命令；先明确仅 IMU 受限姿态实验或正式 E7 接入范围。正式门包含 8 kHz 输入桥、参数/健康/预算、Mahony 回退与 USB/TELEM1/SD 联合验收，依赖 M1、P6a、P4b-g、P2、PL-b，不因 host 或普通回装通过提前放行。
+- [ ] **E7 真实输出/日志**：软件已包含任务、159 项统一参数（142 个 EKF2）、`!ekf2 start/stop`、独立气压输入、回退和双链路/日志分发。受 **共享栈余量不足**阻塞，尚未实际启动；静态对象/分成员初始化整改未验证。下一步先恢复 ≥32 KiB 余量，再验真实 IMU/气压下的启停、期限、输出和日志；完整资格仍依赖 M1、P6a、P4b-g、P2、PL-b。
 
 ### MAVCAN（已完成）
 
@@ -61,7 +61,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [x] **MSG-01 标准消息软件检查**：`sensor_accel` / `sensor_gyro`、`actuator_armed` 与固定 PX4 定义对齐；fmt/Clippy、4 项受影响核心用例、pyulog 与普通打包/布局通过，软件 source=`c2f3128aecc8a70b`。[记录](docs/acceptance/messages/README.md)；实物核对并入 P4 下一次必验记录。
 - [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
 - [ ] **PL-a / LOG-A01～06**：LOG-A01～04 及 LoggerControl/MAVLink Console 软件门已通过；实物正常 start/stop、下载/解析已通过。LOG-A06 短按/长按保留事件和蜂鸣软件通过，IO 安全灯不覆盖，I²C RGB/左右灯待识别；旧 `473ffd4797e692f3` 包撤回。H-04 故障/时延、H-12 IO/按键/灯/蜂鸣与 restart 直接证据仍待验。[证据](docs/acceptance/pl-a/README.md)；不放行依赖阶段。
-- [x] **IO-H0 软件**：固定 PX4 v5 报文/CRC、USART6/DMA、零输出配置与回读、按钮锁存 ACK、`!px4io` 诊断；12 项相关 host 用例、host/H7 Clippy、隔离 release/打包通过，source=`0fdd9d28c4789055`。[记录](docs/acceptance/px4io/20261104-host.md)。未刷写/实测。
+- [x] **IO-H0 软件**：固定 PX4 v5 报文/CRC、USART6/DMA、零输出配置与回读、按钮锁存 ACK、`!px4io` 诊断；12 项相关 host 用例及隔离构建通过。[记录](docs/acceptance/px4io/20261104-host.md)。后来 H7 回装实测 Timeout，**IO 实物未通过**，见[回装记录](docs/acceptance/px4io/20261104-merged-flash.md)。
 - [ ] **IO-R0～R5（本次仅计划）**：Rust 模块拆分/协议共享/迁移与必要验收已记录；先 H-12/13 型号/灯归属/恢复，再独立 M3 启动与 LED/gesture，后续 PWM/RC、更新/恢复按 [重构计划](docs/px4io.md) 逐门放行。不开始 IO 刷写、不新增 M1 前置。
 - [ ] **P4b-g / GNSS-01～03**：GPS 已接 CAN1；软件已实现并刷入，待 H-10 与依赖门具备后验证 H-RTK Fix2/Auxiliary 实物数据、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志。CAN2 桥不自动转发 CAN1。阶段依赖 P4b-a、PL-a、H-10。
 - [ ] **P2 / MAV-01～03**：USB/TELEM1 双链路、QGC 连接/重连及版本显示；MAV-01 软件门已通过，待 H-03 与工程师接线做双链路/重连实测。[证据](docs/acceptance/p2/README.md)。依赖 P1、P3a。
@@ -69,6 +69,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [ ] **P4 / SENS-01～04**：软件门、实物 WHO_AM_I/SPI/短时 8 kHz 计数、USB `HIGHRES_IMU` 与旧 `imu_icm42688` 短时 1 kHz ULog 已通过；标准 `sensor_accel` / `sensor_gyro` 速率确认为 200 Hz（`LOG_IMU_HZ` 默认，按样本时间戳抽取，不受批次抖动影响），文档与日志预算已同步；抽取实现修正已包含在当前 `588ab77941985319` 固件（此前修正 build source=`023c2163007a9ddf`，raw/padded=`397952 B`，static RAM=`236872 B`，未单独刷写），随下一次 P4 必验核对；待 DRDY 仪器测量、60 s 标准 `sensor_accel` / `sensor_gyro` 日志、六面方向、校准与故障恢复。[证据](docs/acceptance/p4/README.md)。依赖 P1、P3a、PL-a。
 - [ ] **P4p / PWR-01～04**：INA219 单条 V/A/W、Windows Inspector 同显和短时 ULog 已通过。日志参数默认值读取 bug 已修复并验证参数回显；实际停录/变速、保存后掉电恢复仍待验。曾见 dropout 已定位为 IMU 1 kHz 日志时代的 SD 稳态亏空（产生 ≈98 kB/s > 隐含吞吐 ≈45 kB/s，见[定量分析](docs/logging-budget.md#31-dropout-定量分析2026-11-03)）；200 Hz 现状余量 ≈2.1×，复验并入联合负载（[analyze_dropout.py](tools/analyze_dropout.py)）。参考负载精度、支路供电和断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
 - [ ] **P6a / EST-01～02**：Mahony AHRS、姿态日志/QGC 方向；相对 yaw。依赖 P4、P2、PL-a。
+- [ ] **P4b-baro / BARO-01～04**：BMP388/I2C4/0x77 驱动、补偿/CRC、标准发布及独立 EKF baro 输入已实现；256 用例对拍与真实 ID/CRC/温压首读通过。待栈整改后的 MAVLink 字段/速率、sensor_baro 独立解析和一次失效恢复，不把首读当精度验收。[记录](docs/acceptance/barometer/20261104-bringup.md)，依赖 P4、PL-a、P2、H-14。
 - [ ] **P7 / TEL-01～02**：随真实数据源补遥测与速率控制。依赖相应数据源、P2。
 - [ ] **M1-01～02**：一次 5 分钟数据链联合运行，核对数据、日志和资源；零命令/DISARMED。依赖以上阶段。
 
@@ -101,3 +102,4 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 | H-11 | INA219 0x44 通信、单条 `DEBUG_VECT` V/A/W 在 Windows Inspector 已确认、ULog `rust_current_sensor` 已实测；待支路供电/接线确认、参考负载精度和一次断线恢复；P4p |
 | H-12 | CUAV USL 接 GPS1：IO 协议/CRC/零 PWM、PF5 电平、短按 start/stop、长按无动作、蜂鸣与可解析日志；识别 I²C RGB/安全灯/左右小灯归属；LOG-A06、IO-H0/R0/R2 |
 | H-13 | IO 实物 MCU、原应用/bootloader 备份条件、SWD/电源和不依赖新应用的恢复；IO-R0/R1/R4/R5 |
+| H-14 | 已识别 BMP388/I2C4/0x77、PG8，trim CRC 与温压首读通过；待标准数据/日志、参考精度及一次失效恢复；BARO-01～04 / E7 |

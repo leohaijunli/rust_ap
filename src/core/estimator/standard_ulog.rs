@@ -1,4 +1,4 @@
-//! Separate estimator ULog registry; not enabled in the firmware logger queue.
+//! Separate estimator ULog registry shared by host and the E7 LOG_EST path.
 //! Copyright (c) 2015-2024 PX4 Development Team. All rights reserved.
 //! SPDX-License-Identifier: BSD-3-Clause; license: tools/px4_msgs/LICENSE.
 
@@ -165,7 +165,7 @@ impl DataEncoder {
 
     /// Bounded record callback, no allocation and no transport-specific state.
     /// The callback owns error/backpressure handling; this host gate does not
-    /// enable estimator records in the firmware's 152-byte runtime queue.
+    /// change the caller's queue budget or logging policy.
     pub fn write_snapshot<E: From<Error>>(
         &mut self,
         snapshot: &Snapshot,
@@ -410,7 +410,7 @@ fn aid_payload(v: AidSource, dimensions: usize) -> Payload {
     assert!((1..=3).contains(&dimensions));
     let mut p = time(v.status.timestamp);
     byte(&mut p, v.estimator_instance);
-    p.push_u32(0).unwrap(); // Sensor identity not supplied by the host core.
+    p.push_u32(v.device_id).unwrap();
     p.push_u64(0).unwrap(); // Last fusion time is not available in AidStatus.
     if dimensions == 2 {
         for _ in 0..2 {
@@ -447,7 +447,9 @@ mod tests {
         ];
         for (index, topic) in TOPICS.iter().enumerate() {
             assert_eq!(topic.id.index(), index);
-            assert!(topic.id as usize >= ulog::TOPIC_COUNT);
+            assert!(ulog::TOPICS
+                .iter()
+                .all(|base| base.id as u16 != topic.id as u16));
             let mut bytes = [0; FORMAT_CAPACITY];
             let length = format_record(topic.id, &mut bytes).unwrap();
             let definition = core::str::from_utf8(&bytes[3..length]).unwrap();
@@ -467,8 +469,8 @@ mod tests {
             assert!(TOPICS[..index].iter().all(|other| other.name != topic.name));
             assert_eq!(subscription(topic.id, 1).unwrap().as_bytes()[3], 1);
         }
-        assert_eq!(ulog::TOPIC_COUNT, 11);
-        assert_eq!(crate::log_queue::RUNTIME_RECORD_LEN, 152);
+        assert_eq!(ulog::TOPIC_COUNT, 14);
+        assert!(crate::log_queue::RUNTIME_RECORD_LEN >= 218);
     }
 
     #[test]

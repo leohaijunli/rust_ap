@@ -10,10 +10,10 @@ pub const GENERAL_URI: &str = "mftp:///component_metadata/general.json";
 /// General metadata: points at the parameter metadata file and its CRC.
 ///
 /// `fileCrc` must equal [`PARAMETERS_CRC`]; the unit test below enforces that.
-pub const GENERAL_JSON: &str = "{\n  \"version\": 1,\n  \"metadataTypes\": [\n    {\n      \"type\": 1,\n      \"uri\": \"mftp:///component_metadata/parameters.json\",\n      \"fileCrc\": 69351959\n    }\n  ]\n}\n";
+pub const GENERAL_JSON: &str = include_str!("metadata/general.json");
 
 /// Parameter metadata: one entry per entry in [`crate::parameters::REGISTRY`].
-pub const PARAMETERS_JSON: &str = "{\n  \"version\": 1,\n  \"parameters\": [\n    {\"name\": \"MAV_SYS_ID\", \"type\": \"Int32\", \"group\": \"System\", \"shortDesc\": \"MAVLink system ID\", \"min\": 1, \"max\": 255, \"default\": 1},\n    {\"name\": \"LINK_LED_HZ\", \"type\": \"Float\", \"group\": \"Status\", \"shortDesc\": \"Link LED blink frequency\", \"units\": \"Hz\", \"min\": 0.1, \"max\": 10, \"default\": 1},\n    {\"name\": \"LOG_EN_IMU\", \"type\": \"Int32\", \"group\": \"SDLog\", \"shortDesc\": \"Enable IMU logging\", \"min\": 0, \"max\": 1, \"default\": 1},\n    {\"name\": \"LOG_IMU_HZ\", \"type\": \"Float\", \"group\": \"SDLog\", \"shortDesc\": \"IMU log rate\", \"units\": \"Hz\", \"min\": 1, \"max\": 1000, \"default\": 200},\n    {\"name\": \"LOG_EN_INA\", \"type\": \"Int32\", \"group\": \"SDLog\", \"shortDesc\": \"Enable INA219 logging\", \"min\": 0, \"max\": 1, \"default\": 1},\n    {\"name\": \"LOG_INA_HZ\", \"type\": \"Float\", \"group\": \"SDLog\", \"shortDesc\": \"INA219 log rate\", \"units\": \"Hz\", \"min\": 1, \"max\": 100, \"default\": 10},\n    {\"name\": \"LOG_EN_CAN\", \"type\": \"Int32\", \"group\": \"SDLog\", \"shortDesc\": \"Enable CAN logging\", \"min\": 0, \"max\": 1, \"default\": 1},\n    {\"name\": \"LOG_CAN_HZ\", \"type\": \"Float\", \"group\": \"SDLog\", \"shortDesc\": \"CAN log rate\", \"units\": \"Hz\", \"min\": 1, \"max\": 1000, \"default\": 400},\n    {\"name\": \"LOG_EN_HEALTH\", \"type\": \"Int32\", \"group\": \"SDLog\", \"shortDesc\": \"Enable health logging\", \"min\": 0, \"max\": 1, \"default\": 1},\n    {\"name\": \"LOG_HEALTH_HZ\", \"type\": \"Float\", \"group\": \"SDLog\", \"shortDesc\": \"Health log rate\", \"units\": \"Hz\", \"min\": 1, \"max\": 100, \"default\": 10},\n    {\"name\": \"LOG_EN_EVENT\", \"type\": \"Int32\", \"group\": \"SDLog\", \"shortDesc\": \"Enable event logging\", \"min\": 0, \"max\": 1, \"default\": 1}\n  ]\n}\n";
+pub const PARAMETERS_JSON: &str = include_str!("metadata/parameters.json");
 
 pub const GENERAL_CRC: u32 = crc32(GENERAL_JSON.as_bytes());
 pub const PARAMETERS_CRC: u32 = crc32(PARAMETERS_JSON.as_bytes());
@@ -103,8 +103,21 @@ mod tests {
                 ("max", entry.max),
                 ("default", entry.default),
             ] {
-                let expected = format!("\"{key}\": {}", number(value));
-                assert!(line.contains(&expected), "{} needs {expected}", entry.name);
+                let prefix = format!("\"{key}\":");
+                let text = line.split_once(&prefix).unwrap().1.trim_start();
+                let number = text
+                    .split([',', '}'])
+                    .next()
+                    .unwrap()
+                    .trim()
+                    .parse::<f32>()
+                    .unwrap();
+                assert_eq!(
+                    number.to_bits(),
+                    value.to_bits(),
+                    "{} {key} value differs",
+                    entry.name
+                );
             }
             if entry.name.starts_with("LOG_") {
                 assert!(
@@ -113,14 +126,6 @@ mod tests {
                     entry.name
                 );
             }
-        }
-    }
-
-    fn number(value: f32) -> std::string::String {
-        if value.fract() == 0.0 {
-            format!("{}", value as i32)
-        } else {
-            format!("{value}")
         }
     }
 

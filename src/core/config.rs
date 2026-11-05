@@ -5,6 +5,7 @@ use crate::icm42688::{Config as ImuConfig, ConfigError};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Algorithm {
     Mahony,
+    Ekf2,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

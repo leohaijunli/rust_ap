@@ -40,6 +40,7 @@ enum Event {
     LongPress,
 }
 
+#[embassy_executor::task]
 pub async fn run(
     button_pin: Peri<'static, peripherals::PF5>,
     buzzer_timer: Peri<'static, peripherals::TIM14>,

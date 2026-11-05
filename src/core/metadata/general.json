@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "metadataTypes": [
+    {
+      "type": 1,
+      "uri": "mftp:///component_metadata/parameters.json",
+      "fileCrc": 1790779224
+    }
+  ]
+}

@@ -16,10 +16,11 @@ use crate::usb_console::{self, CommandLine};
 
 type Replies = Channel<NoopRawMutex, MavMessage, 4>;
 
+#[embassy_executor::task]
 pub async fn run(
     uart: Uart<'static, Async>,
-    parameters: &ParameterManager<'_>,
-    dronecan: &dronecan_can::State,
+    parameters: &'static ParameterManager<'static>,
+    dronecan: &'static dronecan_can::State,
 ) -> ! {
     let (mut tx, mut rx) = uart.split();
     let replies = Replies::new();
@@ -38,6 +39,8 @@ async fn transmit(tx: &mut UartTx<'static, Async>, replies: &Replies) -> ! {
     const GPS_PERIOD: Duration = Duration::from_millis(200);
     const GPS_NO_FIX_PERIOD: Duration = Duration::from_secs(1);
     let mut sequence = 0u8;
+    let mut independent_sequence = 0u8;
+    let mut estimator_tick = 0u8;
     let mut frame = [0u8; mavlink::MAX_FRAME_SIZE];
     let mut next_heartbeat = Instant::now() + Duration::from_secs(1);
     let mut next_imu = Instant::now() + IMU_PERIOD;
@@ -54,7 +57,31 @@ async fn transmit(tx: &mut UartTx<'static, Async>, replies: &Replies) -> ! {
                     if let Some(message) = mavlink_core::highres_imu() {
                         success = send(tx, &mut sequence, &message, &mut frame).await;
                     }
+                    if success {
+                        if let Some(message) = mavlink_core::scaled_pressure() {
+                            success = send(tx, &mut sequence, &message, &mut frame).await;
+                        }
+                    }
                     next_imu = now + IMU_PERIOD;
+                    estimator_tick = estimator_tick.wrapping_add(1);
+                    if success && estimator_tick.is_multiple_of(2) {
+                        for (component, message) in
+                            mavlink_core::estimator_messages().into_iter().flatten()
+                        {
+                            let sequence = if component == mavlink_core::COMPONENT_ID {
+                                &mut sequence
+                            } else {
+                                &mut independent_sequence
+                            };
+                            let length = mavlink_core::encode_from(
+                                sequence, component, &message, &mut frame,
+                            );
+                            success = tx.write(&frame[..length]).await.is_ok();
+                            if !success {
+                                break;
+                            }
+                        }
+                    }
                 }
                 if success && now >= next_power {
                     if let Some(message) = mavlink_core::ina219_status() {

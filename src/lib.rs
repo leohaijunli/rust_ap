@@ -5,6 +5,9 @@
 #[cfg(test)]
 extern crate std;
 
+#[path = "core/bmp388.rs"]
+pub mod bmp388;
+
 #[path = "core/component_metadata.rs"]
 pub mod component_metadata;
 #[path = "core/config.rs"]

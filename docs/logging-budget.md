@@ -1,6 +1,6 @@
 # M1 ULog 与 SD 初始预算
 
-日期：2026-11-02。用户首目标中的 `ulogger` 按 **纯 Rust ULog 写入器**落实设计。软件门与实物正常路径有限 HIL 已通过，LOG-A05 故障门待 H-04；结果见 [PL-a 记录](acceptance/pl-a/README.md)。
+初始预算：2026-11-02；E7 接入更新：2026-11-04。早期 PL-a 软件/正常路径有限 HIL 结果保留；当前 E7/BMP388 新布局和流量尚未完成实物日志验收，见 [E7 记录](acceptance/ekf2/20261104-e7-bringup.md)。
 
 ## 1. 格式与存储选择
 
@@ -56,13 +56,13 @@ python3 tools/p0/budgets.py --profile m1
 
 ## 3. 缓冲、调度与 SD 能力边界
 
-- 当前为单一 **168 KiB** MPSC 固定槽队列（P4b-g 为完整标准 `sensor_gps` 扩容），普通记录准入上限严格保留至少 **8 KiB** 事件容量；运行时最大记录 152 B。生产者只做有界 `try_record`，不调用 SD/FAT。
-- 当前已接入的 11 个 topic 均小于 152 B（`sensor_gps` 147 B 为最大）；后续标准 `esc_status` 汇总超过此上限，接入前须调整固定记录/队列布局并重新核验 RAM、编码及准入，不能直接放入现有队列。
+- P4b-g/E6 历史布局为 168 KiB / 1024 槽 / 152 B。E7 改为 **120 KiB 上限、512 槽、218 B 最大运行记录**，让标准 `estimator_states`（213 B payload）完整入队，并为双 EKF 静态状态留 RAM；64 槽事件保留仍不少于 8 KiB。生产者只做 `try_record`，不调用 SD/FAT；缩槽后的停顿容忍度须重验。
+- 基础注册表现在 13 topic（原 11 + `sensor_baro`/`rust_estimator_runtime`），estimator 独立格式/订阅表复用同一有界队列。后续标准 ESC 汇总仍不能直接塞入 218 B 上限。
 - 单一 LoggerControl 状态机提供 start/stop/sync/status/apply_config；stop 先切 Stopping 阻止新记录，再清空队列、对齐 staging、flush file/fs、释放 FAT 所有权并拉低 PC13。错误态也允许重新 start，新会话始终创建新文件。
 - sync 周期运行时范围 100–10000 ms，默认 1000 ms；修改只影响后续同步，不改变 ULog schema 或数据采样率。USB 原始控制台、MAVLink Console 和标准 logging commands 共用该状态机。
 - 普通记录入口目标 ≤5 us；关全局中断区每次 ≤2 us。大块编码/复制/SD 等待均在临界区外；错误计数更新不会递归产生日志。
 - 写入 staging **32 KiB**，32 B 对齐；定义区与每次 sync 用兼容未知消息补齐到 512 B，保持块地址/长度对齐。当前位于 AXI、D-cache 关闭，IDMA 可达性仍须实测。
-- 初始流量上限 **256000 B/s**。当前是固定槽而非紧凑字节环：1024 槽中普通记录最多 960 槽，每条 IMU 样本占两槽。M1 提案共 1434 条/s，保守按全部记录计算约 **0.67 s** 无消费窗口；不能用 128 KiB/字节率声称更长缓冲，后续改变槽布局须重算。
+- 初始流量上限 **256000 B/s**。当前是固定槽而非紧凑字节环：512 槽中普通记录最多 448 槽，每条 IMU 样本占两槽。仅 IMU 400 条/s 的无消费窗口约 1.12 s，额外数据只会缩短；原 M1 提案 1434 条/s 对应约 0.31 s。不能用总字节数/字节率夸大缓冲时间。
 - 当前 M1 验收复用 5 分钟联合运行并要求正常段零 dropout；卡资格仍可另做 30 分钟观察。持续有效吞吐目标 ≥512000 B/s，32 KiB 写入 p99 ≤50 ms、观测最大 ≤250 ms。
 - 记录环高水位 75% 报警并停用可选 trace；满时丢记录、计数与记录缺口，采样任务继续。事件区也有上限，重复错误合并计数；磁盘写失败保留 USB/遥测诊断。
 
@@ -86,7 +86,7 @@ HAL `embassy-stm32 0.5.0/src/sdmmc/mod.rs:1043-1142` 存在同步命令/取消�
 
 **结论**：不是瞬态阻塞，而是**稳态亏空** —— 产生速率约为 SD 持续吞吐的 2.2 倍，队列必然周期性充满并丢弃。AHRS 消费 1 kHz 走独立 16 槽 fan-out 队列（`next_for_ahrs`），不占 SD 带宽，与日志无关。
 
-**当前配置（200 Hz 日志 + 速率参数 + 168 KiB 队列）**：产生 ≈21 kB/s（IMU 2×200 Hz + INA 10 Hz + health/events），对 ≈45 kB/s 的隐含吞吐有 **≈2.1× 余量**，预期零 dropout。待板载实测复验（GPS/联合负载），复验命令：
+**E7 接入前配置（200 Hz 日志 + 速率参数 + 168 KiB 队列）**：产生 ≈21 kB/s（IMU 2×200 Hz + INA 10 Hz + health/events），对 ≈45 kB/s 的历史隐含吞吐约 2.1×；不是 E7 新布局/联合负载实测。复验命令：
 
 ```sh
 .venv/bin/python tools/analyze_dropout.py <board.ulg> \
@@ -96,6 +96,8 @@ HAL `embassy-stm32 0.5.0/src/sdmmc/mod.rs:1043-1142` 存在同步命令/取消�
 **M1 缺口警告**：M1 全预算 86–108 kB/s 仍高于隐含 45 kB/s。全部 topic 接入后联合运行会重现 dropout，除非 SD 吞吐提升（CMD25 多块写合并、SDMMC 时钟/宽度复核、sync/staging 策略）或按实际接入 topic 复核预算。第 2 节的 512 kB/s 目标与本推算的差距须在 M1 首次联合运行实测后收口。
 
 ## 4. 首轮策略与留后事项
+
+E7 默认每实例 `LOG_EST_HZ=5`、`LOG_EN_EST=1`，两实例姿态/角速度/局部/status/states 上限合计 6480 B/s；仅真实 baro aid 再加 640 B/s，runtime 诊断 245 B/s，`sensor_baro` 10 Hz 加 370 B/s，总增量约 **7735 B/s**（GNSS aid 活跃再加至多 1420 B/s）。无真实磁/雷达不记录伪观测，全球消息不越过有效门。这里只是按编码长度复算；E7 目前因栈余量不足未启动、日志也未启动，须实测吞吐/dropout 后关闭门。
 
 | 决策 | M1 起点 | 硬件结果后的细化 |
 | --- | --- | --- |

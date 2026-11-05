@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "px4_ref": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+  "source": "src/drivers/barometer/bmp388/bmp388.cpp",
+  "source_sha256": "c23be8af051f0bb1c3ac29e151f65995ebf143d4d5b65fa5a5a3d423ca1602a3",
+  "synthetic": true,
+  "seed": 0,
+  "cases": 256,
+  "tolerance": "published f32 pressure/temperature bits and trim CRC exactly equal",
+  "passed": true,
+  "hardware_validation": "not exercised by this tool",
+  "input_sha256": "b1cdf4f5501f0142e09557acca1fdaf2199630d68ea9153bab589c47c3d246b8"
+}

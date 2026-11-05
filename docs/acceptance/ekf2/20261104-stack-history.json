@@ -1,0 +1,527 @@
+{
+  "schema": 1,
+  "kind": "llvm-objdump static entry-frame evidence, not measured execution",
+  "builds": [
+    {
+      "source_id": "d685eac41c2ba0f0",
+      "disassembly_sha256": "e69f370bf3ca4ba143dd554d5949e980cd91adc8ff5cbfd702df1fd593006d23",
+      "largest_frames": [
+        {
+          "address": "08049390",
+          "function": "<embassy_executor::raw::TaskStorage<v6x_rust_led::estimator::__task_task::__task_task_inner_function::{closure#0}>>::poll",
+          "bytes": 149448,
+          "instructions": [
+            "8049390: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8049394: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8049398: b081         \tsub\tsp, #0x4",
+            "804939a: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "804939e: f5ad 3d11    \tsub.w\tsp, sp, #0x24400",
+            "80493a2: f5ad 7d58    \tsub.w\tsp, sp, #0x360"
+          ]
+        },
+        {
+          "address": "0809175c",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::with_range",
+          "bytes": 33592,
+          "instructions": [
+            "809175c: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8091760: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8091764: b081         \tsub\tsp, #0x4",
+            "8091766: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "809176a: f5ad 4d02    \tsub.w\tsp, sp, #0x8200",
+            "809176e: b0b4         \tsub\tsp, #0xd0"
+          ]
+        },
+        {
+          "address": "0802bd3c",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::stream_slice::StreamSlice<&mut block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>>::{closure#0}",
+          "bytes": 20008,
+          "instructions": [
+            "802bd3c: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "802bd40: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "802bd44: f5ad 4d9c    \tsub.w\tsp, sp, #0x4e00",
+            "802bd48: b081         \tsub\tsp, #0x4"
+          ]
+        },
+        {
+          "address": "08028b2c",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>::{closure#0}",
+          "bytes": 19776,
+          "instructions": [
+            "8028b2c: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8028b30: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8028b34: f5ad 4d9a    \tsub.w\tsp, sp, #0x4d00",
+            "8028b38: b087         \tsub\tsp, #0x1c"
+          ]
+        },
+        {
+          "address": "0805dcf4",
+          "function": "<embassy_futures::join::Join<v6x_rust_led::dronecan_can::run::{closure#0}, embassy_futures::join::Join<embassy_futures::join::Join<v6x_rust_led::sd_logger::run::{closure#0}, v6x_rust_led::sd_logger::health_task::{closure#0}>, embassy_futures::join::Join4<embassy_futures::join::Join<v6x_rust_led::ina219::run::{closure#0}, v6x_rust_led::barometer::run::{closure#0}>, embassy_futures::join::Join<v6x_rust_led::px4io::run::{closure#0}, v6x_rust_led::logger_switch::run::{closure#0}>, v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}::{closure#0}, v6x_rust_led::diagnostics::stack_monitor::{closure#0}>>> as core::future::future::Future>::poll",
+          "bytes": 10952,
+          "instructions": [
+            "805dcf4: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "805dcf8: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "805dcfc: b081         \tsub\tsp, #0x4",
+            "805dcfe: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "805dd02: f5ad 5d29    \tsub.w\tsp, sp, #0x2a40",
+            "805dd06: b088         \tsub\tsp, #0x20"
+          ]
+        },
+        {
+          "address": "08093ab8",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::control_fusion::<v6x_rust_led::estimator::gnss::GnssAids>",
+          "bytes": 6960,
+          "instructions": [
+            "8093ab8: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8093abc: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8093ac0: b081         \tsub\tsp, #0x4",
+            "8093ac2: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "8093ac6: f5ad 5dd6    \tsub.w\tsp, sp, #0x1ac0",
+            "8093aca: b082         \tsub\tsp, #0x8"
+          ]
+        },
+        {
+          "address": "0803838c",
+          "function": "v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}",
+          "bytes": 6832,
+          "instructions": [
+            "803838c: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8038390: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8038394: b081         \tsub\tsp, #0x4",
+            "8038396: ed2d 8b02    \tvpush\t{d8}",
+            "803839a: f5ad 5dd4    \tsub.w\tsp, sp, #0x1a80"
+          ]
+        },
+        {
+          "address": "080885b8",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::control_fusion::<v6x_rust_led::estimator::imu_ekf::NoExtension>",
+          "bytes": 6600,
+          "instructions": [
+            "80885b8: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "80885bc: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "80885c0: b081         \tsub\tsp, #0x4",
+            "80885c2: ed2d 8b04    \tvpush\t{d8, d9}",
+            "80885c6: f5ad 5dcc    \tsub.w\tsp, sp, #0x1980",
+            "80885ca: b084         \tsub\tsp, #0x10"
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "5aefe87003c5594a",
+      "disassembly_sha256": "d9635461e30e61845041133fbeec8664a5db2ba1d27ae1d2c20214bf77a1188a",
+      "largest_frames": [
+        {
+          "address": "08038394",
+          "function": "v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}",
+          "bytes": 117112,
+          "instructions": [
+            "8038394: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8038398: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "803839c: b081         \tsub\tsp, #0x4",
+            "803839e: ed2d 8b02    \tvpush\t{d8}",
+            "80383a2: f5ad 3de4    \tsub.w\tsp, sp, #0x1c800",
+            "80383a6: b0d2         \tsub\tsp, #0x148"
+          ]
+        },
+        {
+          "address": "08049a20",
+          "function": "<embassy_executor::raw::TaskStorage<v6x_rust_led::estimator::__task_task::__task_task_inner_function::{closure#0}>>::poll",
+          "bytes": 68928,
+          "instructions": [
+            "8049a20: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8049a24: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8049a28: b081         \tsub\tsp, #0x4",
+            "8049a2a: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "8049a2e: f5ad 3d86    \tsub.w\tsp, sp, #0x10c00",
+            "8049a32: b0b6         \tsub\tsp, #0xd8"
+          ]
+        },
+        {
+          "address": "080934ec",
+          "function": "<v6x_rust_led::estimator::gnss::GnssEkf>::new",
+          "bytes": 37248,
+          "instructions": [
+            "80934ec: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "80934f0: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "80934f4: b081         \tsub\tsp, #0x4",
+            "80934f6: ed2d 8b08    \tvpush\t{d8, d9, d10, d11}",
+            "80934fa: f5ad 4d11    \tsub.w\tsp, sp, #0x9100",
+            "80934fe: b08e         \tsub\tsp, #0x38"
+          ]
+        },
+        {
+          "address": "0809148c",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::with_range",
+          "bytes": 33592,
+          "instructions": [
+            "809148c: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8091490: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8091494: b081         \tsub\tsp, #0x4",
+            "8091496: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "809149a: f5ad 4d02    \tsub.w\tsp, sp, #0x8200",
+            "809149e: b0b4         \tsub\tsp, #0xd0"
+          ]
+        },
+        {
+          "address": "0802bd44",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::stream_slice::StreamSlice<&mut block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>>::{closure#0}",
+          "bytes": 20008,
+          "instructions": [
+            "802bd44: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "802bd48: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "802bd4c: f5ad 4d9c    \tsub.w\tsp, sp, #0x4e00",
+            "802bd50: b081         \tsub\tsp, #0x4"
+          ]
+        },
+        {
+          "address": "08028b34",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>::{closure#0}",
+          "bytes": 19776,
+          "instructions": [
+            "8028b34: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8028b38: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8028b3c: f5ad 4d9a    \tsub.w\tsp, sp, #0x4d00",
+            "8028b40: b087         \tsub\tsp, #0x1c"
+          ]
+        },
+        {
+          "address": "0805da24",
+          "function": "<embassy_futures::join::Join<v6x_rust_led::dronecan_can::run::{closure#0}, embassy_futures::join::Join<embassy_futures::join::Join<v6x_rust_led::sd_logger::run::{closure#0}, v6x_rust_led::sd_logger::health_task::{closure#0}>, embassy_futures::join::Join4<embassy_futures::join::Join<v6x_rust_led::ina219::run::{closure#0}, v6x_rust_led::barometer::run::{closure#0}>, embassy_futures::join::Join<v6x_rust_led::px4io::run::{closure#0}, v6x_rust_led::logger_switch::run::{closure#0}>, v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}::{closure#0}, v6x_rust_led::diagnostics::stack_monitor::{closure#0}>>> as core::future::future::Future>::poll",
+          "bytes": 10952,
+          "instructions": [
+            "805da24: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "805da28: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "805da2c: b081         \tsub\tsp, #0x4",
+            "805da2e: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "805da32: f5ad 5d29    \tsub.w\tsp, sp, #0x2a40",
+            "805da36: b088         \tsub\tsp, #0x20"
+          ]
+        },
+        {
+          "address": "08093cb0",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::control_fusion::<v6x_rust_led::estimator::gnss::GnssAids>",
+          "bytes": 6960,
+          "instructions": [
+            "8093cb0: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8093cb4: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8093cb8: b081         \tsub\tsp, #0x4",
+            "8093cba: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "8093cbe: f5ad 5dd6    \tsub.w\tsp, sp, #0x1ac0",
+            "8093cc2: b082         \tsub\tsp, #0x8"
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "96d3ea2c9d0c7a94",
+      "disassembly_sha256": "e042285f15220815c14fa5ce4290ee02bcd931c0d502569abf697521744d5686",
+      "largest_frames": [
+        {
+          "address": "0802bd44",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::stream_slice::StreamSlice<&mut block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>>::{closure#0}",
+          "bytes": 20008,
+          "instructions": [
+            "802bd44: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "802bd48: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "802bd4c: f5ad 4d9c    \tsub.w\tsp, sp, #0x4e00",
+            "802bd50: b081         \tsub\tsp, #0x4"
+          ]
+        },
+        {
+          "address": "08028b34",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>::{closure#0}",
+          "bytes": 19776,
+          "instructions": [
+            "8028b34: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8028b38: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8028b3c: f5ad 4d9a    \tsub.w\tsp, sp, #0x4d00",
+            "8028b40: b087         \tsub\tsp, #0x1c"
+          ]
+        },
+        {
+          "address": "08049370",
+          "function": "<embassy_executor::raw::TaskStorage<v6x_rust_led::estimator::__task_task::__task_task_inner_function::{closure#0}>>::poll",
+          "bytes": 15752,
+          "instructions": [
+            "8049370: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8049374: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8049378: b081         \tsub\tsp, #0x4",
+            "804937a: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "804937e: f5ad 5d74    \tsub.w\tsp, sp, #0x3d00",
+            "8049382: b088         \tsub\tsp, #0x20"
+          ]
+        },
+        {
+          "address": "08090dfc",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::initialize",
+          "bytes": 14520,
+          "instructions": [
+            "8090dfc: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8090e00: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8090e04: b081         \tsub\tsp, #0x4",
+            "8090e06: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "8090e0a: f5ad 5d61    \tsub.w\tsp, sp, #0x3840",
+            "8090e0e: b084         \tsub\tsp, #0x10"
+          ]
+        },
+        {
+          "address": "08092e78",
+          "function": "<v6x_rust_led::estimator::gnss::GnssEkf>::reconfigure",
+          "bytes": 14336,
+          "instructions": [
+            "8092e78: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8092e7c: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "8092e80: b081         \tsub\tsp, #0x4",
+            "8092e82: ed2d 8b04    \tvpush\t{d8, d9}",
+            "8092e86: f5ad 5d5f    \tsub.w\tsp, sp, #0x37c0",
+            "8092e8a: b082         \tsub\tsp, #0x8"
+          ]
+        },
+        {
+          "address": "0805d424",
+          "function": "<embassy_futures::join::Join<v6x_rust_led::dronecan_can::run::{closure#0}, embassy_futures::join::Join<embassy_futures::join::Join<v6x_rust_led::sd_logger::run::{closure#0}, v6x_rust_led::sd_logger::health_task::{closure#0}>, embassy_futures::join::Join4<embassy_futures::join::Join<v6x_rust_led::ina219::run::{closure#0}, v6x_rust_led::barometer::run::{closure#0}>, embassy_futures::join::Join<v6x_rust_led::px4io::run::{closure#0}, v6x_rust_led::logger_switch::run::{closure#0}>, v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}::{closure#0}, v6x_rust_led::diagnostics::stack_monitor::{closure#0}>>> as core::future::future::Future>::poll",
+          "bytes": 10952,
+          "instructions": [
+            "805d424: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "805d428: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "805d42c: b081         \tsub\tsp, #0x4",
+            "805d42e: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "805d432: f5ad 5d29    \tsub.w\tsp, sp, #0x2a40",
+            "805d436: b088         \tsub\tsp, #0x20"
+          ]
+        },
+        {
+          "address": "080935e0",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::control_fusion::<v6x_rust_led::estimator::gnss::GnssAids>",
+          "bytes": 6960,
+          "instructions": [
+            "80935e0: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "80935e4: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "80935e8: b081         \tsub\tsp, #0x4",
+            "80935ea: ed2d 8b10    \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "80935ee: f5ad 5dd6    \tsub.w\tsp, sp, #0x1ac0",
+            "80935f2: b082         \tsub\tsp, #0x8"
+          ]
+        },
+        {
+          "address": "08038394",
+          "function": "v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}",
+          "bytes": 6832,
+          "instructions": [
+            "8038394: b5f0         \tpush\t{r4, r5, r6, r7, lr}",
+            "8038398: e92d 0f00    \tpush.w\t{r8, r9, r10, r11}",
+            "803839c: b081         \tsub\tsp, #0x4",
+            "803839e: ed2d 8b02    \tvpush\t{d8}",
+            "80383a2: f5ad 5dd4    \tsub.w\tsp, sp, #0x1a80"
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "cf2c889e3f2c91aa",
+      "disassembly_sha256": "4c068763dd4522515aaf6d0bec98605c45c45b65341793cab388020d87807608",
+      "largest_frames": [
+        {
+          "address": "0802bd50",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::stream_slice::StreamSlice<&mut block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>>::{closure#0}",
+          "bytes": 20008,
+          "instructions": [
+            "802bd50:      \tpush\t{r4, r5, r6, r7, lr}",
+            "802bd54:      \tpush.w\t{r8, r9, r10, r11}",
+            "802bd58:      \tsub.w\tsp, sp, #0x4e00",
+            "802bd5c:      \tsub\tsp, #0x4"
+          ]
+        },
+        {
+          "address": "08028b40",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>::{closure#0}",
+          "bytes": 19776,
+          "instructions": [
+            "8028b40:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8028b44:      \tpush.w\t{r8, r9, r10, r11}",
+            "8028b48:      \tsub.w\tsp, sp, #0x4d00",
+            "8028b4c:      \tsub\tsp, #0x1c"
+          ]
+        },
+        {
+          "address": "08051b76",
+          "function": "v6x_rust_led::estimator::publish",
+          "bytes": 13752,
+          "instructions": [
+            "8051b76:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8051b7a:      \tpush.w\t{r8, r9, r10, r11}",
+            "8051b7e:      \tsub\tsp, #0x4",
+            "8051b80:      \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "8051b84:      \tsub.w\tsp, sp, #0x3540",
+            "8051b88:      \tsub\tsp, #0x10"
+          ]
+        },
+        {
+          "address": "0805be14",
+          "function": "<embassy_futures::join::Join<v6x_rust_led::dronecan_can::run::{closure#0}, embassy_futures::join::Join<embassy_futures::join::Join<v6x_rust_led::sd_logger::run::{closure#0}, v6x_rust_led::sd_logger::health_task::{closure#0}>, embassy_futures::join::Join4<embassy_futures::join::Join<v6x_rust_led::ina219::run::{closure#0}, v6x_rust_led::barometer::run::{closure#0}>, embassy_futures::join::Join<v6x_rust_led::px4io::run::{closure#0}, v6x_rust_led::logger_switch::run::{closure#0}>, v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}::{closure#0}, v6x_rust_led::diagnostics::stack_monitor::{closure#0}>>> as core::future::future::Future>::poll",
+          "bytes": 10952,
+          "instructions": [
+            "805be14:      \tpush\t{r4, r5, r6, r7, lr}",
+            "805be18:      \tpush.w\t{r8, r9, r10, r11}",
+            "805be1c:      \tsub\tsp, #0x4",
+            "805be1e:      \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "805be22:      \tsub.w\tsp, sp, #0x2a40",
+            "805be26:      \tsub\tsp, #0x20"
+          ]
+        },
+        {
+          "address": "0808f6e0",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::initialize",
+          "bytes": 10760,
+          "instructions": [
+            "808f6e0:      \tpush\t{r4, r5, r6, r7, lr}",
+            "808f6e4:      \tpush.w\t{r8, r9, r10, r11}",
+            "808f6e8:      \tsub\tsp, #0x4",
+            "808f6ea:      \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "808f6ee:      \tsub.w\tsp, sp, #0x2980",
+            "808f6f2:      \tsub\tsp, #0x20"
+          ]
+        },
+        {
+          "address": "08091ae8",
+          "function": "<v6x_rust_led::estimator::gnss::GnssEkf>::enable_gnss",
+          "bytes": 9928,
+          "instructions": [
+            "8091ae8:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8091aec:      \tpush.w\t{r8, r9, r10, r11}",
+            "8091af0:      \tsub.w\tsp, sp, #0x2680",
+            "8091af4:      \tsub\tsp, #0x24"
+          ]
+        },
+        {
+          "address": "08049bae",
+          "function": "<embassy_executor::raw::TaskStorage<v6x_rust_led::estimator::__log_task_task::__log_task_task_inner_function::{closure#0}>>::poll",
+          "bytes": 8360,
+          "instructions": [
+            "8049bae:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8049bb2:      \tpush.w\t{r8, r9, r10, r11}",
+            "8049bb6:      \tsub.w\tsp, sp, #0x2080",
+            "8049bba:      \tsub\tsp, #0x4"
+          ]
+        },
+        {
+          "address": "080932a8",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::control_fusion::<v6x_rust_led::estimator::gnss::GnssAids>",
+          "bytes": 6960,
+          "instructions": [
+            "80932a8:      \tpush\t{r4, r5, r6, r7, lr}",
+            "80932ac:      \tpush.w\t{r8, r9, r10, r11}",
+            "80932b0:      \tsub\tsp, #0x4",
+            "80932b2:      \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "80932b6:      \tsub.w\tsp, sp, #0x1ac0",
+            "80932ba:      \tsub\tsp, #0x8"
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "be2fee6104f6e5e2",
+      "disassembly_sha256": "0546fe3c31e6541d901239e02410abc5a18c658403b6ff4a5d55e3e5ffa6bbcc",
+      "largest_frames": [
+        {
+          "address": "0802be84",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::stream_slice::StreamSlice<&mut block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>>::{closure#0}",
+          "bytes": 20008,
+          "instructions": [
+            "802be84:      \tpush\t{r4, r5, r6, r7, lr}",
+            "802be88:      \tpush.w\t{r8, r9, r10, r11}",
+            "802be8c:      \tsub.w\tsp, sp, #0x4e00",
+            "802be90:      \tsub\tsp, #0x4"
+          ]
+        },
+        {
+          "address": "08028c74",
+          "function": "v6x_rust_led::sd_logger::run_filesystem::<block_device_adapters::buf_stream::BufStream<embassy_stm32::sdmmc::sd::StorageDevice<embassy_stm32::sdmmc::sd::Card>, 512>>::{closure#0}",
+          "bytes": 19776,
+          "instructions": [
+            "8028c74:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8028c78:      \tpush.w\t{r8, r9, r10, r11}",
+            "8028c7c:      \tsub.w\tsp, sp, #0x4d00",
+            "8028c80:      \tsub\tsp, #0x1c"
+          ]
+        },
+        {
+          "address": "08091ac0",
+          "function": "<v6x_rust_led::estimator::gnss::GnssEkf>::enable_gnss",
+          "bytes": 9928,
+          "instructions": [
+            "8091ac0:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8091ac4:      \tpush.w\t{r8, r9, r10, r11}",
+            "8091ac8:      \tsub.w\tsp, sp, #0x2680",
+            "8091acc:      \tsub\tsp, #0x24"
+          ]
+        },
+        {
+          "address": "08044bb0",
+          "function": "<embassy_executor::raw::TaskStorage<v6x_rust_led::dronecan_can::__run_task::__run_task_inner_function::{closure#0}>>::poll",
+          "bytes": 9752,
+          "instructions": [
+            "8044bb0:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8044bb4:      \tpush.w\t{r8, r9, r10, r11}",
+            "8044bb8:      \tsub\tsp, #0x4",
+            "8044bba:      \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "8044bbe:      \tsub.w\tsp, sp, #0x2580",
+            "8044bc2:      \tsub\tsp, #0x30"
+          ]
+        },
+        {
+          "address": "08041ff4",
+          "function": "<embassy_executor::raw::TaskStorage<v6x_rust_led::__application_task::__application_task_inner_function::{closure#0}>>::poll",
+          "bytes": 9400,
+          "instructions": [
+            "8041ff4:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8041ff8:      \tpush.w\t{r8, r9, r10, r11}",
+            "8041ffc:      \tsub\tsp, #0x4",
+            "8041ffe:      \tvpush\t{d8}",
+            "8042002:      \tsub.w\tsp, sp, #0x2480",
+            "8042006:      \tsub\tsp, #0x8"
+          ]
+        },
+        {
+          "address": "0805043a",
+          "function": "<embassy_executor::raw::TaskStorage<v6x_rust_led::estimator::__log_task_task::__log_task_task_inner_function::{closure#0}>>::poll",
+          "bytes": 8360,
+          "instructions": [
+            "805043a:      \tpush\t{r4, r5, r6, r7, lr}",
+            "805043e:      \tpush.w\t{r8, r9, r10, r11}",
+            "8050442:      \tsub.w\tsp, sp, #0x2080",
+            "8050446:      \tsub\tsp, #0x4"
+          ]
+        },
+        {
+          "address": "08093280",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::control_fusion::<v6x_rust_led::estimator::gnss::GnssAids>",
+          "bytes": 6960,
+          "instructions": [
+            "8093280:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8093284:      \tpush.w\t{r8, r9, r10, r11}",
+            "8093288:      \tsub\tsp, #0x4",
+            "809328a:      \tvpush\t{d8, d9, d10, d11, d12, d13, d14, d15}",
+            "809328e:      \tsub.w\tsp, sp, #0x1ac0",
+            "8093292:      \tsub\tsp, #0x8"
+          ]
+        },
+        {
+          "address": "08086b30",
+          "function": "<v6x_rust_led::estimator::imu_ekf::ImuEkf>::control_fusion::<v6x_rust_led::estimator::imu_ekf::NoExtension>",
+          "bytes": 6600,
+          "instructions": [
+            "8086b30:      \tpush\t{r4, r5, r6, r7, lr}",
+            "8086b34:      \tpush.w\t{r8, r9, r10, r11}",
+            "8086b38:      \tsub\tsp, #0x4",
+            "8086b3a:      \tvpush\t{d8, d9}",
+            "8086b3e:      \tsub.w\tsp, sp, #0x1980",
+            "8086b42:      \tsub\tsp, #0x10"
+          ]
+        }
+      ]
+    }
+  ],
+  "limitations": "Entry immediate SP reserves and push/vpush only. Later adjustments, cumulative direct/indirect callers and hardware exception frames are not included."
+}

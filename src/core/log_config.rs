@@ -17,9 +17,11 @@ pub enum Group {
     Can,
     Health,
     Event,
+    Estimator,
+    Barometer,
 }
 
-pub const GROUP_COUNT: usize = 5;
+pub const GROUP_COUNT: usize = 7;
 
 impl Group {
     const fn enable(self) -> Id {
@@ -29,6 +31,8 @@ impl Group {
             Group::Can => Id::LogEnCan,
             Group::Health => Id::LogEnHealth,
             Group::Event => Id::LogEnEvent,
+            Group::Estimator => Id::LogEnEst,
+            Group::Barometer => Id::LogEnBaro,
         }
     }
 
@@ -39,6 +43,8 @@ impl Group {
             Group::Can => Some(Id::LogCanHz),
             Group::Health => Some(Id::LogHealthHz),
             Group::Event => None,
+            Group::Estimator => Some(Id::LogEstHz),
+            Group::Barometer => Some(Id::LogBaroHz),
         }
     }
 }
@@ -108,6 +114,8 @@ pub fn refresh_all() {
         Group::Can,
         Group::Health,
         Group::Event,
+        Group::Estimator,
+        Group::Barometer,
     ] {
         refresh_default(group);
     }
@@ -120,6 +128,8 @@ fn group_for(id: Id) -> Option<Group> {
         Group::Can,
         Group::Health,
         Group::Event,
+        Group::Estimator,
+        Group::Barometer,
     ]
     .into_iter()
     .find(|group| group.enable() == id || group.rate() == Some(id))
@@ -159,7 +169,7 @@ mod tests {
                 .iter()
                 .filter(|entry| entry.name.starts_with("LOG_"))
                 .count(),
-            9
+            13
         );
         for group in [
             Group::Imu,
@@ -167,6 +177,8 @@ mod tests {
             Group::Can,
             Group::Health,
             Group::Event,
+            Group::Estimator,
+            Group::Barometer,
         ] {
             assert!(REGISTRY.iter().any(|entry| entry.id == group.enable()));
             if let Some(rate) = group.rate() {

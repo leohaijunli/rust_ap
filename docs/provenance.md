@@ -109,6 +109,13 @@
 
 ## 3. 后续取用规则
 
+### 2026-11-04 E7 / BMP388 增量
+
+- `src/core/bmp388.rs` 的 trim CRC 与整数补偿来自固定 PX4 `d6f12ad…` 的 `src/drivers/barometer/bmp388/bmp388.{cpp,h}`，保留 BSD-3-Clause 引用；i128 中间量和输入范围校验为本项目修改。`src/drivers/barometer.rs` 为本项目 Embassy I2C4 有界接口，参考同 commit 的板级 I2C/供电/初始化配置，不引入 C++。独立对拍只抽取该固定文件的三个纯函数，SHA-256 与真实首读见 [BARO 记录](acceptance/barometer/20261104-bringup.md)。
+- `tools/px4_msgs/SensorBaro.msg` 是同 commit 的 6 个运行字段摘录；MAVLink 复用固定 rust-mavlink common 类型。`BaroAltitude` 为本项目独立输入边界，避免由缺失磁力计制造观测。
+- `src/core/estimator/mahony.rs` 是固定 Cybflight `806af5648c336e7af81abefea31052db783387f5` 的 `crates/cybflight_core/src/mahony.rs` 标量/f32/FRD-NED 适配；保留 [Apache-2.0](licenses/cybflight.txt) 和 [NOTICE](licenses/cybflight-NOTICE.txt)，修改有限值与 clipping 处理。只有本项目必要 host 用例通过，未称已通过板载回退资格。
+- `runtime.rs`、`publication_reset.rs`、`src/drivers/estimator.rs`、统一参数 ID/JSON 生成及 Windows/RustRover/VS Code 工具由本项目编写。参数数值仍取固定 `EKF2_PARAMS`，不复制第二表。普通上传仅复用已固定/校验 hash 的原 PX4 uploader；不修改 IO MCU 或主 bootloader。首次 E7 栈失败与后续整改如实记录。
+
 直接依赖写完整 `rev` 并提交锁文件；vendor/fork 时记录原 URL、commit、原路径、复制范围、版权头/NOTICE 与修改点，随源码携带对应许可。算法参考实现、代码移植和独立实现应如实登记。当前仓库自身的公开发布 LICENSE 尚未选择，应在发布时与实际取用范围一起落实；本轮不代为重新许可上游代码。
 
 Holsatus 缺失 lockfile、David-OConnor 许可未查明和 INDI 原始移植版本不明都保持有名的待处理项；按用户要求将与 M1 无关的进一步调查留到实际取用阶段。

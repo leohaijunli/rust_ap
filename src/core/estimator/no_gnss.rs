@@ -21,6 +21,56 @@ pub struct NoGnssEkf {
 }
 
 impl NoGnssEkf {
+    pub(super) const fn dormant() -> Self {
+        Self {
+            core: ImuEkf::dormant(),
+        }
+    }
+
+    pub fn reconfigure(
+        &mut self,
+        imu: ImuEkfParams,
+        baro: BaroMagParams,
+        range: RangeParams,
+        t0: u64,
+    ) -> Result<(), FilterFault> {
+        self.core.initialize_range(&imu, baro, range, t0)
+    }
+
+    /// Bring-up diagnostic returning which internal step rejected the inputs:
+    /// 0 ok, 1 imu buffer params, 2 core initialize, 3 baro/mag aids, 4 range aids.
+    /// Runs the same constructors as `reconfigure`; on success the state equals it.
+    pub fn reconfigure_staged(
+        &mut self,
+        imu: ImuEkfParams,
+        baro: BaroMagParams,
+        range: RangeParams,
+        t0: u64,
+    ) -> u32 {
+        if imu.buffer_length().is_err() {
+            return 1;
+        }
+        if self.core.initialize_only(&imu, t0).is_err() {
+            return 2;
+        }
+        if self.core.params_differ(&imu) {
+            return 12;
+        }
+        if self.core.enable_baro_mag_probe(baro).is_err() {
+            return 3;
+        }
+        if self.core.params_differ(&imu) {
+            return 13;
+        }
+        if self.core.enable_range_probe(range).is_err() {
+            return 4;
+        }
+        if self.core.params_differ(&imu) {
+            return 14;
+        }
+        0
+    }
+
     pub fn new(
         imu_params: ImuEkfParams,
         baro_mag_params: BaroMagParams,
@@ -38,6 +88,10 @@ impl NoGnssEkf {
 
     pub fn configure_output(&mut self, params: OutputParams) -> Result<(), FilterFault> {
         self.core.configure_output(params)
+    }
+
+    pub fn debug_core(&self) -> &ImuEkf {
+        &self.core
     }
 
     pub const fn core(&self) -> &ImuEkf {
@@ -68,6 +122,15 @@ impl NoGnssEkf {
         range: Option<RangeObservation>,
     ) -> Result<bool, FilterFault> {
         self.core.update_range(imu, baro_mag, range)
+    }
+
+    pub fn update_baro(
+        &mut self,
+        imu: &ImuDelta,
+        baro: Option<super::imu_ekf::baro_mag::BaroAltitude>,
+        range: Option<RangeObservation>,
+    ) -> Result<bool, FilterFault> {
+        self.core.update_baro(imu, baro, range)
     }
 }
 

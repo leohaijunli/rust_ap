@@ -1,15 +1,15 @@
 #![forbid(unsafe_code)]
 
-//! Transport-free fixed PX4 MAVLink mappings; firmware streams stay disabled
-//! until E7. Host examples use the same DTOs and MAVLink v2 serializer.
+//! Transport-free fixed PX4 MAVLink mappings shared by E6 host examples and
+//! the explicitly enabled E7 data-only task, using one MAVLink v2 serializer.
 //! Copyright (c) 2020-2024 PX4 Development Team. All rights reserved.
 //! SPDX-License-Identifier: BSD-3-Clause; license: tools/px4_msgs/LICENSE.
 
 use mavlink::{common::*, MAVLinkV2MessageRaw, MavHeader};
 
 use crate::estimator::standard_output::{
-    AngularVelocity, Attitude, EstimatorStatus, GlobalPosition, LocalPosition, Odometry, Snapshot,
-    Source,
+    AngularVelocity, Attitude, EstimatorStatus, EulerAttitude, GlobalPosition, LocalPosition,
+    Odometry, Snapshot, Source,
 };
 
 pub fn attitude(value: Attitude, angular: AngularVelocity) -> MavMessage {
@@ -23,6 +23,18 @@ pub fn attitude(value: Attitude, angular: AngularVelocity) -> MavMessage {
         pitchspeed: angular.xyz[1],
         yawspeed: angular.xyz[2],
         repr_offset_q: [0.0; 4],
+    })
+}
+
+pub fn attitude_euler(value: EulerAttitude, angular: AngularVelocity) -> MavMessage {
+    MavMessage::ATTITUDE(ATTITUDE_DATA {
+        time_boot_ms: (value.timestamp / 1_000) as u32,
+        roll: value.roll,
+        pitch: value.pitch,
+        yaw: value.yaw,
+        rollspeed: angular.xyz[0],
+        pitchspeed: angular.xyz[1],
+        yawspeed: angular.xyz[2],
     })
 }
 

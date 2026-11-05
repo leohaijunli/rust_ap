@@ -48,3 +48,8 @@ debug = 2
 lto = true
 opt-level = "s"
 panic = "abort"
+
+# The dual EKF update has a measured 1 ms deadline; optimize application math
+# for execution time while retaining size optimization for dependencies.
+[profile.release.package.v6x-rust-led]
+opt-level = 3

@@ -422,7 +422,8 @@ pub async fn io_task(
     .await;
 }
 
-pub async fn run(parameters: &ParameterManager<'_>, state: &State) -> ! {
+#[embassy_executor::task]
+pub async fn run(parameters: &'static ParameterManager<'static>, state: &'static State) -> ! {
     let services = ServiceChannel::new();
     join(
         receive_loop(parameters, state, &OUTGOING, &services),

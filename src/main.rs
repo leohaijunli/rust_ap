@@ -6,10 +6,16 @@ compile_error!("fault-dump and fault-injection are mutually exclusive");
 
 mod backup_domain;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/barometer.rs"]
+mod barometer;
+#[cfg(not(feature = "fault-dump"))]
 mod diagnostics;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/dronecan_can.rs"]
 mod dronecan_can;
+#[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/estimator.rs"]
+mod estimator;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/eth_led.rs"]
 mod eth_led;
@@ -71,9 +77,7 @@ use embassy_stm32::usb::InterruptHandler as UsbInterruptHandler;
 #[cfg(not(feature = "fault-dump"))]
 use core::cell::RefCell;
 #[cfg(not(feature = "fault-dump"))]
-use embassy_executor::{raw::Executor, InterruptExecutor};
-#[cfg(not(feature = "fault-dump"))]
-use embassy_futures::join::{join, join4};
+use embassy_executor::{raw::Executor, InterruptExecutor, Spawner};
 #[cfg(not(feature = "fault-dump"))]
 use embassy_stm32::gpio::{Input, Level, Output, OutputOpenDrain, Pull, Speed};
 #[cfg(not(feature = "fault-dump"))]
@@ -161,7 +165,15 @@ fn application_main() -> ! {
     // Embassy executor 0.9.1's Cortex-M thread pender uses usize::MAX -> SEV.
     // Keep its wake protocol while adding a measured idle loop.
     let executor = EXECUTOR.init(Executor::new(usize::MAX as *mut ()));
-    executor.spawner().spawn(application(p)).unwrap();
+    executor
+        .spawner()
+        .spawn(application(p, executor.spawner()))
+        .unwrap();
+    executor.spawner().spawn(estimator::log_task()).unwrap();
+    executor
+        .spawner()
+        .spawn(diagnostics::stack_monitor())
+        .unwrap();
     loop {
         // This is the only polling context for this static thread executor.
         unsafe { executor.poll() };
@@ -171,7 +183,7 @@ fn application_main() -> ! {
 
 #[cfg(not(feature = "fault-dump"))]
 #[embassy_executor::task]
-async fn application(p: Peripherals) {
+async fn application(p: Peripherals, spawner: Spawner) {
     let mut red = OutputOpenDrain::new(p.PE3, Level::High, Speed::Low);
     let mut green = OutputOpenDrain::new(p.PE4, Level::High, Speed::Low);
     let mut blue = OutputOpenDrain::new(p.PE5, Level::Low, Speed::Low);
@@ -205,7 +217,9 @@ async fn application(p: Peripherals) {
     // The ETH LEDs are driven by the LAN8742A PHY. Power it up and give it
     // time to boot before touching the MDIO bus.
     // Keep PHY power (and its PWR LED) on throughout the application.
-    let eth_power = Output::new(p.PG15, Level::High, Speed::Low);
+    static ETH_POWER: StaticCell<Output<'static>> = StaticCell::new();
+    let eth_power: &'static Output<'static> =
+        ETH_POWER.init(Output::new(p.PG15, Level::High, Speed::Low));
     Timer::after_millis(200).await;
 
     let mut phy = Lan8742::new(
@@ -219,26 +233,37 @@ async fn application(p: Peripherals) {
         }
         Timer::after_millis(100).await;
     }
-    let phy = RefCell::new(phy);
+    static PHY: StaticCell<RefCell<Lan8742<'static>>> = StaticCell::new();
+    let phy: &'static RefCell<Lan8742<'static>> = PHY.init(RefCell::new(phy));
     blue.set_high();
 
-    let parameters = parameter_manager::ParameterManager::new(fram);
+    // Shared only by sibling tasks on this thread executor. The manager keeps
+    // its existing NoopRawMutex; no reference is sent to an interrupt executor.
+    static PARAMETERS: StaticCell<parameter_manager::ParameterManager<'static>> = StaticCell::new();
+    let parameters: &'static parameter_manager::ParameterManager<'static> =
+        PARAMETERS.init(parameter_manager::ParameterManager::new(fram));
     // PHY startup has already exceeded the FRAM power-up access delay.
     // Load failures remain visible in !params while USB recovery stays available.
     let _ = parameters.load().await;
     assert!(sd_logger::initialize());
+    spawner.spawn(sd_logger::health_task()).unwrap();
     fast_spawner
         .spawn(imu::task(
             p.SPI2, p.PI1, p.PI3, p.PI2, p.DMA1_CH2, p.DMA1_CH3, p.PH5, p.PF4, p.PA10, p.EXTI10,
         ))
         .unwrap();
-    let dronecan = dronecan_can::State::new();
+    static DRONECAN: StaticCell<dronecan_can::State> = StaticCell::new();
+    let dronecan: &'static dronecan_can::State = DRONECAN.init(dronecan_can::State::new());
+    estimator::start(p.TIM5);
     let can_spawner = CAN_EXECUTOR.start(embassy_stm32::interrupt::TIM6_DAC);
     can_spawner
         .spawn(dronecan_can::io_task(p.FDCAN1, p.PD0, p.PD1))
         .unwrap();
     can_spawner
         .spawn(mavcan::io_task(p.FDCAN2, p.PB12, p.PB13))
+        .unwrap();
+    spawner
+        .spawn(dronecan_can::run(parameters, dronecan))
         .unwrap();
 
     let sd_power = Output::new(p.PC13, Level::Low, Speed::Low);
@@ -253,6 +278,9 @@ async fn application(p: Peripherals) {
         p.PB4,
         embassy_stm32::sdmmc::Config::default(),
     );
+    spawner
+        .spawn(sd_logger::run(sdmmc, sd_power, parameters))
+        .unwrap();
 
     // TELEM1 is UART7 (RX PF6, TX PE8). 115200 8N1 is the first-round link
     // candidate; hardware flow control (RTS PF8 / CTS PE10) is deferred until
@@ -269,6 +297,9 @@ async fn application(p: Peripherals) {
         uart7_config,
     )
     .expect("UART7 configuration");
+    spawner
+        .spawn(mavlink_uart7::run(uart7, parameters, dronecan))
+        .unwrap();
 
     // FMUv6X IO link is USART6 (TX PC6/RX PC7), not the TELEM1 UART.
     let mut px4io_config = embassy_stm32::usart::Config::default();
@@ -283,6 +314,10 @@ async fn application(p: Peripherals) {
         px4io_config,
     )
     .expect("USART6 PX4IO configuration");
+    spawner.spawn(px4io::run(px4io_uart)).unwrap();
+    spawner
+        .spawn(logger_switch::run(p.PF5, p.TIM14, p.PF9))
+        .unwrap();
 
     // Standalone I2C connector: SCL3/SDA3 (PA8/PH8), not the GPS/POWER I2C buses.
     let mut i2c_config = I2cConfig::default();
@@ -294,9 +329,18 @@ async fn application(p: Peripherals) {
     let i2c3 = I2c::new(
         p.I2C3, p.PA8, p.PH8, I2c3Irqs, p.DMA1_CH4, p.DMA1_CH5, i2c_config,
     );
+    spawner.spawn(ina219::run(i2c3)).unwrap();
+
+    // Fixed FMUv6X Rev 3 internal barometer bus. I2C4's BDMA cannot
+    // access AXI; use the HAL's 10-ms-bounded blocking path instead.
+    let mut baro_config = I2cConfig::default();
+    baro_config.frequency = Hertz(400_000);
+    baro_config.timeout = embassy_time::Duration::from_millis(10);
+    let i2c4 = I2c::new_blocking(p.I2C4, p.PF14, p.PF15, baro_config);
+    spawner.spawn(barometer::run(i2c4, p.PG8)).unwrap();
 
     // USB CDC ACM on the FS OTG peripheral (PA11/PA12), clocked from PLL3Q.
-    let mut ep_out_buffer = [0u8; 256];
+    static EP_OUT_BUFFER: StaticCell<[u8; 256]> = StaticCell::new();
     let mut usb_config = embassy_stm32::usb::Config::default();
     usb_config.vbus_detection = false;
     let driver = Driver::new_fs(
@@ -304,7 +348,7 @@ async fn application(p: Peripherals) {
         UsbIrqs,
         p.PA12,
         p.PA11,
-        &mut ep_out_buffer,
+        EP_OUT_BUFFER.init([0; 256]),
         usb_config,
     );
 
@@ -315,77 +359,56 @@ async fn application(p: Peripherals) {
     config.max_power = 100;
     config.max_packet_size_0 = 64;
 
-    let mut config_descriptor = [0u8; 256];
-    let mut bos_descriptor = [0u8; 256];
-    let mut control_buf = [0u8; 64];
-    let mut state = State::new();
-    let session = mavlink_usb::UsbSession::new_with(0);
-    let mut session_events = mavlink_usb::UsbSessionEvents::new(&session);
+    static CONFIG_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
+    static BOS_DESCRIPTOR: StaticCell<[u8; 256]> = StaticCell::new();
+    static CONTROL_BUF: StaticCell<[u8; 64]> = StaticCell::new();
+    static USB_STATE: StaticCell<State<'static>> = StaticCell::new();
+    static USB_SESSION: StaticCell<mavlink_usb::UsbSession> = StaticCell::new();
+    static SESSION_EVENTS: StaticCell<mavlink_usb::UsbSessionEvents<'static>> = StaticCell::new();
+    let session: &'static mavlink_usb::UsbSession =
+        USB_SESSION.init(mavlink_usb::UsbSession::new_with(0));
 
     let mut builder = Builder::new(
         driver,
         config,
-        &mut config_descriptor,
-        &mut bos_descriptor,
+        CONFIG_DESCRIPTOR.init([0; 256]),
+        BOS_DESCRIPTOR.init([0; 256]),
         &mut [],
-        &mut control_buf,
+        CONTROL_BUF.init([0; 64]),
     );
-    builder.handler(&mut session_events);
-    let class = CdcAcmClass::new(&mut builder, &mut state, 64);
-    let mut usb = builder.build();
+    builder.handler(SESSION_EVENTS.init(mavlink_usb::UsbSessionEvents::new(session)));
+    let class = CdcAcmClass::new(&mut builder, USB_STATE.init(State::new()), 64);
+    spawner
+        .spawn(mavlink_usb::device_task(builder.build()))
+        .unwrap();
+    spawner
+        .spawn(mavlink_usb::run(
+            class, phy, eth_power, session, parameters, dronecan,
+        ))
+        .unwrap();
 
-    join(
-        usb.run(),
-        join(
-            mavlink_usb::run(class, &phy, &eth_power, &session, &parameters, &dronecan),
-            join(
-                mavlink_uart7::run(uart7, &parameters, &dronecan),
-                join(
-                    dronecan_can::run(&parameters, &dronecan),
-                    join(
-                        join(
-                            sd_logger::run(sdmmc, sd_power, &parameters),
-                            sd_logger::health_task(),
-                        ),
-                        join4(
-                            ina219::run(i2c3),
-                            join(
-                                px4io::run(px4io_uart),
-                                logger_switch::run(p.PF5, p.TIM14, p.PF9),
-                            ),
-                            async {
-                                loop {
-                                    let half_period_us =
-                                        (500_000.0 / parameters.get(Id::LinkLedHz)) as u64;
-                                    // All MDIO transactions finish before yielding to the USB task.
-                                    {
-                                        let mut phy = phy.borrow_mut();
-                                        if !phy.found() {
-                                            phy.init();
-                                        }
-                                        if phy.found() && !phy.led_control_ready() {
-                                            phy.configure_leds();
-                                        }
-                                        let on = (Instant::now().as_micros() / half_period_us)
-                                            .is_multiple_of(2);
-                                        phy.set_link_led(on);
-                                        green.set_level(if on { Level::Low } else { Level::High });
-                                        red.set_level(if fault::present() {
-                                            Level::Low
-                                        } else {
-                                            Level::High
-                                        });
-                                    }
-
-                                    Timer::after_micros(half_period_us).await;
-                                }
-                            },
-                            diagnostics::stack_monitor(),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    )
-    .await;
+    // Slow services are sibling tasks: their poll frames are no longer retained
+    // beneath SD/FAT or other unrelated task calls when the fast IRQ preempts.
+    loop {
+        let half_period_us = (500_000.0 / parameters.get(Id::LinkLedHz)) as u64;
+        // All MDIO transactions finish before yielding to the USB task.
+        {
+            let mut phy = phy.borrow_mut();
+            if !phy.found() {
+                phy.init();
+            }
+            if phy.found() && !phy.led_control_ready() {
+                phy.configure_leds();
+            }
+            let on = (Instant::now().as_micros() / half_period_us).is_multiple_of(2);
+            phy.set_link_led(on);
+            green.set_level(if on { Level::Low } else { Level::High });
+            red.set_level(if fault::present() {
+                Level::Low
+            } else {
+                Level::High
+            });
+        }
+        Timer::after_micros(half_period_us).await;
+    }
 }

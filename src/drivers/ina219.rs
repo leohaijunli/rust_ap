@@ -107,6 +107,7 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     )
 }
 
+#[embassy_executor::task]
 pub async fn run(i2c: I2c<'static, Async, Master>) -> ! {
     let mut sensor = Ina219 {
         i2c,

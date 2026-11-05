@@ -83,6 +83,7 @@ pub fn init() -> Peripherals {
     embassy_stm32::interrupt::TIM2.set_priority(Priority::P1);
     embassy_stm32::interrupt::EXTI15_10.set_priority(Priority::P0);
     embassy_stm32::interrupt::TIM7.set_priority(Priority::P3);
+    embassy_stm32::interrupt::TIM5.set_priority(Priority::P4);
     embassy_stm32::interrupt::TIM6_DAC.set_priority(Priority::P4);
     embassy_stm32::interrupt::FDCAN1_IT0.set_priority(Priority::P2);
     embassy_stm32::interrupt::FDCAN1_IT1.set_priority(Priority::P2);

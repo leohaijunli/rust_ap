@@ -95,6 +95,14 @@ jobs:
           for scenario in no-gps gnss; do
             .venv/bin/python tools/check_ekf2_standard.py --case "$scenario" --rust "target/$host/release/examples/ekf2_standard" --px4-root target/px4-ekf2-source
           done
+      - name: Check E7 runtime catalog and BMP388 compensation
+        run: |
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          .venv/bin/python tools/gen_ekf2_runtime_params.py --check
+          cargo build --locked --target "$host" --example parameter_catalog --example bmp388_compensation
+          .venv/bin/python tools/gen_parameter_metadata.py --check --rust "target/$host/debug/examples/parameter_catalog"
+          .venv/bin/python tools/check_bmp388.py --rust "target/$host/debug/examples/bmp388_compensation"
+          .venv/bin/python -m unittest discover -s tools -p 'test_upload_windows.py'
       - name: Host tests, lint, H753 build and package checks
         run: bash tools/firmware.sh check
       - name: Separate fault-injection build (never flashed in CI)
@@ -116,4 +124,5 @@ jobs:
             target/ekf2-host-gnss-range*/**/report.json
             target/ekf2-host-output/**/report.json
             target/ekf2-host-standard/**/report.json
+            target/bmp388-host/report.json
             target/p1-fault-injection/thumbv7em-none-eabihf/release/disassembly.txt

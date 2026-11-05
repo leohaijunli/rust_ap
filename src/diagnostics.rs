@@ -192,6 +192,7 @@ fn sample_stack_pointer() -> u32 {
     sp
 }
 
+#[embassy_executor::task]
 pub async fn stack_monitor() -> ! {
     let bottom = core::ptr::addr_of!(_stack_end) as u32;
     let top = core::ptr::addr_of!(_stack_start) as u32;

@@ -216,6 +216,11 @@ pub(super) struct GlobalPosition {
 }
 
 impl GlobalPosition {
+    pub const ZERO: Self = Self {
+        latitude_rad: 0.0,
+        longitude_rad: 0.0,
+        altitude_m: 0.0,
+    };
     fn radii(self) -> (f64, f64) {
         const RADIUS: f64 = 6_378_137.0;
         const ECCENTRICITY: f64 = 0.0818191908425;

@@ -10,6 +10,29 @@ pub const PX4_REVISION: &str = "d6f12ad1c4f70ad3230afd7d86e971421e02fef4";
 // PX4 DeviceId: ICM42688P (0x26), address 0, SPI bus 2, bus type SPI (2).
 pub const ICM42688_DEVICE_ID: u32 = (0x26 << 16) | (2 << 3) | 2;
 
+#[derive(Clone, Copy, Debug)]
+pub struct SensorBaro {
+    pub timestamp: u64,
+    pub timestamp_sample: u64,
+    pub device_id: u32,
+    pub pressure: f32,
+    pub temperature: f32,
+    pub error_count: u32,
+}
+
+impl SensorBaro {
+    pub fn from_sample(sample: crate::bmp388::Sample, timestamp: u64) -> Self {
+        Self {
+            timestamp,
+            timestamp_sample: sample.timestamp_sample,
+            device_id: crate::bmp388::DEVICE_ID,
+            pressure: sample.pressure_pa,
+            temperature: sample.temperature_c,
+            error_count: sample.error_count,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SensorAccel {
     pub timestamp: u64,

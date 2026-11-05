@@ -1,0 +1,43 @@
+{
+  "utc": "2026-11-04T20:10:09.954211+00:00",
+  "source": "d685eac41c2ba0f0",
+  "port": "COM26",
+  "heartbeats": [
+    {
+      "mavpackettype": "HEARTBEAT",
+      "type": 0,
+      "autopilot": 12,
+      "base_mode": 0,
+      "custom_mode": 0,
+      "system_status": 3,
+      "mavlink_version": 3
+    },
+    {
+      "mavpackettype": "HEARTBEAT",
+      "type": 0,
+      "autopilot": 12,
+      "base_mode": 0,
+      "custom_mode": 0,
+      "system_status": 3,
+      "mavlink_version": 3
+    },
+    {
+      "mavpackettype": "HEARTBEAT",
+      "type": 0,
+      "autopilot": 12,
+      "base_mode": 0,
+      "custom_mode": 0,
+      "system_status": 3,
+      "mavlink_version": 3
+    }
+  ],
+  "console": {
+    "!platform": "P1_PLATFORM schema=2 version=0.2.0 source=d685eac41c2ba0f0 git=1c34dcddd34919c1d60f8d6ff535a0ac6005b0cf fault_injection=false\nBACKUP bdcr_before=0000811b bdcr_after=0000811b csr_before=00000000 csr_after=00000000 config_preserved=true bkp_preserved=true\nCLOCK configured_cpu_hz=480000000 hclk_hz=240000000 pclk_hz=120000000 usb_hz=48000000 tick_hz=1000000 registers_ok=true\nRCC cr=3303c025 cfgr=0000001b d1=00000048 d2=00000440 d3=00000040 pllck=00400012 pllcfg=01fb0a0c pll1=0113023b pll3=0103022f usbsel=00200000\nPOWER cr3=05000042 d3cr=0000e000 csr1=0000e000 syscfg=00000081 flash_acr=00000024\nCORE id=20036450 vtor=08020000 ccr=00060200 scr=00000010 aircr=fa050000 dwt_ctrl=40000001 reset_flags=01460000\nTIMER name=TIM2 psc=239 arr=65535 cr1=00000001 irq_priority=16 fast_irq_priority=48 usb_irq_priority=96\nEND\n",
+    "!fault": "P1_FAULT schema=1 valid=false\nEND\n",
+    "!imu": "IMU schema=1 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=885608 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 latest_seq=885607 latest_age_us=259\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+    "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=2476 errors=0 conversion_us=43300 max_transaction_us=608 last_error=None\nBARO_DATA timestamp_sample=110575951 sequence=2475 pressure_pa=101536.53 temperature_c=38.93 pressure_altitude_m=-17.592566 age_us=15232\nEND\n",
+    "!ekf2": "EKF2_RUNTIME schema=1 requested=false epoch=1 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=0 log_errors=0\nEND\n",
+    "!logger": "LOGGER schema=2 status=0 stage=0 file_index=0 bytes_written=0 flushes=0 errors=0 sync_period_ms=1000 normal_dropped=0 event_dropped=0 high_water_bytes=0\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+    "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=109805600 now_us=110797192\nPERIOD target_us=1000 samples=109008 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=109805598 interval_min_us=961 interval_max_us=1039 late_max_us=41 late_sum_us=276279\nLATE_HIST le1=0 le2=98434 le5=6486 le10=1378 le20=2128 le50=582 le100=0 le1000=0 gt1000=0\nEXEC body_min_cycles=218 body_max_cycles=1128 body_sum_cycles=26650671 invalid_cycles=0 irq_count=606506 irq_max_cycles=325892 irq_sum_cycles=2587722890\nCPU mode=masked-wfe valid=true window_us=1000003 idle_us=831391 idle_calls=11921 busy_permille=168 exit_bookkeeping_max_cycles=52\nSTACK at_us=110133622 bytes=65536 untouched_bytes=5040 touched_bytes=60496 min_msp=240789a0 guard_ok=true\nRAM static_end=24043238 unallocated_bytes=182728 fault_stack_bytes=1024\nEND\n"
+  }
+}

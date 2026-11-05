@@ -26,6 +26,19 @@ pub(super) struct DownSampler {
 }
 
 impl DownSampler {
+    pub const fn dormant() -> Self {
+        Self {
+            sample: EMPTY,
+            quaternion: math::IDENTITY,
+            count: 0,
+            required_samples: 1,
+            average_dt_s: 0.005,
+            target_dt_s: 0.01,
+            minimum_dt_s: 0.005,
+            predict_us: 10_000,
+        }
+    }
+
     pub fn new(predict_us: u32) -> Self {
         let mut result = Self {
             sample: EMPTY,
@@ -105,7 +118,14 @@ pub(super) struct ImuBuffer {
 }
 
 impl ImuBuffer {
-    pub fn new(length: usize) -> Self {
+    #[inline(never)]
+    pub fn reset_to(&mut self, length: usize) {
+        const INITIAL: ImuBuffer = ImuBuffer::new(2);
+        *self = INITIAL;
+        self.length = length;
+    }
+
+    pub const fn new(length: usize) -> Self {
         Self {
             samples: [EMPTY; MAX_IMU_BUFFER],
             length,

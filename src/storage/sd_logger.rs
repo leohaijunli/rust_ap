@@ -24,7 +24,9 @@ use v6x_rust_led::logger::{
     ControlError, Link, LogError, LogRequest, LogResponse, RoutedLogRequest, Snapshot, Status,
 };
 use v6x_rust_led::parameters::{Kind, REGISTRY};
-use v6x_rust_led::px4_messages::{ActuatorArmed, SensorAccel, SensorGps, SensorGyro, PX4_REVISION};
+use v6x_rust_led::px4_messages::{
+    ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro, PX4_REVISION,
+};
 use v6x_rust_led::ulog::{self, DataEncoder, TopicId, TOPICS};
 use v6x_rust_led::wall_clock::Utc;
 
@@ -86,6 +88,25 @@ pub fn initialize() -> bool {
 
 pub fn ready() -> bool {
     current_status() == Status::Ready
+}
+
+pub fn record_baro(sample: v6x_rust_led::bmp388::Sample) {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Barometer, sample.timestamp_sample) {
+        return;
+    }
+    let now = Instant::now().as_micros();
+    if !sample.fresh(now) {
+        return;
+    }
+    let report = SensorBaro::from_sample(sample, now);
+    let payload = ulog::sensor_baro_payload(report);
+    let record = ulog::data_record(
+        TopicId::SensorBaro as u16,
+        report.timestamp,
+        payload.as_bytes(),
+    )
+    .expect("fixed SensorBaro fits the runtime record");
+    let _ = LOGGER.try_record(Class::Normal, now, record);
 }
 
 pub fn request_start() -> Result<(), ControlError> {
@@ -437,10 +458,11 @@ pub fn record_parameter(timestamp_us: u64, index: u16, kind: Kind, value: f32, d
     );
 }
 
+#[embassy_executor::task]
 pub async fn run(
     mut sdmmc: Sdmmc<'static>,
     mut power: Output<'static>,
-    parameters: &ParameterManager<'_>,
+    parameters: &'static ParameterManager<'static>,
 ) -> ! {
     loop {
         match select(CONTROL.receive(), LOG_REQUESTS.receive()).await {
@@ -926,6 +948,7 @@ fn sync_period() -> Duration {
     Duration::from_millis(u64::from(STATE.sync_period_ms.load(Ordering::Acquire)))
 }
 
+#[embassy_executor::task]
 pub async fn health_task() -> ! {
     let mut encoder = DataEncoder::new();
     loop {
@@ -996,21 +1019,28 @@ async fn write_definitions<W: Write>(
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
     }
+    let mut format = [0; v6x_rust_led::estimator::standard_ulog::FORMAT_CAPACITY];
+    for topic in &v6x_rust_led::estimator::standard_ulog::TOPICS {
+        let length = v6x_rust_led::estimator::standard_ulog::format_record(topic.id, &mut format)
+            .expect("fixed estimator format fits metadata storage");
+        writer.write_all(&format[..length]).await?;
+        bytes_written += length as u32;
+    }
     let source = hex_u64(v6x_rust_led::build_info::SOURCE_ID);
-    for record in [
-        ulog::information("char[7] sys_name", b"rust_ap").unwrap(),
-        ulog::information("char[9] ver_hw", b"FMUv6X_R3").unwrap(),
-        ulog::information("char[9] sys_mcu", b"STM32H753").unwrap(),
-        ulog::information("char[16] ver_sw", &source).unwrap(),
-        ulog::information(
-            "uint32_t ver_sw_release",
-            &v6x_rust_led::build_info::FLIGHT_SW_VERSION.to_le_bytes(),
-        )
-        .unwrap(),
-        ulog::information("char[40] px4_msg_revision", PX4_REVISION.as_bytes()).unwrap(),
-        ulog::information("char[3] body_frame", b"FRD").unwrap(),
-        ulog::information("char[3] world_frame", b"NED").unwrap(),
+    let version = v6x_rust_led::build_info::FLIGHT_SW_VERSION.to_le_bytes();
+    // Encode one record at a time. An array of eight 800-byte records creates
+    // multiple large temporaries in the encompassing async poll frame.
+    for (key, value) in [
+        ("char[7] sys_name", b"rust_ap".as_slice()),
+        ("char[9] ver_hw", b"FMUv6X_R3".as_slice()),
+        ("char[9] sys_mcu", b"STM32H753".as_slice()),
+        ("char[16] ver_sw", source.as_slice()),
+        ("uint32_t ver_sw_release", version.as_slice()),
+        ("char[40] px4_msg_revision", PX4_REVISION.as_bytes()),
+        ("char[3] body_frame", b"FRD".as_slice()),
+        ("char[3] world_frame", b"NED".as_slice()),
     ] {
+        let record = ulog::information(key, value).unwrap();
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
     }
@@ -1029,6 +1059,22 @@ async fn write_definitions<W: Write>(
         let record = ulog::subscription(topic.id).unwrap();
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
+    }
+    let record = ulog::raw_subscription(
+        ulog::INDEPENDENT_EULER_ID,
+        1,
+        TopicId::AttitudeEuler.definition().name,
+    )
+    .expect("fixed independent Euler subscription");
+    writer.write_all(record.as_bytes()).await?;
+    bytes_written += record.as_bytes().len() as u32;
+    for instance in [0, 1] {
+        for topic in &v6x_rust_led::estimator::standard_ulog::TOPICS {
+            let record = v6x_rust_led::estimator::standard_ulog::subscription(topic.id, instance)
+                .expect("fixed estimator subscription");
+            writer.write_all(record.as_bytes()).await?;
+            bytes_written += record.as_bytes().len() as u32;
+        }
     }
     let dirty = parameters.is_dirty();
     let mut encoder = DataEncoder::new();

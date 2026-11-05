@@ -1,0 +1,503 @@
+{
+  "utc": "2026-11-04T21:46:05.426975+00:00",
+  "source": "80b147683ca7c0dd",
+  "commands": [
+    {
+      "command": "!platform",
+      "response": "P1_PLATFORM schema=2 version=0.2.0 source=80b147683ca7c0dd git=1c34dcddd34919c1d60f8d6ff535a0ac6005b0cf fault_injection=false\nBACKUP bdcr_before=0000811b bdcr_after=0000811b csr_before=00000000 csr_after=00000000 config_preserved=true bkp_preserved=true\nCLOCK configured_cpu_hz=480000000 hclk_hz=240000000 pclk_hz=120000000 usb_hz=48000000 tick_hz=1000000 registers_ok=true\nRCC cr=3303c025 cfgr=0000001b d1=00000048 d2=00000440 d3=00000040 pllck=00400012 pllcfg=01fb0a0c pll1=0113023b pll3=0103022f usbsel=00200000\nPOWER cr3=05000042 d3cr=0000e000 csr1=0000e000 syscfg=00000081 flash_acr=00000024\nCORE id=20036450 vtor=08020000 ccr=00060200 scr=00000010 aircr=fa050000 dwt_ctrl=40000001 reset_flags=00fe0000\nTIMER name=TIM2 psc=239 arr=65535 cr1=00000001 irq_priority=16 fast_irq_priority=48 usb_irq_priority=96\nEND\n",
+      "utc": "2026-11-04T21:46:06.554045+00:00"
+    },
+    {
+      "command": "!fault",
+      "response": "P1_FAULT schema=1 valid=true kind=4 source=d685eac41c2ba0f0 detail=0 file_hash=00000000\nFRAME pc=00000000 lr=00000000 sp=24078970 xpsr=00000000 exc_return=00000000\nFAULT_REG cfsr=00000000 hfsr=00000000 mmfar=00000000 bfar=00000000 crc=ca2f7296\nEND\n",
+      "utc": "2026-11-04T21:46:06.657042+00:00"
+    },
+    {
+      "command": "!ekf2 start",
+      "response": "EST_CONTROL start=true accepted=true data_only=true persisted=false error=None\nEKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=0 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:06.758046+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:07.764854+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=135841976 now_us=136654587\nPERIOD target_us=1000 samples=135048 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=135841975 interval_min_us=977 interval_max_us=1029 late_max_us=32 late_sum_us=467475\nLATE_HIST le1=0 le2=3232 le5=126089 le10=2418 le20=2694 le50=615 le100=0 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1372 body_sum_cycles=31704916 invalid_cycles=0 irq_count=745352 irq_max_cycles=284171 irq_sum_cycles=2963213567\nCPU mode=masked-wfe valid=true window_us=1000999 idle_us=757372 idle_calls=11981 busy_permille=243 exit_bookkeeping_max_cycles=56\nSTACK at_us=136008381 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:07.865854+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1098336 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1098335 latest_age_us=267\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:07.966858+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3049 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=136840997 sequence=3048 pressure_pa=101423.05 temperature_c=40.54 pressure_altitude_m=-8.159484 age_us=15912\nEND\n",
+      "utc": "2026-11-04T21:46:07.968860+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=0 stage=0 file_index=0 bytes_written=0 flushes=0 errors=0 sync_period_ms=1000 normal_dropped=0 event_dropped=0 high_water_bytes=0\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:08.069858+00:00"
+    },
+    {
+      "command": "logger start",
+      "response": "LOGGER_CONTROL operation=start accepted=true error=None\nEND\n",
+      "utc": "2026-11-04T21:46:08.169860+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=1 stage=1 file_index=0 bytes_written=0 flushes=0 errors=0 sync_period_ms=1000 normal_dropped=0 event_dropped=0 high_water_bytes=0\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:08.270869+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=1 stage=10 file_index=14 bytes_written=0 flushes=0 errors=0 sync_period_ms=1000 normal_dropped=0 event_dropped=0 high_water_bytes=0\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:08.476858+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=17408 flushes=1 errors=0 sync_period_ms=1000 normal_dropped=0 event_dropped=0 high_water_bytes=1344\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:08.680855+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:10.704561+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=138842976 now_us=139594318\nPERIOD target_us=1000 samples=138049 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=138842975 interval_min_us=953 interval_max_us=1054 late_max_us=57 late_sum_us=477857\nLATE_HIST le1=0 le2=3404 le5=128796 le10=2465 le20=2756 le50=625 le100=3 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1372 body_sum_cycles=32403485 invalid_cycles=0 irq_count=761949 irq_max_cycles=284171 irq_sum_cycles=3030219981\nCPU mode=masked-wfe valid=true window_us=1000000 idle_us=801826 idle_calls=13689 busy_permille=198 exit_bookkeeping_max_cycles=62\nSTACK at_us=139009236 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:10.807558+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1122160 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1122159 latest_age_us=957\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:10.810559+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3110 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=139659530 sequence=3109 pressure_pa=101422.53 temperature_c=40.53 pressure_altitude_m=-8.117207 age_us=40783\nEND\n",
+      "utc": "2026-11-04T21:46:10.912563+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=83968 flushes=3 errors=0 sync_period_ms=1000 normal_dropped=2 event_dropped=0 high_water_bytes=2688\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:11.013560+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:14.116249+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=142843976 now_us=143005514\nPERIOD target_us=1000 samples=142050 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=142843975 interval_min_us=953 interval_max_us=1054 late_max_us=57 late_sum_us=492601\nLATE_HIST le1=0 le2=3470 le5=132550 le10=2524 le20=2836 le50=663 le100=7 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=33340875 invalid_cycles=0 irq_count=784080 irq_max_cycles=284171 irq_sum_cycles=3128471261\nCPU mode=masked-wfe valid=true window_us=1000998 idle_us=809611 idle_calls=13815 busy_permille=191 exit_bookkeeping_max_cycles=62\nSTACK at_us=142010208 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:14.217255+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1149776 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1149775 latest_age_us=245\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:14.218248+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3188 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=143105217 sequence=3187 pressure_pa=101421.52 temperature_c=40.53 pressure_altitude_m=-8.032652 age_us=2721\nEND\n",
+      "utc": "2026-11-04T21:46:14.320255+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=185344 flushes=6 errors=0 sync_period_ms=1000 normal_dropped=2 event_dropped=0 high_water_bytes=2688\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:14.421254+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:17.524386+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=145845976 now_us=146413530\nPERIOD target_us=1000 samples=145052 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=145845975 interval_min_us=953 interval_max_us=1054 late_max_us=57 late_sum_us=503436\nLATE_HIST le1=0 le2=3513 le5=135370 le10=2578 le20=2896 le50=686 le100=9 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=34040292 invalid_cycles=0 irq_count=800682 irq_max_cycles=284171 irq_sum_cycles=3202242418\nCPU mode=masked-wfe valid=true window_us=1000999 idle_us=803778 idle_calls=13791 busy_permille=197 exit_bookkeeping_max_cycles=62\nSTACK at_us=146011336 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:17.627384+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1177392 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1177391 latest_age_us=814\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:17.631386+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3265 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=146513753 sequence=3264 pressure_pa=101425.57 temperature_c=40.54 pressure_altitude_m=-8.365584 age_us=7052\nEND\n",
+      "utc": "2026-11-04T21:46:17.732385+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=320000 flushes=10 errors=0 sync_period_ms=1000 normal_dropped=4 event_dropped=0 high_water_bytes=2912\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:17.834387+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:20.884534+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=148846979 now_us=149773238\nPERIOD target_us=1000 samples=148053 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=148846977 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=514507\nLATE_HIST le1=0 le2=3571 le5=138182 le10=2621 le20=2952 le50=712 le100=15 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=34742120 invalid_cycles=0 irq_count=817279 irq_max_cycles=284171 irq_sum_cycles=3275968215\nCPU mode=masked-wfe valid=true window_us=1000003 idle_us=814547 idle_calls=13919 busy_permille=185 exit_bookkeeping_max_cycles=62\nSTACK at_us=149012234 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:20.985528+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1204592 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1204591 latest_age_us=146\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:21.087537+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3343 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=149961548 sequence=3342 pressure_pa=101423.04 temperature_c=40.53 pressure_altitude_m=-8.159484 age_us=15450\nEND\n",
+      "utc": "2026-11-04T21:46:21.090534+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=420864 flushes=13 errors=0 sync_period_ms=1000 normal_dropped=4 event_dropped=0 high_water_bytes=4256\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:21.193947+00:00"
+    },
+    {
+      "command": "!ekf2 stop",
+      "response": "EST_CONTROL start=false accepted=true data_only=true persisted=false error=None\nEKF2_RUNTIME schema=1 requested=false epoch=3 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:21.296949+00:00"
+    },
+    {
+      "command": "!ekf2 start",
+      "response": "EST_CONTROL start=true accepted=true data_only=true persisted=false error=None\nEKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:21.599947+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:24.306977+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=152847977 now_us=153196134\nPERIOD target_us=1000 samples=152054 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=152847975 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=529090\nLATE_HIST le1=0 le2=3639 le5=141932 le10=2685 le20=3036 le50=741 le100=21 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=35675280 invalid_cycles=0 irq_count=839407 irq_max_cycles=284171 irq_sum_cycles=3374195692\nCPU mode=masked-wfe valid=true window_us=1000000 idle_us=808472 idle_calls=13862 busy_permille=191 exit_bookkeeping_max_cycles=62\nSTACK at_us=153020389 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:24.410978+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1232328 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1232327 latest_age_us=927\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:24.413978+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3418 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=153275940 sequence=3417 pressure_pa=101425.3 temperature_c=40.54 pressure_altitude_m=-8.344446 age_us=26949\nEND\n",
+      "utc": "2026-11-04T21:46:24.515978+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=522752 flushes=16 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:24.618986+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:27.749793+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=155848976 now_us=156638449\nPERIOD target_us=1000 samples=155055 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=155848975 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=540222\nLATE_HIST le1=0 le2=3697 le5=144735 le10=2732 le20=3095 le50=770 le100=26 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=36377152 invalid_cycles=0 irq_count=856000 irq_max_cycles=284171 irq_sum_cycles=3447932227\nCPU mode=masked-wfe valid=true window_us=1000993 idle_us=810624 idle_calls=13882 busy_permille=190 exit_bookkeeping_max_cycles=62\nSTACK at_us=156021256 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:27.856796+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1260240 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1260239 latest_age_us=197\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:27.958787+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3498 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=156816634 sequence=3497 pressure_pa=101425.05 temperature_c=40.53 pressure_altitude_m=-8.323307 age_us=31025\nEND\n",
+      "utc": "2026-11-04T21:46:28.059792+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=657920 flushes=20 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:28.161793+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:31.254840+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=159849977 now_us=160143521\nPERIOD target_us=1000 samples=159056 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=159849975 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=554836\nLATE_HIST le1=0 le2=3769 le5=148481 le10=2793 le20=3181 le50=801 le100=31 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1416 body_sum_cycles=37313046 invalid_cycles=0 irq_count=878126 irq_max_cycles=284171 irq_sum_cycles=3546234356\nCPU mode=masked-wfe valid=true window_us=1000001 idle_us=813390 idle_calls=13928 busy_permille=186 exit_bookkeeping_max_cycles=64\nSTACK at_us=160022435 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:31.359847+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1288608 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1288607 latest_age_us=150\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:31.360847+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3575 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=160218513 sequence=3574 pressure_pa=101421.26 temperature_c=40.52 pressure_altitude_m=-8.011514 age_us=31248\nEND\n",
+      "utc": "2026-11-04T21:46:31.461846+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=759296 flushes=23 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:31.562846+00:00"
+    },
+    {
+      "command": "logger stop",
+      "response": "LOGGER_CONTROL operation=stop accepted=true error=None\nEND\n",
+      "utc": "2026-11-04T21:46:33.780904+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=0 stage=0 file_index=14 bytes_written=859648 flushes=26 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:33.881904+00:00"
+    },
+    {
+      "command": "!ekf2",
+      "response": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:33.983904+00:00"
+    },
+    {
+      "command": "!metrics",
+      "response": "P1_METRICS schema=1 epoch=0 snapshot_us=162850002 now_us=162872896\nPERIOD target_us=1000 samples=162056 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=162850001 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=565706\nLATE_HIST le1=0 le2=3828 le5=151298 le10=2830 le20=3243 le50=822 le100=35 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1416 body_sum_cycles=38013454 invalid_cycles=0 irq_count=894717 irq_max_cycles=284171 irq_sum_cycles=3618687016\nCPU mode=masked-wfe valid=true window_us=1000025 idle_us=810899 idle_calls=13331 busy_permille=189 exit_bookkeeping_max_cycles=64\nSTACK at_us=162031068 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "utc": "2026-11-04T21:46:34.089904+00:00"
+    },
+    {
+      "command": "!imu",
+      "response": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1310712 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1310711 latest_age_us=878\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "utc": "2026-11-04T21:46:34.192910+00:00"
+    },
+    {
+      "command": "!baro",
+      "response": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3639 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=163050120 sequence=3638 pressure_pa=101423.53 temperature_c=40.52 pressure_altitude_m=-8.196476 age_us=31673\nEND\n",
+      "utc": "2026-11-04T21:46:34.295433+00:00"
+    },
+    {
+      "command": "!logger",
+      "response": "LOGGER schema=2 status=0 stage=0 file_index=14 bytes_written=859648 flushes=26 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n",
+      "utc": "2026-11-04T21:46:34.297427+00:00"
+    },
+    {
+      "command": "!ekf2 stop",
+      "response": "EST_CONTROL start=false accepted=true data_only=true persisted=false error=None\nEKF2_RUNTIME schema=1 requested=false epoch=5 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "utc": "2026-11-04T21:46:34.397460+00:00"
+    }
+  ],
+  "samples": [
+    {
+      "utc": "2026-11-04T21:46:07.758859+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=135841976 now_us=136654587\nPERIOD target_us=1000 samples=135048 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=135841975 interval_min_us=977 interval_max_us=1029 late_max_us=32 late_sum_us=467475\nLATE_HIST le1=0 le2=3232 le5=126089 le10=2418 le20=2694 le50=615 le100=0 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1372 body_sum_cycles=31704916 invalid_cycles=0 irq_count=745352 irq_max_cycles=284171 irq_sum_cycles=2963213567\nCPU mode=masked-wfe valid=true window_us=1000999 idle_us=757372 idle_calls=11981 busy_permille=243 exit_bookkeeping_max_cycles=56\nSTACK at_us=136008381 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1098336 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1098335 latest_age_us=267\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3049 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=136840997 sequence=3048 pressure_pa=101423.05 temperature_c=40.54 pressure_altitude_m=-8.159484 age_us=15912\nEND\n",
+      "!logger": "LOGGER schema=2 status=0 stage=0 file_index=0 bytes_written=0 flushes=0 errors=0 sync_period_ms=1000 normal_dropped=0 event_dropped=0 high_water_bytes=0\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:10.703560+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=138842976 now_us=139594318\nPERIOD target_us=1000 samples=138049 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=138842975 interval_min_us=953 interval_max_us=1054 late_max_us=57 late_sum_us=477857\nLATE_HIST le1=0 le2=3404 le5=128796 le10=2465 le20=2756 le50=625 le100=3 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1372 body_sum_cycles=32403485 invalid_cycles=0 irq_count=761949 irq_max_cycles=284171 irq_sum_cycles=3030219981\nCPU mode=masked-wfe valid=true window_us=1000000 idle_us=801826 idle_calls=13689 busy_permille=198 exit_bookkeeping_max_cycles=62\nSTACK at_us=139009236 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1122160 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1122159 latest_age_us=957\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3110 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=139659530 sequence=3109 pressure_pa=101422.53 temperature_c=40.53 pressure_altitude_m=-8.117207 age_us=40783\nEND\n",
+      "!logger": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=83968 flushes=3 errors=0 sync_period_ms=1000 normal_dropped=2 event_dropped=0 high_water_bytes=2688\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:14.015253+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=142843976 now_us=143005514\nPERIOD target_us=1000 samples=142050 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=142843975 interval_min_us=953 interval_max_us=1054 late_max_us=57 late_sum_us=492601\nLATE_HIST le1=0 le2=3470 le5=132550 le10=2524 le20=2836 le50=663 le100=7 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=33340875 invalid_cycles=0 irq_count=784080 irq_max_cycles=284171 irq_sum_cycles=3128471261\nCPU mode=masked-wfe valid=true window_us=1000998 idle_us=809611 idle_calls=13815 busy_permille=191 exit_bookkeeping_max_cycles=62\nSTACK at_us=142010208 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1149776 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1149775 latest_age_us=245\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3188 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=143105217 sequence=3187 pressure_pa=101421.52 temperature_c=40.53 pressure_altitude_m=-8.032652 age_us=2721\nEND\n",
+      "!logger": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=185344 flushes=6 errors=0 sync_period_ms=1000 normal_dropped=2 event_dropped=0 high_water_bytes=2688\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:17.422384+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=145845976 now_us=146413530\nPERIOD target_us=1000 samples=145052 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=145845975 interval_min_us=953 interval_max_us=1054 late_max_us=57 late_sum_us=503436\nLATE_HIST le1=0 le2=3513 le5=135370 le10=2578 le20=2896 le50=686 le100=9 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=34040292 invalid_cycles=0 irq_count=800682 irq_max_cycles=284171 irq_sum_cycles=3202242418\nCPU mode=masked-wfe valid=true window_us=1000999 idle_us=803778 idle_calls=13791 busy_permille=197 exit_bookkeeping_max_cycles=62\nSTACK at_us=146011336 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1177392 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1177391 latest_age_us=814\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3265 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=146513753 sequence=3264 pressure_pa=101425.57 temperature_c=40.54 pressure_altitude_m=-8.365584 age_us=7052\nEND\n",
+      "!logger": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=320000 flushes=10 errors=0 sync_period_ms=1000 normal_dropped=4 event_dropped=0 high_water_bytes=2912\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:20.882537+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=2 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=1 log_errors=0 configure_max_us=1108 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=148846979 now_us=149773238\nPERIOD target_us=1000 samples=148053 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=148846977 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=514507\nLATE_HIST le1=0 le2=3571 le5=138182 le10=2621 le20=2952 le50=712 le100=15 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=34742120 invalid_cycles=0 irq_count=817279 irq_max_cycles=284171 irq_sum_cycles=3275968215\nCPU mode=masked-wfe valid=true window_us=1000003 idle_us=814547 idle_calls=13919 busy_permille=185 exit_bookkeeping_max_cycles=62\nSTACK at_us=149012234 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ace8 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1204592 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1204591 latest_age_us=146\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3343 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=149961548 sequence=3342 pressure_pa=101423.04 temperature_c=40.53 pressure_altitude_m=-8.159484 age_us=15450\nEND\n",
+      "!logger": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=420864 flushes=13 errors=0 sync_period_ms=1000 normal_dropped=4 event_dropped=0 high_water_bytes=4256\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:24.205977+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=152847977 now_us=153196134\nPERIOD target_us=1000 samples=152054 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=152847975 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=529090\nLATE_HIST le1=0 le2=3639 le5=141932 le10=2685 le20=3036 le50=741 le100=21 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=35675280 invalid_cycles=0 irq_count=839407 irq_max_cycles=284171 irq_sum_cycles=3374195692\nCPU mode=masked-wfe valid=true window_us=1000000 idle_us=808472 idle_calls=13862 busy_permille=191 exit_bookkeeping_max_cycles=62\nSTACK at_us=153020389 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1232328 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1232327 latest_age_us=927\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3418 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=153275940 sequence=3417 pressure_pa=101425.3 temperature_c=40.54 pressure_altitude_m=-8.344446 age_us=26949\nEND\n",
+      "!logger": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=522752 flushes=16 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:27.647793+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=155848976 now_us=156638449\nPERIOD target_us=1000 samples=155055 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=155848975 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=540222\nLATE_HIST le1=0 le2=3697 le5=144735 le10=2732 le20=3095 le50=770 le100=26 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1384 body_sum_cycles=36377152 invalid_cycles=0 irq_count=856000 irq_max_cycles=284171 irq_sum_cycles=3447932227\nCPU mode=masked-wfe valid=true window_us=1000993 idle_us=810624 idle_calls=13882 busy_permille=190 exit_bookkeeping_max_cycles=62\nSTACK at_us=156021256 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1260240 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1260239 latest_age_us=197\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3498 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=156816634 sequence=3497 pressure_pa=101425.05 temperature_c=40.53 pressure_altitude_m=-8.323307 age_us=31025\nEND\n",
+      "!logger": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=657920 flushes=20 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:31.154839+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=159849977 now_us=160143521\nPERIOD target_us=1000 samples=159056 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=159849975 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=554836\nLATE_HIST le1=0 le2=3769 le5=148481 le10=2793 le20=3181 le50=801 le100=31 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1416 body_sum_cycles=37313046 invalid_cycles=0 irq_count=878126 irq_max_cycles=284171 irq_sum_cycles=3546234356\nCPU mode=masked-wfe valid=true window_us=1000001 idle_us=813390 idle_calls=13928 busy_permille=186 exit_bookkeeping_max_cycles=64\nSTACK at_us=160022435 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1288608 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1288607 latest_age_us=150\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3575 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=160218513 sequence=3574 pressure_pa=101421.26 temperature_c=40.52 pressure_altitude_m=-8.011514 age_us=31248\nEND\n",
+      "!logger": "LOGGER schema=2 status=2 stage=11 file_index=14 bytes_written=759296 flushes=23 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=true buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    },
+    {
+      "utc": "2026-11-04T21:46:33.882904+00:00",
+      "!ekf2": "EKF2_RUNTIME schema=1 requested=true epoch=4 active=false data_only=true nav_qualified=false mag_available=false range_available=false baro_available=true config_errors=2 log_errors=0 configure_max_us=1145 executor=TIM5 priority=4 imu_priority=3\nEND\n",
+      "!metrics": "P1_METRICS schema=1 epoch=0 snapshot_us=162850002 now_us=162872896\nPERIOD target_us=1000 samples=162056 skipped=0 deadline_misses=0 scheduling_overruns=0 scheduling_skipped=0 time_errors=0 last_start_us=162850001 interval_min_us=950 interval_max_us=1056 late_max_us=59 late_sum_us=565706\nLATE_HIST le1=0 le2=3828 le5=151298 le10=2830 le20=3243 le50=822 le100=35 le1000=0 gt1000=0\nEXEC body_min_cycles=212 body_max_cycles=1416 body_sum_cycles=38013454 invalid_cycles=0 irq_count=894717 irq_max_cycles=284171 irq_sum_cycles=3618687016\nCPU mode=masked-wfe valid=true window_us=1000025 idle_us=810899 idle_calls=13331 busy_permille=189 exit_bookkeeping_max_cycles=64\nSTACK at_us=162031068 bytes=65536 untouched_bytes=42064 touched_bytes=23472 min_msp=2407ac60 guard_ok=true\nRAM static_end=24042cd4 unallocated_bytes=184108 fault_stack_bytes=1024\nEND\n",
+      "!imu": "IMU schema=2 initialized=true whoami=47 odr_hz=8000 log_rate_hz=200 spi_hz=24000000 samples=1310712 transfer_errors=0 decode_errors=0 fifo_resets=1 drdy_timeouts=0 ahrs_dropped=0 ahrs_cleared=7 fifo_rejected=0 max_fifo_samples=8 latest_seq=1310711 latest_age_us=878\nIMU_CLOCK delta_ticks=7 resolution_us=16 integration_us=112\nEND\n",
+      "!baro": "BARO schema=1 sensor=BMP388 bus=I2C4 scl=PF14 sda=PF15 address=77 power=PG8 chip_id=50 revision=03 trim_crc=14 valid=true samples=3639 errors=0 conversion_us=43300 max_transaction_us=605 last_error=None\nBARO_DATA timestamp_sample=163050120 sequence=3638 pressure_pa=101423.53 temperature_c=40.52 pressure_altitude_m=-8.196476 age_us=31673\nEND\n",
+      "!logger": "LOGGER schema=2 status=0 stage=0 file_index=14 bytes_written=859648 flushes=26 errors=0 sync_period_ms=1000 normal_dropped=6 event_dropped=0 high_water_bytes=5600\nLOGGER_SWITCH schema=2 button=PF5 active_high=true enabled=false pressed=false presses=0 short_presses=0 long_presses=0 long_press_ms=1500 led_owner=PX4IO led_override=false requested_on=false buzzer=PF9 timer=TIM14 push_pull=true frequency_hz=4000 on=false pending=none last_event=none start_requests=0 stop_requests=0 rejected=0\nEND\n"
+    }
+  ],
+  "result": "captured",
+  "port": "COM26",
+  "log_entries": {
+    "0": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 0,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 0,
+      "size": 1660928
+    },
+    "1": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 1,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 0,
+      "size": 306176
+    },
+    "2": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 2,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1700000310,
+      "size": 202752
+    },
+    "3": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 3,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793625688,
+      "size": 2914816
+    },
+    "4": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 4,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793626142,
+      "size": 202752
+    },
+    "5": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 5,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1700000004,
+      "size": 198656
+    },
+    "6": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 6,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1700000004,
+      "size": 201728
+    },
+    "7": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 7,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793638492,
+      "size": 634880
+    },
+    "8": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 8,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793652748,
+      "size": 484352
+    },
+    "9": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 9,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793652834,
+      "size": 212480
+    },
+    "10": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 10,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793656198,
+      "size": 327680
+    },
+    "11": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 11,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793656790,
+      "size": 159232
+    },
+    "12": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 12,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793657858,
+      "size": 67072
+    },
+    "13": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 13,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793658728,
+      "size": 68608
+    },
+    "14": {
+      "mavpackettype": "LOG_ENTRY",
+      "id": 14,
+      "num_logs": 15,
+      "last_log_num": 14,
+      "time_utc": 1793828792,
+      "size": 859648
+    }
+  },
+  "download_entry": {
+    "mavpackettype": "LOG_ENTRY",
+    "id": 14,
+    "num_logs": 15,
+    "last_log_num": 14,
+    "time_utc": 1793828792,
+    "size": 859648
+  },
+  "download": {
+    "bytes": 859648,
+    "missing_bytes": 0,
+    "window_retries": 0,
+    "sha256": "95c26de1a2beb7e65115f70fd47453a8a4ceabb98f43daa056bdebf70279bf6a"
+  }
+}

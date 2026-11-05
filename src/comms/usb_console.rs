@@ -48,6 +48,8 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::MavCan => crate::mavcan::write_diagnostics(&mut response),
         Command::Imu => crate::imu::write_diagnostics(&mut response),
         Command::Ina219 => crate::ina219::write_diagnostics(&mut response),
+        Command::Baro => crate::barometer::write_diagnostics(&mut response),
+        Command::Estimator => crate::estimator::write_diagnostics(&mut response),
         Command::Px4io => crate::px4io::write_diagnostics(&mut response),
         Command::Logger => crate::sd_logger::write_diagnostics(&mut response)
             .and_then(|()| crate::logger_switch::write_diagnostics(&mut response)),
@@ -86,6 +88,7 @@ pub(crate) async fn mavlink_report(
     dronecan: &dronecan_can::State,
 ) -> Response {
     match command {
+        Command::EstimatorStart | Command::EstimatorStop => estimator_report(command, parameters),
         Command::Fram | Command::FramRead(_) => fram_report(command, parameters).await,
         Command::Parameters | Command::ParamSave | Command::ParamLoad => {
             parameter_report(command, parameters, crate::OUTPUT_STATE).await
@@ -118,6 +121,39 @@ pub(crate) async fn mavlink_report(
         }
         _ => report(command, dronecan),
     }
+}
+
+pub(crate) fn estimator_report(command: Command, parameters: &ParameterManager<'_>) -> Response {
+    use v6x_rust_led::parameters::Id;
+    let mut response = Response::new();
+    let starting = matches!(command, Command::EstimatorStart);
+    let result = (|| {
+        if starting && (crate::OUTPUT_STATE.armed || crate::OUTPUT_STATE.outputs_enabled) {
+            return Err(v6x_rust_led::parameters::Error::Configuration);
+        }
+        let mut changed = false;
+        if starting {
+            changed |= parameters.set(Id::EstAlgorithm, 1.0)?;
+            changed |= parameters.set(Id::Ekf2En, 1.0)?;
+        }
+        changed |= parameters.set(Id::EstEnable, if starting { 1.0 } else { 0.0 })?;
+        // set() already publishes each changed mapped parameter. Only an
+        // unchanged explicit command needs another epoch to reset a fault.
+        if !changed {
+            crate::estimator::configure(parameters.snapshot())?;
+        }
+        Ok(())
+    })();
+    let _ = writeln!(
+        response,
+        "EST_CONTROL start={} accepted={} data_only=true persisted=false error={:?}",
+        starting,
+        result.is_ok(),
+        result.err()
+    );
+    let _ = crate::estimator::write_diagnostics(&mut response);
+    response.finish();
+    response
 }
 
 fn logger_result(
@@ -196,10 +232,18 @@ pub(crate) async fn parameter_report(
                 status.active.map_or(0, |active| active.generation),
                 parameter_store::FORMAT_VERSION, schema_tag(), status.slots[0], status.slots[1], status.last_error);
             let _ = write!(response, "PARAM_VALUES");
-            for entry in REGISTRY {
+            for entry in REGISTRY
+                .iter()
+                .filter(|entry| !entry.name.starts_with("EKF2_"))
+            {
                 let _ = write!(response, " {}={}", entry.name, parameters.get(entry.id));
             }
             let _ = writeln!(response);
+            let _ = writeln!(
+                response,
+                "PARAM_CATALOG count={} EKF2_count=142 use=PARAM_REQUEST_READ_or_MAVFTP",
+                REGISTRY.len()
+            );
         }
         Command::ParamSave => match parameters.save(outputs).await {
             Ok(saved) => {
@@ -248,6 +292,10 @@ pub(crate) enum Command {
     MavCan,
     Imu,
     Ina219,
+    Baro,
+    Estimator,
+    EstimatorStart,
+    EstimatorStop,
     Px4io,
     Logger,
     LoggerStart,
@@ -306,6 +354,10 @@ impl CommandLine {
                     b"!mavcan" | b"mavcan" => Some(Command::MavCan),
                     b"!imu" | b"imu" => Some(Command::Imu),
                     b"!ina219" | b"ina219" => Some(Command::Ina219),
+                    b"!baro" | b"baro" => Some(Command::Baro),
+                    b"!ekf2" | b"ekf2" => Some(Command::Estimator),
+                    b"!ekf2 start" | b"ekf2 start" => Some(Command::EstimatorStart),
+                    b"!ekf2 stop" | b"ekf2 stop" => Some(Command::EstimatorStop),
                     b"!px4io" | b"px4io" => Some(Command::Px4io),
                     b"!time" | b"time" => Some(Command::Time),
                     #[cfg(feature = "fault-injection")]

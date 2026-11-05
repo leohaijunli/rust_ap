@@ -87,7 +87,7 @@ pub struct ImuEkfParams {
     pub accel_bias_time_constant: f32,
 }
 
-pub(super) fn default_float(name: &str) -> f32 {
+pub(super) const fn default_float(name: &str) -> f32 {
     match ekf2_parameter(name)
         .expect("implemented parameter in generated catalog")
         .default
@@ -97,7 +97,7 @@ pub(super) fn default_float(name: &str) -> f32 {
     }
 }
 
-pub(super) fn default_int(name: &str) -> i32 {
+pub(super) const fn default_int(name: &str) -> i32 {
     match ekf2_parameter(name)
         .expect("implemented parameter in generated catalog")
         .default
@@ -109,6 +109,12 @@ pub(super) fn default_int(name: &str) -> i32 {
 
 impl Default for ImuEkfParams {
     fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl ImuEkfParams {
+    pub(super) const fn defaults() -> Self {
         Self {
             predict_us: default_int("EKF2_PREDICT_US"),
             delay_max_ms: default_float("EKF2_DELAY_MAX"),
@@ -133,7 +139,8 @@ impl Default for ImuEkfParams {
 }
 
 impl ImuEkfParams {
-    fn buffer_length(self) -> Result<usize, FilterFault> {
+    pub(super) fn buffer_length(&self) -> Result<usize, FilterFault> {
+        use core::sync::atomic::Ordering;
         let values = [
             ("EKF2_PREDICT_US", self.predict_us as f32),
             ("EKF2_DELAY_MAX", self.delay_max_ms),
@@ -154,29 +161,62 @@ impl ImuEkfParams {
             ("EKF2_ABL_GYRLIM", self.accel_bias_gyro_limit),
             ("EKF2_ABL_TAU", self.accel_bias_time_constant),
         ];
-        for (name, value) in values {
-            let definition = ekf2_parameter(name).ok_or(FilterFault::Input)?;
+        for (index, (name, value)) in values.into_iter().enumerate() {
+            let Some(definition) = ekf2_parameter(name) else {
+                super::LAST_OUTPUT_FAULT.store(40 + index as u32, Ordering::Relaxed);
+                return Err(FilterFault::Input);
+            };
             if !value.is_finite()
                 || value < 0.0
                 || definition.min.is_some_and(|min| value < min)
                 || definition.max.is_some_and(|max| value > max)
             {
+                // Retain the failing triple for the board-side diagnostic readout.
+                super::FAILED_VALUE.store(value.to_bits(), Ordering::Relaxed);
+                super::FAILED_MIN.store(
+                    definition.min.unwrap_or(f32::NAN).to_bits(),
+                    Ordering::Relaxed,
+                );
+                super::FAILED_MAX.store(
+                    definition.max.unwrap_or(f32::NAN).to_bits(),
+                    Ordering::Relaxed,
+                );
+                super::LAST_OUTPUT_FAULT.store(50 + index as u32, Ordering::Relaxed);
                 return Err(FilterFault::Input);
             }
         }
-        if !(1000..=100_000).contains(&self.predict_us)
-            || self.imu_ctrl & !7 != 0
-            || self.accel_bias_time_constant <= 0.0
-        {
+        if !(1000..=100_000).contains(&self.predict_us) {
+            super::LAST_OUTPUT_FAULT.store(70, Ordering::Relaxed);
+            return Err(FilterFault::Input);
+        }
+        if self.imu_ctrl & !7 != 0 {
+            super::LAST_OUTPUT_FAULT.store(71, Ordering::Relaxed);
+            return Err(FilterFault::Input);
+        }
+        if self.accel_bias_time_constant <= 0.0 {
+            super::LAST_OUTPUT_FAULT.store(72, Ordering::Relaxed);
             return Err(FilterFault::Input);
         }
         let length =
             libm::ceilf(self.delay_max_ms / (self.predict_us as f32 / 1000.0)).max(2.0) as usize;
         if length > MAX_IMU_BUFFER {
+            super::LAST_OUTPUT_FAULT.store(73, Ordering::Relaxed);
             return Err(FilterFault::Input);
         }
         Ok(length)
     }
+}
+
+/// Bring-up diagnostic: run the baro/mag and range aid constructors without
+/// touching filter state. Called only from the estimator module probe.
+pub fn constructor_probe(
+    aiding: baro_mag::BaroMagParams,
+    range: range::RangeParams,
+    length: usize,
+) -> Result<(), FilterFault> {
+    baro_mag::Aids::new(aiding, length)?;
+    range::RangeAids::new(range, length)?;
+    Ok(())
 }
 
 /// Streaming host/MCU-buildable mathematical core; firmware does not instantiate
@@ -184,6 +224,7 @@ impl ImuEkfParams {
 pub struct ImuEkf {
     aiding_params: Option<BaroMagParams>,
     aiding: Option<Aids>,
+    pending_baro: Option<baro_mag::BaroAltitude>,
     range_params: Option<RangeParams>,
     range: Option<RangeAids>,
     pub(super) params: ImuEkfParams,
@@ -245,33 +286,59 @@ pub struct ImuEkf {
 
 impl ImuEkf {
     pub fn new(params: &ImuEkfParams, t0: Timestamp) -> Result<Self, FilterFault> {
+        let mut result = Self::dormant();
+        result.initialize(params, t0)?;
+        Ok(result)
+    }
+
+    /// Reset into an existing allocation. The constant template is copied from
+    /// flash directly; no full ImuEkf value crosses an async call boundary.
+    #[inline(never)]
+    fn initialize(&mut self, params: &ImuEkfParams, t0: Timestamp) -> Result<(), FilterFault> {
         let buffer_length = params.buffer_length()?;
-        let mut state = [0.0; 25];
-        state[..4].copy_from_slice(&math::IDENTITY);
         let mut params = *params;
         // Same parameter clamps as fixed Ekf::updateParameters().
         params.gyro_noise = params.gyro_noise.clamp(0.0, 1.0);
         params.accel_noise = params.accel_noise.clamp(0.0, 1.0);
         params.gyro_bias_noise = params.gyro_bias_noise.clamp(0.0, 1.0);
         params.accel_bias_noise = params.accel_bias_noise.clamp(0.0, 1.0);
-        Ok(Self {
+        const INITIAL: ImuEkf = ImuEkf::dormant();
+        *self = INITIAL;
+        self.params = params;
+        self.horizontal_position_noise = params.no_aid_noise;
+        self.downsampler = DownSampler::new(params.predict_us as u32);
+        self.buffer.reset_to(buffer_length);
+        self.output_predictor
+            .reset_to(buffer_length, self.output_params);
+        self.latest_us = t0;
+        self.delayed_us = t0;
+        self.fault = None;
+        Ok(())
+    }
+
+    pub(super) const fn dormant() -> Self {
+        let params = ImuEkfParams::defaults();
+        let mut state = [0.0; 25];
+        state[0] = 1.0;
+        Self {
             aiding_params: None,
             aiding: None,
+            pending_baro: None,
             range_params: None,
             range: None,
             params,
             horizontal_position_noise: params.no_aid_noise,
             horizontal_velocity_noise: 0.5,
-            downsampler: DownSampler::new(params.predict_us as u32),
-            buffer: ImuBuffer::new(buffer_length),
-            output_params: OutputParams::default(),
-            output_predictor: OutputPredictor::new(buffer_length, OutputParams::default()),
-            resets: ResetStatus::default(),
+            downsampler: DownSampler::dormant(),
+            buffer: ImuBuffer::new(2),
+            output_params: OutputParams::defaults(),
+            output_predictor: OutputPredictor::new(2, OutputParams::defaults()),
+            resets: ResetStatus::new(),
             last_good_vertical_accel: 0,
             last_bad_vertical_accel: 0,
             state,
             covariance: [[0.0; 24]; 24],
-            global: GlobalPosition::default(),
+            global: GlobalPosition::ZERO,
             origin: None,
             origin_timestamp: 0,
             origin_altitude: None,
@@ -284,7 +351,7 @@ impl ImuEkf {
             last_terrain_fuse: 0,
             terrain_valid: false,
             horizontal_accel_lpf: [0.0; 2],
-            last_known_global: GlobalPosition::default(),
+            last_known_global: GlobalPosition::ZERO,
             earth_rate: [0.0; 3],
             earth_rate_latitude: 0.0,
             accel_lpf: [0.0; 3],
@@ -293,12 +360,12 @@ impl ImuEkf {
             first_sample: true,
             input_seen: false,
             initialized: false,
-            latest_us: t0,
-            delayed_us: t0,
+            latest_us: 0,
+            delayed_us: 0,
             // Pinned Ekf::reset() defaults to in_air, with no system flag input.
             control: IN_AIR,
             px4_fault: 0,
-            fault: None,
+            fault: Some(FilterFault::Input),
             gyro_bias_inhibit: [false; 3],
             accel_bias_inhibit: [false; 3],
             gyro_magnitude: 0.0,
@@ -315,31 +382,50 @@ impl ImuEkf {
             vertical_velocity_dead_reckoning: true,
             last_vertical_velocity_aiding: 0,
             mag_alignment_start: 0,
-        })
+        }
     }
 
     /// Explicit recovery. No automatic acceptance of samples after a fault.
     pub fn reset(&mut self, t0: Timestamp) -> Result<(), FilterFault> {
         let output_params = self.output_params;
-        *self = if let (Some(aids), Some(range)) = (self.aiding_params, self.range_params) {
-            Self::with_range(&self.params, aids, range, t0)?
-        } else if let Some(params) = self.aiding_params {
-            Self::with_baro_mag(&self.params, params, t0)?
-        } else {
-            Self::new(&self.params, t0)?
-        };
+        let (params, aids, range) = (self.params, self.aiding_params, self.range_params);
+        self.initialize(&params, t0)?;
+        if let Some(aids) = aids {
+            self.enable_baro_mag(aids)?;
+        }
+        if let Some(range) = range {
+            self.enable_range(range)?;
+        }
         self.configure_output(output_params)?;
         Ok(())
     }
 
     /// Output configuration is a snapshot and may only change before IMU input.
     pub fn configure_output(&mut self, params: OutputParams) -> Result<(), FilterFault> {
-        params.validate()?;
+        use core::sync::atomic::Ordering;
+        if params.validate().is_err() {
+            super::LAST_OUTPUT_FAULT.store(1, Ordering::Relaxed);
+            return Err(FilterFault::Input);
+        }
         if self.input_seen {
+            super::LAST_OUTPUT_FAULT.store(2, Ordering::Relaxed);
             return Err(FilterFault::Input);
         }
         self.output_params = params;
-        self.output_predictor = OutputPredictor::new(self.params.buffer_length()?, params);
+        // Validate a stack copy: distinguishes corrupted static memory from a
+        // corrupted stack frame when the two disagree.
+        let snapshot = self.params;
+        let length = match snapshot.buffer_length() {
+            Ok(length) => length,
+            Err(_) => {
+                // Preserve the inner buffer_length diagnostic when it recorded one.
+                if super::LAST_OUTPUT_FAULT.load(Ordering::Relaxed) < 40 {
+                    super::LAST_OUTPUT_FAULT.store(3, Ordering::Relaxed);
+                }
+                return Err(FilterFault::Input);
+            }
+        };
+        self.output_predictor.reset_to(length, params);
         Ok(())
     }
 
@@ -349,11 +435,55 @@ impl ImuEkf {
         range: RangeParams,
         t0: Timestamp,
     ) -> Result<Self, FilterFault> {
-        let mut result = Self::with_baro_mag(params, aiding, t0)?;
-        result.range = Some(RangeAids::new(range, params.buffer_length()?)?);
-        result.range_params = Some(range);
-        result.state[24] = range.minimum_ground_clearance_m;
+        let mut result = Self::dormant();
+        result.initialize_range(params, aiding, range, t0)?;
         Ok(result)
+    }
+
+    #[inline(never)]
+    pub(super) fn initialize_range(
+        &mut self,
+        params: &ImuEkfParams,
+        aiding: BaroMagParams,
+        range: RangeParams,
+        t0: Timestamp,
+    ) -> Result<(), FilterFault> {
+        self.initialize(params, t0)?;
+        self.enable_baro_mag(aiding)?;
+        self.enable_range(range)
+    }
+
+    /// Diagnostic variant of `initialize_range` with the same behavior split
+    /// across separately reportable steps. Semantics identical on success.
+    pub fn initialize_only(
+        &mut self,
+        params: &ImuEkfParams,
+        t0: Timestamp,
+    ) -> Result<(), FilterFault> {
+        self.initialize(params, t0)
+    }
+
+    pub fn enable_baro_mag_probe(&mut self, aiding: BaroMagParams) -> Result<(), FilterFault> {
+        self.enable_baro_mag(aiding)
+    }
+
+    pub fn enable_range_probe(&mut self, range: RangeParams) -> Result<(), FilterFault> {
+        self.enable_range(range)
+    }
+
+    #[inline(never)]
+    fn enable_baro_mag(&mut self, aiding: BaroMagParams) -> Result<(), FilterFault> {
+        self.aiding = Some(Aids::new(aiding, self.params.buffer_length()?)?);
+        self.aiding_params = Some(aiding);
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn enable_range(&mut self, range: RangeParams) -> Result<(), FilterFault> {
+        self.range = Some(RangeAids::new(range, self.params.buffer_length()?)?);
+        self.range_params = Some(range);
+        self.state[24] = range.minimum_ground_clearance_m;
+        Ok(())
     }
 
     pub(super) fn initial_horizontal_noise(&mut self, position: f32, velocity: f32) {
@@ -381,12 +511,21 @@ impl ImuEkf {
         t0: Timestamp,
     ) -> Result<Self, FilterFault> {
         let mut result = Self::new(params, t0)?;
-        result.aiding = Some(Aids::new(aiding, params.buffer_length()?)?);
-        result.aiding_params = Some(aiding);
+        result.enable_baro_mag(aiding)?;
         Ok(result)
     }
 
     fn push_aiding(&mut self, sample: Option<BaroMagSample>) -> Result<(), FilterFault> {
+        if let Some(sample) = self.pending_baro.take() {
+            let Some(mut aiding) = self.aiding.take() else {
+                return self.fail(FilterFault::Input);
+            };
+            let result = aiding.push_baro(sample, self);
+            self.aiding = Some(aiding);
+            if let Err(fault) = result {
+                return self.fail(fault);
+            }
+        }
         if let Some(sample) = sample {
             let Some(mut aiding) = self.aiding.take() else {
                 return self.fail(FilterFault::Input);
@@ -493,6 +632,46 @@ impl ImuEkf {
     pub(super) fn record_terrain_reset(&mut self, delta: f32) {
         self.resets.hagl(delta);
     }
+    /// Bring-up diagnostics: the ACTIVE clamped IMU parameter set. Distinguishes
+    /// memory corruption from value-dependent validation after a failed reconfigure.
+    pub fn debug_params(&self) -> ImuEkfParams {
+        self.params
+    }
+
+    pub fn debug_input_seen(&self) -> bool {
+        self.input_seen
+    }
+
+    /// Bring-up diagnostic: detect corruption of the active parameter copy by
+    /// comparing every field with the expected clamped input.
+    pub fn params_differ(&self, expected: &ImuEkfParams) -> bool {
+        macro_rules! differs {
+            ($($field:ident),+ $(,)?) => {
+                $(self.params.$field != expected.$field)||+
+            };
+        }
+        differs!(
+            predict_us,
+            delay_max_ms,
+            imu_ctrl,
+            velocity_limit,
+            gyro_noise,
+            accel_noise,
+            gyro_bias_noise,
+            accel_bias_noise,
+            gyro_bias_init,
+            accel_bias_init,
+            angle_error_init,
+            no_aid_noise,
+            heading_noise,
+            gyro_bias_limit,
+            accel_bias_limit,
+            accel_bias_accel_limit,
+            accel_bias_gyro_limit,
+            accel_bias_time_constant
+        )
+    }
+
     pub fn output_vertical_derivative(&self) -> f32 {
         self.output_predictor.vertical_derivative()
     }
@@ -671,6 +850,20 @@ impl ImuEkf {
         range: Option<RangeObservation>,
     ) -> Result<bool, FilterFault> {
         self.update_extended(input, aiding, range, &mut NoExtension)
+    }
+
+    pub(super) fn pending_baro(&mut self, sample: Option<baro_mag::BaroAltitude>) {
+        self.pending_baro = sample;
+    }
+
+    pub fn update_baro(
+        &mut self,
+        input: &ImuDelta,
+        baro: Option<baro_mag::BaroAltitude>,
+        range: Option<RangeObservation>,
+    ) -> Result<bool, FilterFault> {
+        self.pending_baro = baro;
+        self.update_extended(input, None, range, &mut NoExtension)
     }
 
     pub(super) fn update_extended<X: ControlExtension>(

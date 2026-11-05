@@ -107,6 +107,8 @@ Embassy task future 是静态存储，不是每任务独立线程栈；中断嵌
 
 共享栈用 cortex-m-rt 0.7.7 paint-stack 与可抢占扫描/有限SP采样，无法证明所有瞬态峰值。HardFault裸入口先切独立应急栈再保存CRC故障、请求原bootloader；panic等路径仍先用共享栈，备份域断电/嵌套故障不保证恢复。详见 [P1操作单及测量限制](acceptance/p1/bring-up.md)、[静态故障审查](acceptance/p1/fault-review.md)。
 
+E7 首次包 `d685eac41c2ba0f0` 更新：静态 RAM 275000 B，但共享栈历史占用 60496 B，仅 5040 B 未触碰。两者独立；Embassy future 的静态存放不消除构造/调用时的临时栈，`guard_ok=true` 不等于达成 ≥32 KiB 余量。EKF2 保持关闭，静态核心/分成员初始化整改与 ARM 调用链核对进行中，见 [E7 实测](acceptance/ekf2/20261104-e7-bringup.md)。
+
 ## 5. 首轮稳定性测量目标
 
 | 指标 | 初始目标 / 记录方式 |

@@ -72,8 +72,17 @@ impl<'d> ParameterManager<'d> {
     }
 
     pub fn set(&self, id: Id, value: f32) -> Result<bool, parameters::Error> {
+        let candidate = self.values.borrow().snapshot().with(id, value)?;
+        let estimator = v6x_rust_led::estimator::runtime::Params::from_parameters(candidate)
+            .map_err(|_| parameters::Error::Configuration)?;
+        if estimator.enabled && (crate::OUTPUT_STATE.armed || crate::OUTPUT_STATE.outputs_enabled) {
+            return Err(parameters::Error::Configuration);
+        }
         let changed = self.values.borrow_mut().set(id, value)?;
         if changed {
+            if estimator.maps(id) {
+                crate::estimator::configure(candidate)?;
+            }
             v6x_rust_led::log_config::apply(id, self.get(id));
             crate::sd_logger::record_parameter(
                 embassy_time::Instant::now().as_micros(),
@@ -84,6 +93,10 @@ impl<'d> ParameterManager<'d> {
             );
         }
         Ok(changed)
+    }
+
+    pub fn snapshot(&self) -> parameters::Snapshot {
+        self.values.borrow().snapshot()
     }
 
     /// Push every LOG_* parameter's current RAM value into the logging policy.
@@ -115,6 +128,7 @@ impl<'d> ParameterManager<'d> {
         if result.is_ok() {
             self.log_all();
             self.apply_log_config();
+            crate::estimator::configure(self.snapshot()).map_err(|_| Error::Unavailable)?;
         }
         result
     }

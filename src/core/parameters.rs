@@ -12,6 +12,7 @@ pub enum Access {
     NextCycle,
 }
 
+#[derive(Clone, Copy)]
 pub struct Definition {
     pub id: Id,
     pub name: &'static str,
@@ -24,20 +25,24 @@ pub struct Definition {
 
 // Generate typed keys and the wire-order table together: one entry per parameter.
 macro_rules! parameter_table {
-    ($($id:ident { name: $name:literal, kind: $kind:ident, default: $default:expr,
-        min: $min:expr, max: $max:expr, access: $access:ident }),+ $(,)?) => {
+    (base { $($id:ident { name: $name:literal, kind: $kind:ident, default: $default:expr,
+        min: $min:expr, max: $max:expr, access: $access:ident }),+ $(,)? }
+        ekf { $($ekf_id:ident: $index:literal),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(usize)]
-        pub enum Id { $($id),+ }
+        pub enum Id { $($id),+, $($ekf_id),+ }
 
         pub const REGISTRY: &[Definition] = &[
             $(Definition { id: Id::$id, name: $name, kind: Kind::$kind, default: $default,
-                min: $min, max: $max, access: Access::$access }),+
+                min: $min, max: $max, access: Access::$access }),+,
+            $(ekf_definition(Id::$ekf_id, $index)),+
         ];
     };
 }
 
-parameter_table! {
+include!("estimator/runtime_parameter_table.rs");
+
+with_ekf2_parameters! {
     MavSysId {
         name: "MAV_SYS_ID", kind: Integer, default: 1.0,
         min: 1.0, max: 255.0, access: ReadOnly
@@ -82,6 +87,58 @@ parameter_table! {
         name: "LOG_EN_EVENT", kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
+    EstEnable {
+        name: "EST_EN", kind: Integer, default: 0.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    EstAlgorithm {
+        name: "EST_ALGO", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogEnEst {
+        name: "LOG_EN_EST", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogEstHz {
+        name: "LOG_EST_HZ", kind: Real, default: 5.0,
+        min: 1.0, max: 10.0, access: NextCycle
+    },
+    LogEnBaro {
+        name: "LOG_EN_BARO", kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogBaroHz {
+        name: "LOG_BARO_HZ", kind: Real, default: 10.0,
+        min: 1.0, max: 20.0, access: NextCycle
+    },
+}
+
+const fn ekf_definition(id: Id, index: usize) -> Definition {
+    use crate::estimator::{ParamKind, ParamValue, EKF2_PARAMS};
+    let entry = &EKF2_PARAMS[index];
+    let integer = !matches!(entry.kind, ParamKind::Float);
+    Definition {
+        id,
+        name: entry.name,
+        kind: if integer { Kind::Integer } else { Kind::Real },
+        default: match entry.default {
+            ParamValue::Int(v) => v as f32,
+            ParamValue::Float(v) => v,
+        },
+        min: match entry.min {
+            Some(v) => v,
+            None if matches!(entry.kind, ParamKind::Boolean | ParamKind::Bitmask) => 0.0,
+            None if integer => i32::MIN as f32,
+            None => f32::MIN,
+        },
+        max: match entry.max {
+            Some(v) => v,
+            None if matches!(entry.kind, ParamKind::Boolean) => 1.0,
+            None if integer => i32::MAX as f32,
+            None => f32::MAX,
+        },
+        access: Access::NextCycle,
+    }
 }
 
 pub const COUNT: usize = REGISTRY.len();
@@ -109,6 +166,7 @@ pub enum Error {
     NonFinite,
     OutOfRange,
     NotInteger,
+    Configuration,
 }
 
 impl Error {
@@ -118,6 +176,7 @@ impl Error {
             Self::NonFinite => "PARAM_SET: non-finite value",
             Self::OutOfRange => "PARAM_SET: out of range",
             Self::NotInteger => "PARAM_SET: expected integer",
+            Self::Configuration => "PARAM_SET: unsupported estimator configuration",
         }
     }
 }
@@ -130,7 +189,7 @@ impl Definition {
         if value < self.min || value > self.max {
             return Err(Error::OutOfRange);
         }
-        if self.kind == Kind::Integer && (value as i32) as f32 != value {
+        if self.kind == Kind::Integer && (value as i32) as f64 != value as f64 {
             return Err(Error::NotInteger);
         }
         Ok(())
@@ -165,6 +224,21 @@ impl Snapshot {
             }
         }
         Ok(Self(values))
+    }
+
+    pub fn with(self, id: Id, value: f32) -> Result<Self, Error> {
+        let entry = id.definition();
+        if entry.access == Access::ReadOnly {
+            return Err(Error::ReadOnly);
+        }
+        entry.validate(value)?;
+        let mut values = self.0;
+        values[id as usize] = value;
+        Ok(Self(values))
+    }
+
+    pub fn values(&self) -> &[f32; COUNT] {
+        &self.0
     }
 }
 
@@ -213,13 +287,23 @@ impl Parameters {
 
 /// An automatic schema tag catches registry/order/range changes without a version bump.
 pub fn schema_tag() -> u32 {
+    schema_tag_for(REGISTRY)
+}
+
+/// The prior 11 parameters keep their order/ranges. Old valid FRAM records can
+/// be read without writing or discarding the engineer's logging settings.
+pub fn legacy_schema_tag() -> u32 {
+    schema_tag_for(&REGISTRY[..11])
+}
+
+fn schema_tag_for(registry: &[Definition]) -> u32 {
     let mut hash = 0x811c_9dc5u32;
     let mut feed = |bytes: &[u8]| {
         for &byte in bytes {
             hash = (hash ^ u32::from(byte)).wrapping_mul(0x0100_0193);
         }
     };
-    for entry in REGISTRY {
+    for entry in registry {
         feed(entry.name.as_bytes());
         feed(&[0, entry.kind as u8, entry.access as u8]);
         for value in [entry.default, entry.min, entry.max] {

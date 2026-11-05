@@ -13,20 +13,65 @@ mod gsf_generated;
 mod imu_downsampler;
 pub mod imu_ekf;
 mod mag_generated;
+pub mod mahony;
 mod math;
 pub mod no_gnss;
 mod observation_buffer;
 pub mod output_predictor;
 pub mod params_generated;
+pub mod publication_reset;
 pub mod range_math;
 pub mod range_sensor;
 pub mod reset_status;
+pub mod runtime;
 pub mod standard_output;
 pub mod standard_ulog;
 pub mod wmm;
 mod wmm_generated;
 
 pub use params_generated::EKF2_PARAMS;
+/// Bring-up diagnostics: which check inside `ImuEkf::configure_output` rejected.
+/// 0 none, 1 output params invalid, 2 input already seen, 3 buffer length.
+pub static LAST_OUTPUT_FAULT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+pub fn last_output_fault() -> u32 {
+    LAST_OUTPUT_FAULT.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// Raw bits of the failing range check: (value, min, max).
+pub static FAILED_VALUE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+pub static FAILED_MIN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+pub static FAILED_MAX: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+pub fn failed_range() -> (f32, f32, f32) {
+    use core::sync::atomic::Ordering::Relaxed;
+    (
+        f32::from_bits(FAILED_VALUE.load(Relaxed)),
+        f32::from_bits(FAILED_MIN.load(Relaxed)),
+        f32::from_bits(FAILED_MAX.load(Relaxed)),
+    )
+}
+
+/// Board-side constructor probe for bring-up diagnostics. Runs the aid
+/// constructors that `GnssEkf::reconfigure` uses, without touching any filter
+/// state. Stage codes: 2 baro/mag, 3 range, 4 GNSS; 0 means all passed.
+pub fn constructor_probe(
+    aiding: imu_ekf::baro_mag::BaroMagParams,
+    range: imu_ekf::range::RangeParams,
+    gnss: gnss::GnssParams,
+) -> u32 {
+    let length = match imu_ekf::ImuEkfParams::default().buffer_length() {
+        Ok(length) => length,
+        Err(_) => return 1,
+    };
+    if imu_ekf::constructor_probe(aiding, range, length).is_err() {
+        return 12;
+    }
+    if gnss::constructor_probe(gnss, length).is_err() {
+        return 14;
+    }
+    0
+}
 
 /// Monotonic microseconds since boot, the base of every sensor sample.
 pub type Timestamp = u64;
@@ -76,8 +121,23 @@ pub struct ParamDef {
 }
 
 /// Look up a parameter by its MAVLink `param_id`.
-pub fn ekf2_parameter(name: &str) -> Option<&'static ParamDef> {
-    EKF2_PARAMS.iter().find(|entry| entry.name == name)
+pub const fn ekf2_parameter(name: &str) -> Option<&'static ParamDef> {
+    let wanted = name.as_bytes();
+    let mut index = 0;
+    while index < EKF2_PARAMS.len() {
+        let candidate = EKF2_PARAMS[index].name.as_bytes();
+        if candidate.len() == wanted.len() {
+            let mut byte = 0;
+            while byte < wanted.len() && candidate[byte] == wanted[byte] {
+                byte += 1;
+            }
+            if byte == wanted.len() {
+                return Some(&EKF2_PARAMS[index]);
+            }
+        }
+        index += 1;
+    }
+    None
 }
 
 /// Body-frame IMU integration over one interval, coning/sculling corrected.

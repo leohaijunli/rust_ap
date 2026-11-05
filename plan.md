@@ -6,7 +6,7 @@
 ## 1. 当前进度与执行原则
 
 - P0、P1、P3a、RTC-01/TIME-01 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-a/P4/PL-b 正常路径有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。MAVCAN（CAN2）已收口；参数自动保存与 QGC 分组元数据已实现并板载校验；P4b-g 软件已实现并刷入板载，`NO_GPS` 断链帧已验。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b、P4b-g GPS 实物与 TIME-02 仍待 H-02/03/04、H-10、QGC GUI 与工程师操作，M1 未开始。
-- P1 的独立 QGC 往返和 21:28 UTC 普通回装结果保留。**最近板载为普通合并包 `c6fe90f898b68f8f`（2026-11-04 原 bootloader 上传/校验成功）：版本与 3 个 disarmed 心跳、`fault valid=false`、时钟/备份域/入口回读通过；PX4IO 通信 Timeout、ready=false，实体日志按键禁用，板载 EKF 未启用。[回装记录](docs/acceptance/px4io/20261104-merged-flash.md)。此前 `588ab77941985319` 的 1 Hz `NO_GPS`、`81d6c1221048f08a` 的 RTC/UTC/短时 ULog 结果保留；QGC GUI 项仍待工程师确认。**
+- P1 ??? QGC ??? 21:28 UTC ?????????**???????? `34ef7adba931a677`?2026-11-04???????????? 50328 B?EKF ??? 42056 B?? ?32 KiB ???BMP388 ????858 KiB ?????????????? EKF reconfigure ??????????????? 230/290 ????EKF2 ?????Mahony ??????????? `enable_gnss` ?????[E7 ???](docs/acceptance/ekf2/20261104-e7-bringup.md)??? `c6fe90f898b68f8f` ? PX4IO Timeout/??????????????????????**
 - 标准消息软件 source=`c2f3128aecc8a70b` 已通过必要检查/普通打包，见[记录](docs/acceptance/messages/README.md)；新 ULog schema 的实物核对并入下一次 P4 必验记录（当前 P4b-g 固件已含标准 `sensor_accel` / `sensor_gyro`，但尚未完成 60 s 实物日志）。
 - 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - 本计划的精简验收取代早期操作单中的重复次数、长时压测和截图齐套要求。历史测试结果及缺失记录仍按实保存。
@@ -14,6 +14,7 @@
 - 已安装项目技能：编写时用 `clean-code`，收尾时用 `code-simplifier` 做一次局部审视；[适配说明](docs/ai-coding-skills.md)。
 - 每个问题修复后只运行相关检查；已有检查通过且没有相关代码变化时直接继续交付。文档修改只检查内容、链接及差异。
 - **E 系列拆门（工程师确认）**：E1-H～E5-H 已通过（E5 CI 正确性由工程师确认）；E6-H 独立无 GPS 与标准输出/编码/独立解析本地通过，见[记录](docs/acceptance/ekf2/20261104-e6-host.md)，新增 CI 待执行。随后经工程师授权回装普通合并包，但未接入/启用板载 EKF；实物/E7 仍依赖 M1、P6a、P4b-g、P2、PL-b，不虚构硬件资格。
+- **E7 软件接入（2026-11-04 工程师新授权）**：真实 IMU/独立 baro/GNSS 输入桥、双实例任务、参数、失效/回退与标准输出/日志代码已接入，`EST_EN` 默认关闭。当前板载首次启动的栈余量未通过，**尚未启动或验收 EKF2**；先减少大对象临时栈，再验证启停、周期/栈、真实数据与独立日志解析。缺失 mag/range 不填零，导航保持未资格化；完整 E7 原实物依赖仍在，PX4IO Timeout 不绕过。
 
 ## 2. 固定工程边界
 
@@ -111,6 +112,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | P2 / MAV-01～03 | USB/TELEM1 双链路、消息/命令和重连；软件门通过，实物待验 | P1、P3a |
 | P3 / PARAM-01～02 | QGC 标准参数读设；软件/工具路径就绪，双链路实物待验 | P3a、P2 |
 | P4 / SENS-01～04 | 单 IMU 驱动、校准及采样；软件门通过，实物待验 | P1、P3a、PL-a |
+| P4b-baro / BARO-01～04 | BMP388 Rust 驱动/补偿与发布代码已实现，ID/CRC/真实温压首读通过；标准流/日志/失效恢复及精度待验 | P4、PL-a、P2、H-14，先处理 E7 栈余量 |
 | P4p / PWR-01～02 | SEN0291/INA219 I2C3 支路电流、有效性和标准遥测；本轮新增 | P1、P2、H-11 |
 | PX4IO / IO-H0、IO-R0～R5 | H7 通信软件完成、实物待验；IO MCU 纯 Rust 重写本次仅计划，不自动开始 | P1、H-12/13；非零输出仍需 P5a、H-06/07 |
 | P6a / EST-01～02 | Mahony AHRS、姿态遥测与日志 | P4、P2、PL-a |
@@ -187,6 +189,15 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 8. **标准 MAVLink 输出（工程师新增）**：主 EKF2 必须发送三组结果——姿态（`ATTITUDE_QUATERNION`，四元数 FRD→NED 与角速度）、局部位置（`LOCAL_POSITION_NED`，NED 位置/速度）、全球位置（`GLOBAL_POSITION_INT`，仅当真实全球原点与对应解算有效时发布）；估计健康按 `ESTIMATOR_STATUS` 标准字段映射。USB/TELEM1 复用现有共享消息构建核心与最新输出快照，不直接访问估计器内部或另建状态真源。单位、NED/FRD、时间戳、未知值及有效性按固定消息定义逐字段核对，不能仅改消息名称或将无效量填零当作有效输出。
 9. **标准 PX4 ULog（工程师新增）**：同样三项必须写入日志——姿态 `vehicle_attitude`、局部位置 `vehicle_local_position`、全球位置 `vehicle_global_position`（仅有效时），另加 `estimator_status` / `estimator_states` / `estimator_aid_src_*` 诊断，全部按固定 PX4 v1.17.0 `.msg` 精确生成/编码。完整匹配字段、数组索引、采样/发布时间、单位、状态/有效位、协方差和复位计数；复用现有 ULog/logger、限速/开关与唯一参数注册表，慢 SD 不反压估计任务。标准消息不能承载的独立扩展诊断才使用明确的 `rust_*` 元数据。
 10. **交付门**：E6-H 的独立无 GPS 实例、消息适配/编码及 pyulog/pymavlink 解析本地通过；两种合成模式各 65 s / 26000 输入，完整核对 9 份固定消息定义的 165 个字段。独立实例只走 `ODOMETRY` / `ESTIMATOR_STATUS`，水平无有效外部约束时方差为 `+INFINITY`，不把伪位置条件化 P 当有限导航精度；标准局部日志仍保留 PX4 P 与无效位。实际 EKF2 的 USB/TELEM1、SD 与联合负载仍在 E7 接入真实传感器后验收；现有 11-topic / 168 KiB 日志队列未扩大或启用 estimator 注册表。[证据与限制](docs/acceptance/ekf2/20261104-e6-host.md)。
+
+### 板载气压计与数据发布（2026-11-04 工程师新增）
+
+- **BARO-01 硬件契约**：按固定 PX4 v1.17.0 板级定义与本板实物核对芯片型号、SPI/I²C 总线、CS/地址、供电/复位和数据就绪方式。BMP388 等只是候选；未核对前不猜测寄存器。首轮只启用一颗已确认气压计，不扩展冗余选择器。
+- **BARO-02 Rust 驱动**：沿用 Embassy，提供身份/复位/配置回读、校准系数读取、压力/温度补偿和带时间/序号/设备 ID 的 SI 快照；事务、重试/恢复有界。错误、非有限值、超时或陈旧撤销有效性，不输出伪零、不反压 IMU/EKF。
+- **BARO-03 标准发布**：核对完整固定 `SensorBaro.msg` 后写 `sensor_baro` ULog；MAVLink 共用 USB/TELEM1 的 `HIGHRES_IMU` 压力字段和更新位，按标准转换单位，不假定 IMU/温压是同次采样。未知值保留未知/停发；复用唯一参数和日志开关/限速，topic ID 不与 estimator 冲突，先定 SD/队列预算。
+- **BARO-04 EKF 与必要验收**：压力→高度基准/观测转换单列，使用独立 baro 时间，不能为了 combined baro/mag fixture 伪造磁场，也不以 GNSS 高度冒充气压。host 验补偿/大小端/SI、失败/陈旧/恢复与字段编码；普通 fmt/Clippy/release/布局后，工程师配合一次身份/温压读取、MAVLink 字段/速率、短时 pyulog 和一次失效/恢复。精度与板载融合资格须真实依据，不因读数关闭 E7/M1 门。
+
+当前 `src/core/bmp388.rs` / `src/drivers/barometer.rs` 已实现并回装：I2C4 PF14/PF15、0x77、PG8，forced 压力×16/温度×2，43.3 ms 后收数；256 个固定 C++ 对拍通过，实物首读通过。独立气压输入不伪造磁场；MAVLink/ULog 实物解析与一次失效恢复尚未完成，见[BARO 记录](docs/acceptance/barometer/20261104-bringup.md)。
 
 ### INA219 支路电流（工程师新增）
 

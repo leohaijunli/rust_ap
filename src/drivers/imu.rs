@@ -60,7 +60,10 @@ struct RuntimeState {
     transfer_errors: AtomicU32,
     decode_errors: AtomicU32,
     fifo_resets: AtomicU32,
+    fifo_rejected: AtomicU32,
+    max_fifo_samples: AtomicU32,
     ahrs_dropped: AtomicU32,
+    ahrs_cleared: AtomicU32,
     drdy_timeouts: AtomicU32,
 }
 
@@ -74,7 +77,10 @@ impl RuntimeState {
             transfer_errors: AtomicU32::new(0),
             decode_errors: AtomicU32::new(0),
             fifo_resets: AtomicU32::new(0),
+            fifo_rejected: AtomicU32::new(0),
+            max_fifo_samples: AtomicU32::new(0),
             ahrs_dropped: AtomicU32::new(0),
+            ahrs_cleared: AtomicU32::new(0),
             drdy_timeouts: AtomicU32::new(0),
         }
     }
@@ -84,9 +90,20 @@ pub fn latest() -> Option<Sample> {
     LATEST.try_get()
 }
 
-#[allow(dead_code)] // Consumed when P6a starts the estimator task.
+pub fn set_ahrs_active(enabled: bool) {
+    // The IMU now preempts the estimator: clear and switch atomically, so no
+    // sample can arrive between the count and clear. This is intentional reset
+    // cleanup, not an overflow or lost sample during continuous operation.
+    critical_section::with(|_| {
+        AHRS_ACTIVE.store(false, Ordering::Release);
+        let cleared = AHRS.len() as u32;
+        AHRS.clear();
+        STATE.ahrs_cleared.fetch_add(cleared, Ordering::Relaxed);
+        AHRS_ACTIVE.store(enabled, Ordering::Release);
+    });
+}
+
 pub async fn next_for_ahrs() -> Sample {
-    AHRS_ACTIVE.store(true, Ordering::Release);
     AHRS.receive().await
 }
 
@@ -94,7 +111,7 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     let latest = latest();
     writeln!(
         output,
-        "IMU schema=1 initialized={} whoami={:02x} odr_hz={} log_rate_hz={} spi_hz={} samples={} transfer_errors={} decode_errors={} fifo_resets={} drdy_timeouts={} ahrs_dropped={} latest_seq={} latest_age_us={}",
+        "IMU schema=2 initialized={} whoami={:02x} odr_hz={} log_rate_hz={} spi_hz={} samples={} transfer_errors={} decode_errors={} fifo_resets={} drdy_timeouts={} ahrs_dropped={} ahrs_cleared={} fifo_rejected={} max_fifo_samples={} latest_seq={} latest_age_us={}",
         STATE.initialized.load(Ordering::Acquire),
         STATE.who_am_i.load(Ordering::Relaxed),
         Config::DEFAULT.odr_hz,
@@ -106,8 +123,17 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
         STATE.fifo_resets.load(Ordering::Relaxed),
         STATE.drdy_timeouts.load(Ordering::Relaxed),
         STATE.ahrs_dropped.load(Ordering::Relaxed),
+        STATE.ahrs_cleared.load(Ordering::Relaxed),
+        STATE.fifo_rejected.load(Ordering::Relaxed),
+        STATE.max_fifo_samples.load(Ordering::Relaxed),
         latest.map_or(0, |sample| sample.sequence),
         latest.map_or(u32::MAX, |sample| sample.age_us(Instant::now().as_micros())),
+    )?;
+    writeln!(
+        output,
+        "IMU_CLOCK delta_ticks={} resolution_us=16 integration_us={}",
+        latest.map_or(0, |sample| sample.sensor_timestamp),
+        latest.map_or(0, |sample| u32::from(sample.sensor_timestamp) * 16)
     )
 }
 
@@ -388,10 +414,14 @@ impl<'d> Icm42688<'d> {
         let mut header = [register::INT_STATUS | icm42688::READ, 0, 0, 0];
         self.transaction(&mut header).await?;
         let count = usize::from(u16::from_be_bytes([header[2], header[3]]));
+        STATE
+            .max_fifo_samples
+            .fetch_max((count / FIFO_PACKET_BYTES) as u32, Ordering::Relaxed);
         if header[1] & bits::FIFO_FULL != 0
             || count >= FIFO_BYTES
             || count / FIFO_PACKET_BYTES > config.fifo_batch_samples() + 1
         {
+            STATE.fifo_rejected.fetch_add(1, Ordering::Relaxed);
             self.flush_fifo().await?;
             return Err(Error::Fifo);
         }

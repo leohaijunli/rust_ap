@@ -127,6 +127,7 @@ H753实际选用的PAC文件为 `src/peripherals/rcc_h7rm0433.rs`（`src/chips/s
 | 内部磁力计启动 | 非 V6X001 分支启动内部 I2C BMM150；实际地址、总线与型号待测 | `boards/px4/fmu-v6x/init/rc.board_sensors:118-125` |
 | 气压计启动 | 适用分支尝试内部 I2C BMP388 @0x77（受参数控制），并尝试外部 BMP388；不能据此确定物理数量 | `boards/px4/fmu-v6x/init/rc.board_sensors:130-147` |
 | 气压计中断线索 | GPIO_I2C2_DRDY1_BMP388=PG5，是否对应实物/启用中断待验 | `boards/px4/fmu-v6x/src/board_config.h:140` |
+| 本轮确认的内部气压计 | **BMP388 / I2C4 PF14/PF15 / 0x77 / PG8**；`d685eac41c2ba0f0` 实读 ID=0x50、rev=0x03、trim CRC=0x14、真实温压且错误 0。首轮 forced 轮询，不启用 PG5 中断，不与 I2C2 外部 DRDY 线索混用 | 固定 `i2c.cpp` / `rc.board_sensors`；[BARO 首读](acceptance/barometer/20261104-bringup.md) |
 | ICM-42688-P 安装方向 | 启动参数 `-R 6`，枚举为 ROTATION_YAW_270；从传感器轴到项目机体系的组合变换仍须六面/转动实测 | `boards/px4/fmu-v6x/init/rc.board_sensors:84-115`；`src/lib/conversion/rotation.h:52-63` |
 
 ### 总线引脚
@@ -222,6 +223,8 @@ HAL 另有直接证据：`embassy-stm32 0.5.0/src/can/fd/message_ram/mod.rs:9-20
 P1验收包source=`a946a529360eac83`；构建/资源/hash见[P1索引](acceptance/p1/README.md)，实际测量与恢复见[HIL](acceptance/p1/20261031-hil.md)。最近实测板载为普通 Rust source=`588ab77941985319`（P4b-g，`NO_GPS` 断链帧已验）；此前 `81d6c1221048f08a` 的 RTC、正常 SD/短时 IMU 日志有限 HIL 继续有效。新标准消息软件见[记录](acceptance/messages/README.md)，未完成实物项仍按阶段验收。P4p INA219 实测板载为 `b2e70b0ecc7ab844`：单条 `DEBUG_VECT` V/A/W 在 Windows Inspector 同显、ULog `rust_current_sensor` 干净短日志 10 Hz 通过，见 [P4p](acceptance/ina219/README.md)。
 
 ## 验收与后续待核实
+
+最新回装为 `d685eac41c2ba0f0`（2026-11-04）：启动与气压首读通过，共享栈历史余量 5040 B 未通过，EKF2 保持关闭。上面的其他 source 均为保留的历史实测；[当前 E7 状态](acceptance/ekf2/20261104-e7-bringup.md)。
 
 | 项 | 状态 / 归属 |
 | --- | --- |

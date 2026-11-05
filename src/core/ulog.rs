@@ -2,12 +2,14 @@
 
 use core::mem::size_of;
 
+use crate::estimator::standard_output::EulerAttitude;
 use crate::ina219::Measurement;
-use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorGps, SensorGyro};
+use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro};
 
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 800;
-pub const TOPIC_COUNT: usize = 11;
+pub const TOPIC_COUNT: usize = 14;
+pub const INDEPENDENT_EULER_ID: u16 = 38;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -26,6 +28,10 @@ pub enum TopicId {
     ParameterChange = 8,
     CurrentSensor = 9,
     SensorGps = 10,
+    // 11..34 are reserved for the independent estimator topic registry.
+    SensorBaro = 35,
+    EstimatorRuntime = 36,
+    AttitudeEuler = 37,
 }
 
 pub struct Topic {
@@ -102,11 +108,38 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
         format: "sensor_gps:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;double latitude_deg;double longitude_deg;double altitude_msl_m;double altitude_ellipsoid_m;float s_variance_m_s;float c_variance_rad;uint8_t fix_type;float eph;float epv;float hdop;float vdop;int32_t noise_per_ms;uint16_t automatic_gain_control;uint8_t jamming_state;int32_t jamming_indicator;uint8_t spoofing_state;uint8_t authentication_state;float vel_m_s;float vel_n_m_s;float vel_e_m_s;float vel_d_m_s;float cog_rad;uint8_t vel_ned_valid;int32_t timestamp_time_relative;uint64_t time_utc_usec;uint8_t satellites_used;uint32_t system_error;float heading;float heading_offset;float heading_accuracy;float rtcm_injection_rate;uint8_t selected_rtcm_instance;uint8_t rtcm_crc_failed;uint8_t rtcm_msg_used;",
         payload_len: 147,
     },
+    Topic {
+        id: TopicId::SensorBaro,
+        name: "sensor_baro",
+        format: "sensor_baro:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float pressure;float temperature;uint32_t error_count;",
+        payload_len: 32,
+    },
+    Topic {
+        id: TopicId::EstimatorRuntime,
+        name: "rust_estimator_runtime",
+        format: "rust_estimator_runtime:uint64_t timestamp;uint64_t timestamp_sample;uint32_t epoch;uint32_t samples;uint32_t ekf_updates;uint32_t gnss_samples;uint32_t deadline_misses;uint32_t max_update_us;uint8_t selected;uint8_t fault;uint8_t independent_fault;bool nav_qualified;",
+        payload_len: 44,
+    },
+    Topic {
+        id: TopicId::AttitudeEuler,
+        name: "rust_attitude_euler",
+        format: "rust_attitude_euler:uint64_t timestamp;uint64_t timestamp_sample;float roll;float pitch;float yaw;uint8_t quat_reset_counter;bool relative_yaw;",
+        payload_len: 30,
+    },
 ];
 
 impl TopicId {
+    pub const fn index(self) -> usize {
+        match self {
+            Self::SensorBaro => 11,
+            Self::EstimatorRuntime => 12,
+            Self::AttitudeEuler => 13,
+            _ => self as usize,
+        }
+    }
+
     pub const fn definition(self) -> &'static Topic {
-        &TOPICS[self as usize]
+        &TOPICS[self.index()]
     }
 }
 
@@ -239,6 +272,22 @@ pub fn data_record(message_id: u16, timestamp_us: u64, fields: &[u8]) -> Result<
     Ok(builder.finish())
 }
 
+pub fn attitude_euler_record(instance: u8, value: EulerAttitude) -> Result<Record, Error> {
+    let id = match instance {
+        0 => TopicId::AttitudeEuler as u16,
+        1 => INDEPENDENT_EULER_ID,
+        _ => return Err(Error::InvalidInstance),
+    };
+    let mut fields = Payload::new();
+    fields.push_u64(value.timestamp_sample)?;
+    for angle in [value.roll, value.pitch, value.yaw] {
+        fields.push_f32(angle)?;
+    }
+    fields.push_u8(value.quat_reset_counter)?;
+    fields.push_u8(u8::from(value.relative_yaw))?;
+    data_record(id, value.timestamp, fields.as_bytes())
+}
+
 pub fn dropout(duration_ms: u16) -> Record {
     let mut builder = Builder::new(b'O');
     builder
@@ -285,7 +334,7 @@ impl DataEncoder {
         timestamp_us: u64,
         fields: &[u8],
     ) -> Result<Record, Error> {
-        let index = topic as usize;
+        let index = topic.index();
         let expected = topic.definition().payload_len - size_of::<u64>();
         if fields.len() != expected {
             return Err(Error::InvalidLength);
@@ -431,6 +480,16 @@ pub fn actuator_armed_payload(report: ActuatorArmed) -> Payload {
     ] {
         payload.push_u8(u8::from(value)).unwrap();
     }
+    payload
+}
+
+pub fn sensor_baro_payload(report: SensorBaro) -> Payload {
+    let mut payload = Payload::new();
+    payload.push_u64(report.timestamp_sample).unwrap();
+    payload.push_u32(report.device_id).unwrap();
+    payload.push_f32(report.pressure).unwrap();
+    payload.push_f32(report.temperature).unwrap();
+    payload.push_u32(report.error_count).unwrap();
     payload
 }
 
@@ -638,7 +697,7 @@ mod tests {
     #[test]
     fn registry_is_unique_bounded_and_self_consistent() {
         for (index, topic) in TOPICS.iter().enumerate() {
-            assert_eq!(topic.id as usize, index);
+            assert_eq!(topic.id.index(), index);
             assert!(!topic.name.is_empty());
             assert!(topic.format.starts_with(topic.name));
             assert!(topic.format.contains(":uint64_t timestamp;"));

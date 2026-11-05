@@ -122,6 +122,12 @@ pub async fn handle(
                     // cycle, so persist it right away when storage allows. Only
                     // disarmed vehicles with outputs closed may write FRAM.
                     Ok(true) => {
+                        if id.definition().name.starts_with("EKF2_") && !crate::estimator::maps(id)
+                        {
+                            reply.push(parameter_warning(
+                                "EKF2 parameter stored but unused by current core",
+                            ));
+                        }
                         if parameters.save(crate::OUTPUT_STATE).await.is_err() {
                             reply.push(parameter_warning(
                                 "PARAM_SET: RAM only; save blocked while outputs active",
@@ -209,6 +215,24 @@ pub async fn handle(
                     1 => Some(system_status()),
                     2 => Some(system_time()),
                     105 => highres_imu(),
+                    29 => scaled_pressure(),
+                    30 => crate::estimator::latest().and_then(|out| {
+                        out.euler[0]
+                            .zip(out.snapshots[0].angular_velocity)
+                            .map(|(angles, gyro)| {
+                                v6x_rust_led::mavlink_estimator::attitude_euler(angles, gyro)
+                            })
+                    }),
+                    31 => crate::estimator::latest()
+                        .and_then(|out| {
+                            out.snapshots[0]
+                                .attitude
+                                .zip(out.snapshots[0].angular_velocity)
+                        })
+                        .map(|(att, gyro)| v6x_rust_led::mavlink_estimator::attitude(att, gyro)),
+                    230 => crate::estimator::latest().map(|out| {
+                        v6x_rust_led::mavlink_estimator::estimator_status(out.snapshots[0].status)
+                    }),
                     148 => Some(autopilot_version()),
                     253 => Some(status_text()),
                     // QGC asks for this before it can show parameter groups.
@@ -303,13 +327,18 @@ pub fn highres_imu() -> Option<MavMessage> {
     }
     let accel_frd = sample.accel_frd();
     let gyro_frd = sample.gyro_frd();
-    let fields_updated = HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_XACC
+    let mut fields_updated = HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_XACC
         | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_YACC
         | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_ZACC
         | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_XGYRO
         | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_YGYRO
         | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_ZGYRO
         | HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_TEMPERATURE;
+    let baro = crate::barometer::latest();
+    if baro.is_some() {
+        fields_updated |= HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_ABS_PRESSURE;
+        fields_updated |= HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_PRESSURE_ALT;
+    }
     Some(MavMessage::HIGHRES_IMU(HIGHRES_IMU_DATA {
         time_usec: sample.sample_timestamp_us,
         xacc: accel_frd[0],
@@ -319,10 +348,63 @@ pub fn highres_imu() -> Option<MavMessage> {
         ygyro: gyro_frd[1],
         zgyro: gyro_frd[2],
         temperature: sample.temperature_c,
+        abs_pressure: baro.map_or(f32::NAN, |value| value.pressure_pa / 100.0),
+        diff_pressure: f32::NAN,
+        pressure_alt: baro.map_or(f32::NAN, |value| value.pressure_altitude_m()),
         fields_updated,
         id: v6x_rust_led::icm42688::SOURCE_ID,
         ..Default::default()
     }))
+}
+
+/// Keep barometer temperature separate from the IMU temperature. This standard
+/// stream carries absolute hPa and centi-degrees C; no differential sensor.
+pub fn scaled_pressure() -> Option<MavMessage> {
+    let sample = crate::barometer::latest()?;
+    Some(MavMessage::SCALED_PRESSURE(SCALED_PRESSURE_DATA {
+        time_boot_ms: (sample.timestamp_sample / 1_000) as u32,
+        press_abs: sample.pressure_pa / 100.0,
+        press_diff: f32::NAN,
+        temperature: (sample.temperature_c * 100.0) as i16,
+        temperature_press_diff: 0,
+    }))
+}
+
+pub fn estimator_messages() -> [Option<(u8, MavMessage)>; 7] {
+    let mut result = [const { None }; 7];
+    let Some(output) = crate::estimator::latest() else {
+        return result;
+    };
+    for (index, message) in v6x_rust_led::mavlink_estimator::messages(&output.snapshots[0], None)
+        .into_iter()
+        .enumerate()
+    {
+        result[index] = message.map(|message| (COMPONENT_ID, message));
+    }
+    for (index, message) in v6x_rust_led::mavlink_estimator::messages(&output.snapshots[1], None)
+        .into_iter()
+        .take(2)
+        .enumerate()
+    {
+        result[4 + index] = message.map(|mut message| {
+            if output.snapshots[1].status.control_mode_flags & (1 << 1) == 0 {
+                if let MavMessage::ODOMETRY(data) = &mut message {
+                    data.frame_id = MavFrame::MAV_FRAME_LOCAL_FRD;
+                    data.child_frame_id = MavFrame::MAV_FRAME_LOCAL_FRD;
+                }
+            }
+            (197, message)
+        });
+    }
+    result[6] = output.euler[0]
+        .zip(output.snapshots[0].angular_velocity)
+        .map(|(angles, gyro)| {
+            (
+                COMPONENT_ID,
+                v6x_rust_led::mavlink_estimator::attitude_euler(angles, gyro),
+            )
+        });
+    result
 }
 
 pub fn autopilot_version() -> MavMessage {
@@ -626,9 +708,18 @@ pub fn encode(
     message: &MavMessage,
     out: &mut [u8; mavlink::MAX_FRAME_SIZE],
 ) -> usize {
+    encode_from(sequence, COMPONENT_ID, message, out)
+}
+
+pub fn encode_from(
+    sequence: &mut u8,
+    component_id: u8,
+    message: &MavMessage,
+    out: &mut [u8; mavlink::MAX_FRAME_SIZE],
+) -> usize {
     let header = MavHeader {
         system_id: SYSTEM_ID,
-        component_id: COMPONENT_ID,
+        component_id,
         sequence: *sequence,
     };
     *sequence = sequence.wrapping_add(1);

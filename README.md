@@ -19,8 +19,11 @@ with source **`a946a529360eac83`**, disarmed, fault injection disabled, and no v
 retained fault. See the [P1 evidence](docs/acceptance/p1/README.md) and
 [essential-check plan](plan.md). **P3a is complete:** FRAM backup, parameter API,
 atomic save and power-cycle readback passed; `LINK_LED_HZ=2.0` remains saved.
-The latest flashed board source is **`588ab77941985319`** (P4b-g): the 1 Hz
-`NO_GPS` frame matches PX4 semantics. The earlier
+The latest flashed board source is **`d685eac41c2ba0f0`** (E7/BMP388 first bring-up):
+normal upload/startup and real BMP388 readings passed, but stack headroom is only
+5040 B, so EKF2 remains disabled while initialization is being corrected.
+See [current E7 evidence](docs/acceptance/ekf2/20261104-e7-bringup.md).
+The earlier `588ab77941985319` (P4b-g) 1 Hz `NO_GPS` result remains historical. The earlier
 `81d6c1221048f08a` build passed RTC/LSE timekeeping, UTC telemetry/log timestamps
 and short IMU ULog capture. The heartbeat is `autopilot=PX4` for QGC `.ulg`
 naming; GUI confirmation is pending. See [P4b-g](docs/acceptance/p4b-g/README.md),
@@ -101,10 +104,38 @@ clock consumes the driven turnaround bit, followed by exactly 16 data bits.
 
 ## Build
 
+### VS Code on Windows
+
+Open this repository folder and use Rust Analyzer for navigation. The project
+target is `thumbv7em-none-eabihf`; the old CMake reference directory is not a build target.
+
+- **Ctrl+Shift+B**: run `Build firmware (.px4)`, producing the validated ELF/bin/PX4
+  and build report in `target/thumbv7em-none-eabihf/release/`.
+- **Ctrl+Shift+P → Tasks: Run Task → Upload firmware (USB)**: rebuild, verify source/package,
+  check the unique disarmed 6X, enter the original bootloader, upload/verify and restart.
+  The COM number is discovered again after reboot, not hard-coded.
+- Stop QGC/other serial readers before uploading. Neither task changes the bootloader
+  or the IO MCU; upload only writes the H7 application partition.
+
+To add a dedicated upload key, use VS Code **Preferences: Open Keyboard Shortcuts (JSON)**:
+
+```json
+{ "key": "ctrl+alt+u", "command": "workbench.action.tasks.runTask", "args": "Upload firmware (USB)" }
+```
+
+Terminal equivalents: `powershell -File tools/build_firmware.ps1`,
+`powershell -File tools/upload_firmware.ps1`; add `-DryRun` to validate without a reset/upload.
+Run `Tasks: Run Task → Setup Windows tools` once to create `.venv`, install the pinned
+Python tools and download/hash-check the original PX4 uploader. Python 3.10 uses
+the pinned tomli compatibility import; setup does not operate the board.
+
 ### RustRover and terminal workflow
 
 Open this directory in RustRover. The shared run configurations in `.run/`
-appear in the toolbar's run selector; select one and press **Shift+F10**:
+appear in the toolbar's run selector; select one and press **Shift+F10**.
+On Windows, **Build firmware** and **Upload firmware (USB)** use native PowerShell.
+Their interpreter options retain `-NoProfile -ExecutionPolicy Bypass -File`, with
+no extra `build`/`upload` script argument. Ubuntu keeps the explicit **(Ubuntu)** entries:
 
 | Configuration | Action |
 | --- | --- |
