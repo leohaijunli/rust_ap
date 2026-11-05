@@ -24,20 +24,24 @@ def main():
     params = {}
     indices = set()
     count = None
+    retry_count = 0
     try:
         link.mav.param_request_list_send(1, 1)
         deadline = time.monotonic() + args.timeout
         while time.monotonic() < deadline and (count is None or len(params) < count):
             message = link.recv_match(type="PARAM_VALUE", blocking=True, timeout=0.5)
             if message is None:
-                # The reply buffer holds only part of the registry, so ask for
-                # the missing indices exactly like a ground station does.
-                if count is not None:
-                    for index in range(count):
-                        if len(params) >= count:
-                            break
-                        if index not in indices:
-                            link.mav.param_request_read_send(1, 1, b"", index)
+                # P0 makes PARAM_REQUEST_LIST stream the whole registry, so a
+                # ground station should never need per-index re-requests. If the
+                # stream stalls we re-send the list rather than chip away at it.
+                retry_count += 1
+                if retry_count > 4:
+                    missing = sorted(set(range(count)) - indices) if count else []
+                    raise ValueError(
+                        f"stream stalled; received {len(params)} of {count} "
+                        f"missing_indices={missing}"
+                    )
+                link.mav.param_request_list_send(1, 1)
                 continue
             count = message.param_count
             indices.add(message.param_index)
@@ -48,7 +52,8 @@ def main():
         link.close()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(params, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"parameters={len(params)} ekf2={sum(name.startswith('EKF2_') for name in params)}")
+    print(f"parameters={len(params)} ekf2={sum(name.startswith('EKF2_') for name in params)}"
+          f" single_list_stall_retries={retry_count}")
     print(f"Evidence: {args.output}")
     return 0
 

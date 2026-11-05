@@ -16,6 +16,10 @@ use crate::usb_console::{self, CommandLine};
 
 type Replies = Channel<NoopRawMutex, MavMessage, 4>;
 
+/// Per-link parameter-list download cursor; see `mavlink_core::begin_param_stream`.
+static PARAM_CURSOR: mavlink_core::ParamCursor =
+    mavlink_core::ParamCursor::new(v6x_rust_led::parameters::COUNT as u16);
+
 #[embassy_executor::task]
 pub async fn run(
     uart: Uart<'static, Async>,
@@ -134,7 +138,7 @@ async fn transmit(
         // Drain a pending full-parameter download, one value per loop, so a
         // large registry never bursts or stalls the heartbeat/stream pacing.
         if result {
-            if let Some(message) = mavlink_core::next_param_value(parameters) {
+            if let Some(message) = mavlink_core::next_param_value(parameters, &PARAM_CURSOR) {
                 let _ = send(tx, &mut sequence, &message, &mut frame).await;
             }
         }
@@ -215,6 +219,9 @@ async fn receive(
                                 }
                                 if reply.reboot {
                                     crate::fault::reboot_to_bootloader();
+                                }
+                                if reply.param_stream {
+                                    mavlink_core::begin_param_stream(&PARAM_CURSOR);
                                 }
                             }
                         }

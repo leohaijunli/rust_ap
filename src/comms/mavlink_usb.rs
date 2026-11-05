@@ -35,6 +35,10 @@ enum Outbound {
 
 type Replies = Channel<NoopRawMutex, Outbound, 4>;
 
+/// Per-link parameter-list download cursor; see `mavlink_core::begin_param_stream`.
+static PARAM_CURSOR: mavlink_core::ParamCursor =
+    mavlink_core::ParamCursor::new(v6x_rust_led::parameters::COUNT as u16);
+
 pub type UsbSession = Watch<NoopRawMutex, u32, 2>;
 
 /// Start a fresh transport session whenever the host resets or reconfigures USB.
@@ -294,7 +298,7 @@ async fn transmit<'d, D: Driver<'d>>(
             }
             // Drain a pending full-parameter download, one value per loop, so a
             // large registry never blocks the heartbeat/stream pacing.
-            if let Some(message) = mavlink_core::next_param_value(parameters) {
+            if let Some(message) = mavlink_core::next_param_value(parameters, &PARAM_CURSOR) {
                 if send_message(sender, &mut sequence, &message).await.is_err() {
                     crate::mavcan::stop();
                     break;
@@ -490,6 +494,9 @@ async fn handle_message(
                 replies
                     .send(Outbound::Bootloader { console_ack: false })
                     .await;
+            }
+            if reply.param_stream {
+                mavlink_core::begin_param_stream(&PARAM_CURSOR);
             }
         }
     }

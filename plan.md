@@ -285,7 +285,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 ### 后续状态
 
-- P0 已部分落地（INT32 回包/收包），待 PARAM_REQUEST_LIST 流式与板载验证后更新此处。
+- **P0 已完成并板载验证**：一次 `PARAM_REQUEST_LIST` 收齐 159 参数、0 补拉（`single_list_stall_retries=0`）。初版共享游标被 USB/UART7 争抢致丢参，已改为每链路独立游标。source=`b623b18f05e5f694`。下一步 P1。
 
 ## 8. 待补硬件输入
 

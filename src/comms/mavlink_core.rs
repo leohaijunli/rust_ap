@@ -24,22 +24,27 @@ static FTP: Mutex<CriticalSectionRawMutex, RefCell<mavftp::Server>> =
 
 /// Next parameter index pending a full-list transmission; `COUNT` means idle.
 /// A full registry cannot fit in one `Reply`, so a `PARAM_REQUEST_LIST` arms
-/// this cursor and each link's transmit loop drains one `PARAM_VALUE` per tick.
-static PARAM_STREAM: AtomicU16 = AtomicU16::new(COUNT as u16);
+/// the calling link's cursor and that link's transmit loop drains one
+/// `PARAM_VALUE` per tick. The cursor is per-link so USB and UART7 never
+/// race each other for the same parameter slot.
+pub type ParamCursor = AtomicU16;
 
-/// Arm the shared parameter-stream cursor; the next transmit tick starts it.
-pub fn start_param_stream() {
-    PARAM_STREAM.store(0, Ordering::Relaxed);
+/// A cursor is armed by a `PARAM_REQUEST_LIST` and drains the registry once.
+pub fn begin_param_stream(cursor: &ParamCursor) {
+    cursor.store(0, Ordering::Relaxed);
 }
 
 /// The next `PARAM_VALUE` of a pending full-list download, or `None` when done.
-pub fn next_param_value(parameters: &ParameterManager<'_>) -> Option<MavMessage> {
+pub fn next_param_value(
+    parameters: &ParameterManager<'_>,
+    cursor: &ParamCursor,
+) -> Option<MavMessage> {
     loop {
-        let next = PARAM_STREAM.load(Ordering::Relaxed) as usize;
+        let next = cursor.load(Ordering::Relaxed) as usize;
         if next >= COUNT {
             return None;
         }
-        match PARAM_STREAM.compare_exchange(
+        match cursor.compare_exchange(
             next as u16,
             (next + 1) as u16,
             Ordering::Relaxed,
@@ -57,11 +62,13 @@ pub struct Decoded {
     pub message: MavMessage,
 }
 
-/// Replies produced for one inbound request, plus whether a reboot is pending.
+/// Replies produced for one inbound request, plus whether a reboot is pending
+/// or a full parameter download was requested.
 pub struct Reply {
     messages: [Option<MavMessage>; Self::CAPACITY],
     count: usize,
     pub reboot: bool,
+    pub param_stream: bool,
 }
 
 impl Reply {
@@ -72,6 +79,7 @@ impl Reply {
         messages: [const { None }; Self::CAPACITY],
         count: 0,
         reboot: false,
+        param_stream: false,
     };
 
     pub fn push(&mut self, message: MavMessage) {
@@ -82,6 +90,7 @@ impl Reply {
     }
 
     /// Drain the produced replies, advancing `count`.
+    #[allow(dead_code)]
     pub fn drain(&mut self) -> impl Iterator<Item = MavMessage> + '_ {
         self.messages[..self.count]
             .iter_mut()
@@ -121,9 +130,9 @@ pub async fn handle(
             }
         }
         MavMessage::PARAM_REQUEST_LIST(_) => {
-            // The registry is too large for one Reply, so arm the shared cursor
-            // and let the link transmit loops drain one PARAM_VALUE per tick.
-            start_param_stream();
+            // The registry is too large for one Reply, so mark the request; the
+            // calling link arms its own cursor and drains one value per tick.
+            reply.param_stream = true;
         }
         MavMessage::PARAM_REQUEST_READ(data) => {
             let id = if data.param_index >= 0 {
