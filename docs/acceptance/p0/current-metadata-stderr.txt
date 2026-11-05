@@ -1,5 +1,0 @@
-$ cargo metadata --format-version 1 --locked --filter-platform thumbv7em-none-eabihf
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-
-exit=0

@@ -1,9 +1,0 @@
-$ bash tools/firmware.sh build
-cwd=/home/dev/rust_ap
-
-    Finished `release` profile [optimized + debuginfo] target(s) in 0.08s
-Packaged 115884 raw bytes as 115904 flash bytes
-Board ID: 53; application address: 0x08020000
-USB upload image: /home/dev/rust_ap/target/thumbv7em-none-eabihf/release/v6x-rust-led.px4
-
-exit=0; elapsed_seconds=0.405

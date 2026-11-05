@@ -1,6 +1,0 @@
-{
-  "file": "target\\e7-baro-acceptance\\80b147683ca7c0dd-log-euler\\onboard.ulg",
-  "bytes": 859648,
-  "sha256": "95c26de1a2beb7e65115f70fd47453a8a4ceabb98f43daa056bdebf70279bf6a",
-  "scope": "board log with Mahony-fallback attitude; EKF never active in this capture; download via LOG_REQUEST_DATA with full offset coverage"
-}
