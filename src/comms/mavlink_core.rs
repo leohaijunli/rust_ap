@@ -1,6 +1,7 @@
 //! Transport-agnostic MAVLink message logic shared by the USB CDC and TELEM1 links.
 
 use core::cell::RefCell;
+use core::sync::atomic::{AtomicU16, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex;
@@ -8,7 +9,7 @@ use mavlink::common::*;
 use mavlink::{MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion, Message};
 
 use v6x_rust_led::mavftp;
-use v6x_rust_led::parameters::{Id, COUNT, REGISTRY};
+use v6x_rust_led::parameters::{Id, Kind, COUNT};
 use v6x_rust_led::px4_messages::SensorGps;
 
 use crate::parameter_manager::ParameterManager;
@@ -20,6 +21,35 @@ pub const COMPONENT_ID: u8 = 1;
 /// Ground stations only hold one FTP session; both links share it.
 static FTP: Mutex<CriticalSectionRawMutex, RefCell<mavftp::Server>> =
     Mutex::new(RefCell::new(mavftp::Server::new()));
+
+/// Next parameter index pending a full-list transmission; `COUNT` means idle.
+/// A full registry cannot fit in one `Reply`, so a `PARAM_REQUEST_LIST` arms
+/// this cursor and each link's transmit loop drains one `PARAM_VALUE` per tick.
+static PARAM_STREAM: AtomicU16 = AtomicU16::new(COUNT as u16);
+
+/// Arm the shared parameter-stream cursor; the next transmit tick starts it.
+pub fn start_param_stream() {
+    PARAM_STREAM.store(0, Ordering::Relaxed);
+}
+
+/// The next `PARAM_VALUE` of a pending full-list download, or `None` when done.
+pub fn next_param_value(parameters: &ParameterManager<'_>) -> Option<MavMessage> {
+    loop {
+        let next = PARAM_STREAM.load(Ordering::Relaxed) as usize;
+        if next >= COUNT {
+            return None;
+        }
+        match PARAM_STREAM.compare_exchange(
+            next as u16,
+            (next + 1) as u16,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return Some(parameter(parameters, Id::from_index(next).unwrap())),
+            Err(_) => continue,
+        }
+    }
+}
 
 /// Decoded inbound frame plus the header it arrived with.
 pub struct Decoded {
@@ -91,11 +121,9 @@ pub async fn handle(
             }
         }
         MavMessage::PARAM_REQUEST_LIST(_) => {
-            // The reply buffer holds only part of the registry, so the ground
-            // station has to ask for the missing indices, which QGC does.
-            for entry in REGISTRY {
-                reply.push(parameter(parameters, entry.id));
-            }
+            // The registry is too large for one Reply, so arm the shared cursor
+            // and let the link transmit loops drain one PARAM_VALUE per tick.
+            start_param_stream();
         }
         MavMessage::PARAM_REQUEST_READ(data) => {
             let id = if data.param_index >= 0 {
@@ -109,13 +137,16 @@ pub async fn handle(
         }
         MavMessage::PARAM_SET(data) => {
             if let Some(id) = data.param_id.to_str().ok().and_then(Id::from_name) {
-                let outcome = if data.param_type == MavParamType::MAV_PARAM_TYPE_REAL32 {
-                    parameters
-                        .set(id, data.param_value)
-                        .map_err(|error| error.message())
-                } else {
-                    Err("PARAM_SET: expected REAL32")
-                };
+                let outcome = if matches!(
+                data.param_type,
+                MavParamType::MAV_PARAM_TYPE_REAL32 | MavParamType::MAV_PARAM_TYPE_INT32
+            ) {
+                parameters
+                    .set(id, data.param_value)
+                    .map_err(|error| error.message())
+            } else {
+                Err("PARAM_SET: expected REAL32 or INT32")
+            };
                 reply.push(parameter(parameters, id));
                 match outcome {
                     // Ground stations expect a changed value to survive a power
@@ -548,10 +579,15 @@ fn wrap_2pi_degrees(cog_rad: f32) -> f32 {
 }
 
 pub fn parameter(parameters: &ParameterManager<'_>, id: Id) -> MavMessage {
+    let definition = id.definition();
     MavMessage::PARAM_VALUE(PARAM_VALUE_DATA {
-        param_id: id.definition().name.into(),
+        param_id: definition.name.into(),
         param_value: parameters.get(id),
-        param_type: MavParamType::MAV_PARAM_TYPE_REAL32,
+        param_type: if definition.kind == Kind::Integer {
+            MavParamType::MAV_PARAM_TYPE_INT32
+        } else {
+            MavParamType::MAV_PARAM_TYPE_REAL32
+        },
         param_count: COUNT as u16,
         param_index: id as u16,
     })

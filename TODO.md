@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-04。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；H7 PX4IO 通信、日志短按/长按保留事件与蜂鸣软件通过，灯归属/IO 实物待 H-12；IO MCU Rust 重写已排 IO-R0～R5，尚未实施；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；实物集中待 H-02/03/04、H-10/12/13、QGC GUI 目视与工程师操作，M1 未开始。**
+更新：2026-11-05。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；H7 PX4IO 通信、日志短按/长按保留事件与蜂鸣软件通过，灯归属/IO 实物待 H-12；IO MCU Rust 重写已排 IO-R0～R5，尚未实施；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；MAVLink 参数重构 P0（PARAM_REQUEST_LIST 流式 + INT32 类型）完成（source=`92532f87f81bedfa`），P1–P3 待做；实物集中待 H-02/03/04、H-10/12/13、QGC GUI 目视与工程师操作，M1 未开始。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -12,6 +12,17 @@
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
 ## 当前优先工作 — P4b-g / GNSS
+
+### MAVLink 协议补齐与参数/存储重构（2026-11-05 工程师授权，实施中）
+
+需求与计划见 [plan.md §8b](plan.md#8b-mavlink-协议补齐与参数存储重构2026-11-05-整合需求)。
+
+- [x] **P0：PARAM_REQUEST_LIST 流式 + INT32 类型**：全量参数改为游标逐发（`next_param_value`，两链路 transmit 每 tick 一个），回包按 `Kind` 发 `INT32`/`REAL32`，`PARAM_SET` 同时收两者。固件编译通过（source=`92532f87f81bedfa`），host 167 测试全过。板载 QGC 全量参数验证待做。
+- [ ] **P1**：设参防抖/延迟保存；去 `Parameters::set` 双重校验。
+- [ ] **P2**：名字 hash 存储记录（加参数不丢用户设置）；注册表生成器（`param!` → Id/REGISTRY/getter + 自动元数据 + FRAM 布局）。
+- [ ] **P3**：流表 + 共享调度器（`MAV_RATE_<name>`）；单 Router；`SET_MESSAGE_INTERVAL`/`REQUEST_MESSAGE`；`telemetry::publish`。
+
+边界（工程师确认）：ARM/DISARM 与 DO_SET_MODE 只应答不动作（归 P5a）；RC/SERVO 无硬件不发。
 
 ### EKF 重构 — 方案 A1（2026-11-05 工程师授权，实施中）
 

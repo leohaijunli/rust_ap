@@ -25,14 +25,18 @@ pub async fn run(
     let (mut tx, mut rx) = uart.split();
     let replies = Replies::new();
     join(
-        transmit(&mut tx, &replies),
+        transmit(&mut tx, &replies, parameters),
         receive(&mut rx, &replies, parameters, dronecan),
     )
     .await;
     unreachable!()
 }
 
-async fn transmit(tx: &mut UartTx<'static, Async>, replies: &Replies) -> ! {
+async fn transmit(
+    tx: &mut UartTx<'static, Async>,
+    replies: &Replies,
+    parameters: &ParameterManager<'static>,
+) -> ! {
     const IMU_PERIOD: Duration = Duration::from_millis(50);
     const POWER_PERIOD: Duration = Duration::from_micros(v6x_rust_led::ina219::SAMPLE_PERIOD_US);
     // PX4 streams GPS_RAW_INT at the GNSS update rate; 5 Hz covers H-RTK.
@@ -126,6 +130,13 @@ async fn transmit(tx: &mut UartTx<'static, Async>, replies: &Replies) -> ! {
         // so we never burst stale heartbeats once the link becomes usable again.
         if !result {
             let _ = tx.flush().await;
+        }
+        // Drain a pending full-parameter download, one value per loop, so a
+        // large registry never bursts or stalls the heartbeat/stream pacing.
+        if result {
+            if let Some(message) = mavlink_core::next_param_value(parameters) {
+                let _ = send(tx, &mut sequence, &message, &mut frame).await;
+            }
         }
     }
 }

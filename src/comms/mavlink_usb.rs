@@ -100,7 +100,7 @@ pub async fn run(
         async {
             loop {
                 // Poll reset first: never begin a fresh write for an old session.
-                select(tx_reset.changed(), transmit(&mut sender, &replies)).await;
+                select(tx_reset.changed(), transmit(&mut sender, &replies, parameters)).await;
                 crate::mavcan::stop();
                 replies.clear();
             }
@@ -126,7 +126,11 @@ pub async fn run(
     unreachable!()
 }
 
-async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Replies) -> ! {
+async fn transmit<'d, D: Driver<'d>>(
+    sender: &mut Sender<'d, D>,
+    replies: &Replies,
+    parameters: &ParameterManager<'static>,
+) -> ! {
     const IMU_PERIOD: Duration = Duration::from_millis(50);
     const POWER_PERIOD: Duration = Duration::from_micros(v6x_rust_led::ina219::SAMPLE_PERIOD_US);
     // PX4 streams GPS_RAW_INT at the GNSS update rate; 5 Hz covers H-RTK.
@@ -287,6 +291,14 @@ async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>, replies: &Repli
             if result.is_err() {
                 crate::mavcan::stop();
                 break;
+            }
+            // Drain a pending full-parameter download, one value per loop, so a
+            // large registry never blocks the heartbeat/stream pacing.
+            if let Some(message) = mavlink_core::next_param_value(parameters) {
+                if send_message(sender, &mut sequence, &message).await.is_err() {
+                    crate::mavcan::stop();
+                    break;
+                }
             }
         }
     }

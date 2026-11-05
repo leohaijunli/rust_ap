@@ -250,6 +250,43 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 远期接口和指标在 M1 硬件结果后细化。控制与估计算法不直接驱动外设；输出必须经同一仲裁。同步求解不能仅靠 async timeout 声称有时限；保留 Mahony 可运行基线、独立过期检测和 EKF2 明确回退。
 
+## 8b. MAVLink 协议补齐与参数/存储重构（2026-11-05 整合需求）
+
+工程师审查了参数、存储与 MAVLink 层，确认底层稳健，但指出加参数/加流太手动、且若干 MAVLink 缺陷会伤 QGC。目标为“参数注册表唯一编辑点、流表化、单 Router”，分 P0–P3 实施。
+
+### 已核实的缺陷（P0 优先）
+
+1. `PARAM_REQUEST_LIST` 只发 4 个参数（`Reply::CAPACITY=4` 静默丢弃），159 个参数 QGC 需逐条补拉，慢且脆弱。
+2. `PARAM_SET` 只收 `REAL32`，拒绝 QGC 的 `INT32`；且回包恒用 `REAL32`，整数参数在 QGC 显示成浮点。
+3. 每个 `PARAM_SET` 立即写 FRAM，批量设参 = 多次提交 + 磨损。
+4. `Parameters::set` 双重校验（`Snapshot::with` + `set`），且每次重建 estimator 参数。
+5. schema tag 随加参数变化，靠手写 `legacy_schema_tag()`（前 11 项）补丁；加参数使旧存档失效。
+6. `FrameParser` 拒 signed MAVLink2 帧（incompat 标志）。
+
+### 必需协议补齐（MAVLink v2 基础 + 差距）
+
+- 已实现：HEARTBEAT、SYS_STATUS、AUTOPILOT_VERSION、HIGHRES_IMU、STATUSTEXT、GPS_RAW_INT、PREFLIGHT_STORAGE、LOGGING_START/STOP、REQUEST_MESSAGE（部分）。
+- 待补流式：ATTITUDE、ATTITUDE_QUATERNION、LOCAL_POSITION_NED、GLOBAL_POSITION_INT（无定位发无效值）、BATTERY_STATUS（INA219）。
+- 待补命令：SET_MESSAGE_INTERVAL(511)、完整 REQUEST_MESSAGE、`MAV_CMD_COMPONENT_ARM_DISARM`、`MAV_CMD_DO_SET_MODE`。
+- 模式上报：HEARTBEAT `base_mode` 置 `CUSTOM_MODE_ENABLED`，`custom_mode` 按 PX4 main_mode/sub_mode 编码。
+- RC_CHANNELS / SERVO_OUTPUT_RAW：无对应硬件，按“无数据则不发”处理（MAVLink 规范），不占位。
+
+### 已定边界（工程师确认）
+
+- ARM/DISARM 与 DO_SET_MODE：**只应答不动作**（返回 TEMPORARILY_REJECTED/UNSUPPORTED），不接真实作动，不接飞行安全；完整实现归 P5a。
+- 缺流式消息：补有数据源者（ATTITUDE/BATTERY/GLOBAL/定位），RC/SERVO 无硬件不发。
+
+### 实施顺序
+
+- **P0**：PARAM_REQUEST_LIST 流式发送（状态机进传输循环，每 tick 一个）+ INT32 类型（回包按 `Kind`，set 收 REAL32/INT32）。半天，QGC 立即受益。
+- **P1**：设参防抖/延迟保存（QGC 批量设参只落一次 FRAM）；去双重校验。
+- **P2**：名字 hash 存储记录（加参数不丢用户设置，未知项忽略、新项默认）；注册表生成器（`param!` 宏 → Id/REGISTRY/typed getter + 自动元数据 + FRAM 布局），`build.rs` 生成或测试校验 stale。
+- **P3**：流表 + 共享调度器（每流 `next_due`，`MAV_RATE_<name>` 参数）；单 Router（RX 解析/处理/流调度，USB 与 UART7 仅字节传输差异）；`telemetry::publish` 快捷口；补 SET_MESSAGE_INTERVAL。
+
+### 后续状态
+
+- P0 已部分落地（INT32 回包/收包），待 PARAM_REQUEST_LIST 流式与板载验证后更新此处。
+
 ## 8. 待补硬件输入
 
 | 编号 | 输入 | 归属 |
