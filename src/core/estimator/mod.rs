@@ -5,6 +5,7 @@
 //! dependency, so firmware and host tests share one contract.
 
 pub mod bias_estimator;
+pub mod config_stage;
 mod covariance_generated;
 pub mod gnss;
 pub mod gnss_checks;
@@ -19,59 +20,22 @@ pub mod no_gnss;
 mod observation_buffer;
 pub mod output_predictor;
 pub mod params_generated;
+pub mod product;
 pub mod publication_reset;
 pub mod range_math;
 pub mod range_sensor;
 pub mod reset_status;
 pub mod runtime;
+pub mod runtime_params;
+#[cfg(test)]
+mod runtime_tests;
 pub mod standard_output;
 pub mod standard_ulog;
+pub mod timing;
 pub mod wmm;
 mod wmm_generated;
 
 pub use params_generated::EKF2_PARAMS;
-/// Bring-up diagnostics: which check inside `ImuEkf::configure_output` rejected.
-/// 0 none, 1 output params invalid, 2 input already seen, 3 buffer length.
-pub static LAST_OUTPUT_FAULT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-
-pub fn last_output_fault() -> u32 {
-    LAST_OUTPUT_FAULT.load(core::sync::atomic::Ordering::Relaxed)
-}
-
-/// Raw bits of the failing range check: (value, min, max).
-pub static FAILED_VALUE: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-pub static FAILED_MIN: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-pub static FAILED_MAX: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-
-pub fn failed_range() -> (f32, f32, f32) {
-    use core::sync::atomic::Ordering::Relaxed;
-    (
-        f32::from_bits(FAILED_VALUE.load(Relaxed)),
-        f32::from_bits(FAILED_MIN.load(Relaxed)),
-        f32::from_bits(FAILED_MAX.load(Relaxed)),
-    )
-}
-
-/// Board-side constructor probe for bring-up diagnostics. Runs the aid
-/// constructors that `GnssEkf::reconfigure` uses, without touching any filter
-/// state. Stage codes: 2 baro/mag, 3 range, 4 GNSS; 0 means all passed.
-pub fn constructor_probe(
-    aiding: imu_ekf::baro_mag::BaroMagParams,
-    range: imu_ekf::range::RangeParams,
-    gnss: gnss::GnssParams,
-) -> u32 {
-    let length = match imu_ekf::ImuEkfParams::default().buffer_length() {
-        Ok(length) => length,
-        Err(_) => return 1,
-    };
-    if imu_ekf::constructor_probe(aiding, range, length).is_err() {
-        return 12;
-    }
-    if gnss::constructor_probe(gnss, length).is_err() {
-        return 14;
-    }
-    0
-}
 
 /// Monotonic microseconds since boot, the base of every sensor sample.
 pub type Timestamp = u64;
@@ -166,13 +130,6 @@ pub struct GnssSample {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BaroSample {
-    pub timestamp: Timestamp,
-    pub pressure_pa: f32,
-    pub temperature_c: f32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MagSample {
     pub timestamp: Timestamp,
     pub field_gauss: [f32; 3],
@@ -186,13 +143,14 @@ pub struct RangeSample {
     pub distance_m: f32,
     pub min_distance_m: f32,
     pub max_distance_m: f32,
-    pub quality: u8,
+    /// -1 unknown, 0 invalid, 1..100 measured quality, as in PX4.
+    pub quality: i8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Measurement {
-    Gnss(GnssSample),
-    Baro(BaroSample),
+    Gnss(gnss::GnssObservation),
+    Baro(imu_ekf::baro_mag::BaroAltitude),
     Mag(MagSample),
     Range(RangeSample),
 }
@@ -217,7 +175,7 @@ impl Measurement {
 
     pub const fn timestamp(self) -> Timestamp {
         match self {
-            Self::Gnss(sample) => sample.timestamp,
+            Self::Gnss(sample) => sample.sample.timestamp,
             Self::Baro(sample) => sample.timestamp,
             Self::Mag(sample) => sample.timestamp,
             Self::Range(sample) => sample.timestamp,
@@ -234,12 +192,38 @@ pub struct NavOutput {
     pub velocity_ned_m_s: [f32; 3],
     pub position_ned_m: [f32; 3],
     pub height_msl_m: f32,
+    pub angular_velocity_body_rad_s: [f32; 3],
+    pub delta_q_reset: [f32; 4],
+    pub quat_reset_counter: u8,
+    pub absolute_yaw: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct StepReport {
+    /// A delayed prediction/fusion epoch completed (not an IMU ingestion).
+    pub updated: bool,
     pub fused: u16,
     pub rejected: u16,
+}
+
+impl StepReport {
+    pub(super) fn from_aids<const N: usize>(
+        updated: bool,
+        before: [imu_ekf::baro_mag::AidStatus; N],
+        after: [imu_ekf::baro_mag::AidStatus; N],
+    ) -> Self {
+        let mut result = Self {
+            updated,
+            ..Self::default()
+        };
+        for (before, after) in before.into_iter().zip(after) {
+            if updated && after.timestamp != before.timestamp {
+                result.fused += u16::from(after.fused);
+                result.rejected += u16::from(after.rejected);
+            }
+        }
+        result
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -262,8 +246,9 @@ impl FilterHealth {
     };
 }
 
-/// The only estimator interface the firmware depends on. Swapping EKF2 for
-/// another algorithm changes a type alias, not the firmware.
+/// Algorithm-independent scheduling contract. Ingestion is bounded; `step`
+/// services a pending delayed epoch. Mutating methods report failures through
+/// `health`, including invalid construction. An unaligned filter is not faulty.
 pub trait NavFilter {
     type Params;
 
@@ -481,22 +466,25 @@ mod tests {
 
     #[test]
     fn measurement_reports_its_aid_and_sample_time() {
-        let gnss = Measurement::Gnss(GnssSample {
-            timestamp: 10,
-            latitude_deg: 0.0,
-            longitude_deg: 0.0,
-            altitude_msl_m: 0.0,
-            velocity_ned_m_s: [0.0; 3],
-            horizontal_accuracy_m: 1.0,
-            vertical_accuracy_m: 1.0,
-            speed_accuracy_m_s: 0.1,
-            fix_type: 3,
-            satellites: 12,
+        let gnss = Measurement::Gnss(gnss::GnssObservation {
+            sample: GnssSample {
+                timestamp: 10,
+                latitude_deg: 0.0,
+                longitude_deg: 0.0,
+                altitude_msl_m: 0.0,
+                velocity_ned_m_s: [0.0; 3],
+                horizontal_accuracy_m: 1.0,
+                vertical_accuracy_m: 1.0,
+                speed_accuracy_m_s: 0.1,
+                fix_type: 3,
+                satellites: 12,
+            },
+            pdop: 1.0,
+            spoofed: false,
         });
-        let baro = Measurement::Baro(BaroSample {
+        let baro = Measurement::Baro(imu_ekf::baro_mag::BaroAltitude {
             timestamp: 20,
-            pressure_pa: 101_325.0,
-            temperature_c: 21.0,
+            altitude_m: 0.0,
         });
         let mag = Measurement::Mag(MagSample {
             timestamp: 30,

@@ -1,24 +1,28 @@
-//! E7 data-only estimator task below the IMU executor. No control/output
-//! permission is granted here; missing aids stay absent and nav stays unqualified.
+//! Single-owner estimator worker, shared IMU front end and 1-kHz attitude output.
 
-use core::fmt;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::{
+    fmt,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
-use core::cell::RefCell;
-use embassy_executor::InterruptExecutor;
+use cortex_m::peripheral::DWT;
+use embassy_executor::{InterruptExecutor, SendSpawner};
+use embassy_futures::select::{select3, Either3};
 use embassy_stm32::{interrupt, peripherals, Peri};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Watch};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, watch::Watch};
 use embassy_time::{with_timeout, Duration, Instant, Timer};
 use static_cell::ConstStaticCell;
 use v6x_rust_led::{
+    config::Algorithm,
     estimator::{
-        gnss::GnssObservation,
-        imu_ekf::baro_mag::BaroAltitude,
+        config_stage,
+        product::{self, ClockReport, IndependentRuntime, Params, ProductRuntime, SharedImu},
         publication_reset::PublicationReset,
-        runtime::{self, Fault, Params, Runtime, Selection, Status},
+        runtime::{self, AttitudeEstimate, Fault, Runtime, Selection, Status},
         standard_output::{EulerAttitude, Snapshot},
         standard_ulog::DataEncoder,
-        FilterFault, GnssSample,
+        timing::{Timing, TimingReport},
+        FilterFault, ImuDelta, Measurement, NavFilter,
     },
     log_config::{self, Group},
     log_queue::{Class, PushError},
@@ -31,38 +35,96 @@ struct Control {
     epoch: u32,
     params: Params,
 }
+
 #[derive(Clone, Copy)]
 pub struct Output {
     pub epoch: u32,
     pub status: Status,
+    pub independent_status: Status,
     pub snapshots: [Snapshot; 2],
     pub euler: [Option<EulerAttitude>; 2],
 }
 
+#[derive(Clone, Copy)]
+struct AttitudeFrame {
+    epoch: u32,
+    estimates: [Option<AttitudeEstimate>; 2],
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Input {
+    Imu(ImuDelta),
+    Fault(Fault),
+}
+
+#[derive(Clone, Copy)]
+struct AidEvent {
+    measurement: Measurement,
+    received: u64,
+    device_id: u32,
+}
+
+#[derive(Clone, Copy)]
+struct Performance {
+    timings: [TimingReport; 7],
+    clock: ClockReport,
+}
+
+struct WorkerTimings {
+    main_ingest: Timing,
+    independent_ingest: Timing,
+    main: Timing,
+    independent: Timing,
+    attitude: Timing,
+    snapshot: Timing,
+}
+
+#[derive(Clone, Copy)]
+struct PublishStats {
+    timing: TimingReport,
+    releases: u32,
+    missed: u32,
+    repeated: u32,
+    max_late_us: u32,
+    max_age_us: u32,
+}
+
 static CONTROL: Watch<CriticalSectionRawMutex, Control, 0> = Watch::new();
 static OUTPUT: Watch<CriticalSectionRawMutex, Output, 0> = Watch::new();
+static ATTITUDE_INPUT: Watch<CriticalSectionRawMutex, AttitudeFrame, 0> = Watch::new();
+static ATTITUDE_OUTPUT: Watch<CriticalSectionRawMutex, AttitudeFrame, 0> = Watch::new();
+static INPUT: Channel<CriticalSectionRawMutex, Input, 16> = Channel::new();
+static AIDS: Channel<CriticalSectionRawMutex, AidEvent, 16> = Channel::new();
+static PERF: Watch<CriticalSectionRawMutex, Performance, 0> = Watch::new();
+static FRONTEND_PERF: Watch<CriticalSectionRawMutex, (TimingReport, ClockReport), 0> = Watch::new();
+static PUBLISH_PERF: Watch<CriticalSectionRawMutex, PublishStats, 0> = Watch::new();
 static EPOCH: AtomicU32 = AtomicU32::new(0);
+static ACTIVE_EPOCH: AtomicU32 = AtomicU32::new(0);
 static CONFIG_ERRORS: AtomicU32 = AtomicU32::new(0);
 static CONFIGURE_MAX_US: AtomicU32 = AtomicU32::new(0);
-static LAST_CONFIG_FAULT: AtomicU32 = AtomicU32::new(u32::MAX);
-/// Snapshot of the live clamped IMU params taken right after a failed reconfigure.
-static FAILED_IMU_PARAMS: cortex_m::interrupt::Mutex<RefCell<[f32; 20]>> =
-    cortex_m::interrupt::Mutex::new(RefCell::new([f32::NAN; 20]));
+static LAST_CONFIG_FAULT: AtomicU32 = AtomicU32::new(0);
+static MAIN_CONFIG: AtomicU32 = AtomicU32::new(0);
+static INDEPENDENT_CONFIG: AtomicU32 = AtomicU32::new(0);
 static LOG_ERRORS: AtomicU32 = AtomicU32::new(0);
-static RUNTIME: ConstStaticCell<Runtime> = ConstStaticCell::new(Runtime::dormant());
+static INPUT_DROPS: AtomicU32 = AtomicU32::new(0);
+static AID_DROPS: AtomicU32 = AtomicU32::new(0);
+static MAIN: ConstStaticCell<ProductRuntime> = ConstStaticCell::new(product::main_storage());
+static INDEPENDENT: ConstStaticCell<IndependentRuntime> =
+    ConstStaticCell::new(product::independent_storage());
 static EXECUTOR: InterruptExecutor = InterruptExecutor::new();
 
-pub fn start(timer: Peri<'static, peripherals::TIM5>) {
-    // TIM5 is reserved as a software-pend vector; its timer is not run.
+pub fn start(timer: Peri<'static, peripherals::TIM5>, fast: SendSpawner) {
     EXECUTOR
         .start(interrupt::TIM5)
-        .spawn(task(RUNTIME.take(), timer))
+        .spawn(task(MAIN.take(), INDEPENDENT.take(), timer))
         .unwrap();
+    fast.spawn(input_task()).unwrap();
+    fast.spawn(attitude_task()).unwrap();
 }
 
 #[interrupt]
 unsafe fn TIM5() {
-    // This executor is polled only by its own non-reentrant interrupt.
+    // The one worker owns both runtime references. Other tasks exchange DTOs.
     unsafe { EXECUTOR.on_interrupt() };
 }
 
@@ -77,9 +139,23 @@ pub fn configure(values: parameters::Snapshot) -> Result<(), parameters::Error> 
 }
 
 pub fn maps(id: Id) -> bool {
-    CONTROL
-        .try_get()
-        .is_some_and(|control| control.params.maps(id))
+    CONTROL.try_get().is_some_and(|c| c.params.maps(id))
+}
+
+/// Sensor publishers call this exactly once per real sample. Future mag/range
+/// drivers use this same entry with calibrated data and their real device ID.
+pub fn submit_measurement(measurement: Measurement, device_id: u32) {
+    if ACTIVE_EPOCH.load(Ordering::Acquire) == 0 {
+        return;
+    }
+    let event = AidEvent {
+        measurement,
+        received: Instant::now().as_micros(),
+        device_id,
+    };
+    if AIDS.try_send(event).is_err() {
+        AID_DROPS.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 pub fn latest() -> Option<Output> {
@@ -87,7 +163,7 @@ pub fn latest() -> Option<Output> {
     if !control.params.enabled {
         return None;
     }
-    let output = OUTPUT.try_get()?;
+    let mut output = OUTPUT.try_get()?;
     let now = Instant::now().as_micros();
     if output.epoch != control.epoch
         || now < output.status.timestamp
@@ -95,18 +171,364 @@ pub fn latest() -> Option<Output> {
     {
         return None;
     }
+    let frame = ATTITUDE_OUTPUT
+        .try_get()
+        .filter(|v| v.epoch == control.epoch);
+    for (index, snapshot) in output.snapshots.iter_mut().enumerate() {
+        let estimate = frame
+            .and_then(|f| f.estimates[index])
+            .and_then(|v| v.at(now));
+        snapshot.attitude = estimate.map(|v| v.attitude);
+        snapshot.angular_velocity = estimate.map(|v| v.angular_velocity);
+        snapshot.status.solution_status_flags &= !1;
+        if let Some(v) = estimate {
+            snapshot.status.solution_status_flags |= 1;
+            snapshot.status.reset_count_quat = v.attitude.quat_reset_counter;
+            snapshot.local_position.heading_reset_counter = v.attitude.quat_reset_counter;
+        } else {
+            snapshot.odometry = None;
+        }
+        output.euler[index] =
+            estimate.and_then(|v| EulerAttitude::from_attitude(v.attitude, v.relative_yaw));
+    }
     Some(output)
 }
 
-fn stage(number: u32) -> impl Fn(FilterFault) -> u32 {
-    move |fault| {
-        number * 10
-            + match fault {
-                FilterFault::Input => 1,
-                FilterFault::Timeout => 2,
-                FilterFault::Numerics => 3,
-            }
+fn cycles_us(cycles: u32) -> u32 {
+    cycles.div_ceil(crate::platform::CPU_HZ / 1_000_000)
+}
+
+fn send_input(input: Input) {
+    if INPUT.try_send(input).is_ok() {
+        return;
     }
+    critical_section::with(|_| {
+        INPUT_DROPS.fetch_add(INPUT.len() as u32, Ordering::Relaxed);
+        INPUT.clear();
+        INPUT.try_send(Input::Fault(Fault::Sequence)).unwrap();
+        INPUT.try_send(input).unwrap();
+    });
+}
+
+#[embassy_executor::task]
+async fn input_task() {
+    let mut epoch = 0;
+    let mut shared = SharedImu::default();
+    let mut timing = Timing::EMPTY;
+    let mut next_report = Instant::now();
+    let mut last_sample = 0;
+    loop {
+        let active = ACTIVE_EPOCH.load(Ordering::Acquire);
+        if active == 0 {
+            Timer::after_millis(1).await;
+            continue;
+        }
+        if active != epoch {
+            epoch = active;
+            shared = SharedImu::default();
+            timing = Timing::EMPTY;
+            last_sample = 0;
+        }
+        match with_timeout(Duration::from_millis(20), crate::imu::next_for_ahrs()).await {
+            Ok(sample) => {
+                if ACTIVE_EPOCH.load(Ordering::Acquire) != epoch {
+                    continue;
+                }
+                let started = DWT::cycle_count();
+                let now = Instant::now().as_micros();
+                last_sample = sample.sample_timestamp_us;
+                match shared.push(sample, now) {
+                    Ok(Some(delta)) => send_input(Input::Imu(delta)),
+                    Ok(None) => {}
+                    Err(fault) => send_input(Input::Fault(fault)),
+                }
+                timing.record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+            }
+            Err(_) => {
+                if last_sample != 0
+                    && Instant::now().as_micros().saturating_sub(last_sample) > runtime::FRESH_US
+                {
+                    send_input(Input::Fault(Fault::Stale));
+                    shared = SharedImu::default();
+                    last_sample = 0;
+                }
+            }
+        }
+        if Instant::now() >= next_report {
+            FRONTEND_PERF.sender().send((timing.report(), shared.clock));
+            next_report = Instant::now() + Duration::from_secs(1);
+        }
+    }
+}
+
+#[embassy_executor::task]
+async fn attitude_task() {
+    let mut release = Instant::now().as_micros() + 1_000;
+    let mut last_sample = 0;
+    let mut timing = Timing::EMPTY;
+    let mut stats = PublishStats {
+        timing: TimingReport::default(),
+        releases: 0,
+        missed: 0,
+        repeated: 0,
+        max_late_us: 0,
+        max_age_us: 0,
+    };
+    loop {
+        Timer::at(Instant::from_micros(release)).await;
+        let now = Instant::now().as_micros();
+        let late = now.saturating_sub(release);
+        release += (late / 1_000 + 1) * 1_000;
+        let epoch = ACTIVE_EPOCH.load(Ordering::Acquire);
+        if epoch == 0 {
+            continue;
+        }
+        let started = DWT::cycle_count();
+        stats.releases = stats.releases.wrapping_add(1);
+        stats.missed = stats.missed.saturating_add((late / 1_000) as u32);
+        stats.max_late_us = stats.max_late_us.max(late.min(u64::from(u32::MAX)) as u32);
+        let estimates = ATTITUDE_INPUT
+            .try_get()
+            .filter(|v| v.epoch == epoch)
+            .map_or([None; 2], |v| {
+                v.estimates.map(|v| v.and_then(|v| v.at(now)))
+            });
+        if let Some(main) = estimates[0] {
+            let sample = main.attitude.timestamp_sample;
+            stats.repeated = stats
+                .repeated
+                .wrapping_add(u32::from(sample == last_sample));
+            stats.max_age_us = stats.max_age_us.max((now - sample) as u32);
+            last_sample = sample;
+        }
+        ATTITUDE_OUTPUT
+            .sender()
+            .send(AttitudeFrame { epoch, estimates });
+        timing.record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+        if stats.releases.is_multiple_of(1_000) {
+            stats.timing = timing.report();
+            PUBLISH_PERF.sender().send(stats);
+        }
+    }
+}
+
+#[inline(never)]
+fn service<F: NavFilter>(runtime: &mut Runtime<F>, now: u64, timing: &mut Timing) {
+    let started = DWT::cycle_count();
+    let report = runtime.maintain(now);
+    if report.updated {
+        let us = cycles_us(DWT::cycle_count().wrapping_sub(started));
+        timing.record(us);
+        runtime.record_duration(us);
+    }
+}
+
+#[embassy_executor::task]
+async fn task(
+    main: &'static mut ProductRuntime,
+    independent: &'static mut IndependentRuntime,
+    _timer: Peri<'static, peripherals::TIM5>,
+) {
+    let mut epoch = 0;
+    let mut enabled = false;
+    let mut resets = [PublicationReset::default(), PublicationReset::default()];
+    let mut devices = [0_u32; 4];
+    let mut next_publish = Instant::now();
+    let mut timing = WorkerTimings {
+        main_ingest: Timing::EMPTY,
+        independent_ingest: Timing::EMPTY,
+        main: Timing::EMPTY,
+        independent: Timing::EMPTY,
+        attitude: Timing::EMPTY,
+        snapshot: Timing::EMPTY,
+    };
+    loop {
+        let Some(control) = CONTROL.try_get() else {
+            Timer::after_millis(20).await;
+            continue;
+        };
+        if control.epoch != epoch {
+            epoch = control.epoch;
+            ACTIVE_EPOCH.store(0, Ordering::Release);
+            crate::imu::set_ahrs_active(false);
+            INPUT.clear();
+            AIDS.clear();
+            main.disable();
+            independent.disable();
+            enabled = false;
+            devices = [0; 4];
+            if control.params.enabled {
+                let started = Instant::now();
+                let prefer_filter = control.params.algorithm == Algorithm::Ekf2;
+                // Configuration is one-shot and not on a hot loop: after a
+                // health fault the whole configure is re-read once, a delay
+                // apart, so a transient memory value is not blamed twice.
+                let mut attempt = 0;
+                let configured = loop {
+                    let main_result = main.reconfigure(control.params, 0, prefer_filter);
+                    let main_stage = config_stage::current();
+                    MAIN_CONFIG.store(pack_config(main_stage, main_result.err()), Ordering::Relaxed);
+                    let independent_result = independent.reconfigure(control.params, 0, true);
+                    INDEPENDENT_CONFIG.store(
+                        pack_config(config_stage::current(), independent_result.err()),
+                        Ordering::Relaxed,
+                    );
+                    let configured = main_result.and(independent_result);
+                    if configured.is_ok() || attempt >= 2 {
+                        break configured;
+                    }
+                    attempt += 1;
+                    config_stage::note_retry(main_stage);
+                    Timer::after_millis(1).await;
+                };
+                CONFIGURE_MAX_US.fetch_max(
+                    started.elapsed().as_micros().min(u64::from(u32::MAX)) as u32,
+                    Ordering::Relaxed,
+                );
+                match configured {
+                    Ok(()) => {
+                        if !prefer_filter {
+                            independent.disable();
+                        }
+                        LAST_CONFIG_FAULT.store(0, Ordering::Relaxed);
+                        enabled = true;
+                        ACTIVE_EPOCH.store(epoch, Ordering::Release);
+                        crate::imu::set_ahrs_active(true);
+                    }
+                    Err(fault) => {
+                        LAST_CONFIG_FAULT.store(filter_fault_code(fault), Ordering::Relaxed);
+                        CONFIG_ERRORS.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+        if !enabled {
+            Timer::after_millis(20).await;
+            continue;
+        }
+        let event = select3(INPUT.receive(), AIDS.receive(), Timer::after_millis(20)).await;
+        if EPOCH.load(Ordering::Acquire) != epoch {
+            continue;
+        }
+        let now = Instant::now().as_micros();
+        match event {
+            Either3::First(Input::Imu(delta)) => {
+                let started = DWT::cycle_count();
+                let _ = main.ingest_imu(delta, now); // Runtime retains input failures.
+                timing
+                    .main_ingest
+                    .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+                let started = DWT::cycle_count();
+                let _ = independent.ingest_imu(delta, now);
+                timing
+                    .independent_ingest
+                    .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+            }
+            Either3::First(Input::Fault(fault)) => {
+                main.invalidate(fault);
+                independent.invalidate(fault);
+            }
+            Either3::Second(event) => {
+                let index = match event.measurement {
+                    Measurement::Baro(_) => 0,
+                    Measurement::Mag(_) => 1,
+                    Measurement::Range(_) => 2,
+                    Measurement::Gnss(_) => 3,
+                };
+                let accepted =
+                    event.received <= now && main.apply_measurement(event.measurement, now).is_ok();
+                if !matches!(event.measurement, Measurement::Gnss(_)) {
+                    let _ = independent.apply_measurement(event.measurement, now);
+                }
+                if accepted {
+                    devices[index] = event.device_id;
+                }
+            }
+            Either3::Third(()) => {}
+        }
+        // Publish the newest full-rate output before entering heavy work.
+        let started = DWT::cycle_count();
+        ATTITUDE_INPUT.sender().send(AttitudeFrame {
+            epoch,
+            estimates: [main.attitude_at(now), independent.attitude_at(now)],
+        });
+        timing
+            .attitude
+            .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+        service(main, now, &mut timing.main);
+        service(independent, now, &mut timing.independent);
+        let now = Instant::now();
+        let started = DWT::cycle_count();
+        ATTITUDE_INPUT.sender().send(AttitudeFrame {
+            epoch,
+            estimates: [
+                main.attitude_at(now.as_micros()),
+                independent.attitude_at(now.as_micros()),
+            ],
+        });
+        timing
+            .attitude
+            .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+        if now >= next_publish {
+            let started = DWT::cycle_count();
+            publish(
+                main,
+                independent,
+                epoch,
+                now.as_micros(),
+                devices,
+                &mut resets,
+            );
+            timing
+                .snapshot
+                .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+            let (shared, clock) = FRONTEND_PERF.try_get().unwrap_or_default();
+            PERF.sender().send(Performance {
+                timings: [
+                    shared,
+                    timing.main_ingest.report(),
+                    timing.independent_ingest.report(),
+                    timing.main.report(),
+                    timing.independent.report(),
+                    timing.attitude.report(),
+                    timing.snapshot.report(),
+                ],
+                clock,
+            });
+            next_publish = now + Duration::from_millis(50);
+        }
+    }
+}
+
+#[inline(never)]
+fn publish(
+    main: &mut ProductRuntime,
+    independent: &mut IndependentRuntime,
+    epoch: u32,
+    now: u64,
+    devices: [u32; 4],
+    resets: &mut [PublicationReset; 2],
+) {
+    let mut snapshots = product::snapshots(main, independent, now, resets);
+    for snapshot in &mut snapshots {
+        snapshot.status.accel_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
+        snapshot.status.gyro_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
+        snapshot.status.baro_device_id = devices[0];
+        snapshot.status.mag_device_id = devices[1];
+        for (aid_index, aid) in snapshot.aids.iter_mut().enumerate() {
+            if let Some(aid) = aid {
+                aid.device_id = devices[aid_index.min(3)];
+            }
+        }
+    }
+    OUTPUT.sender().send(Output {
+        epoch,
+        status: main.status(),
+        independent_status: independent.status(),
+        snapshots,
+        // latest() derives Euler angles from the matching fast attitude frame.
+        euler: [None; 2],
+    });
 }
 
 #[derive(Debug)]
@@ -120,247 +542,6 @@ impl From<ulog::Error> for LogError {
     }
 }
 
-#[embassy_executor::task]
-pub async fn task(runtime: &'static mut Runtime, _timer: Peri<'static, peripherals::TIM5>) {
-    let mut epoch = 0;
-    let mut enabled = false;
-    let mut resets = [PublicationReset::default(), PublicationReset::default()];
-    let mut last_baro = 0;
-    let mut last_gps = 0;
-    let mut gps_device_id = 0;
-    let mut next_publish = Instant::now();
-    loop {
-        let Some(control) = CONTROL.try_get() else {
-            Timer::after_millis(20).await;
-            continue;
-        };
-        if control.epoch != epoch {
-            epoch = control.epoch;
-            crate::imu::set_ahrs_active(false);
-            enabled = false;
-            last_baro = 0;
-            last_gps = 0;
-            if control.params.enabled {
-                let started = Instant::now();
-                // Split reconfigure so the failing sub-step is visible on board.
-                // Fault code: 0 ok; stage*10 + variant, stage 1..4 in call order,
-                // variant 1=Input 2=Timeout 3=Numerics 4=other. Stage 1 additionally
-                // encodes the inner GnssEkf reconfigure chain in tens: 11 imu buffer
-                // params, 12 baro/mag aids, 13 range aids, 14 gnss aids.
-                let configure_once = |runtime: &mut Runtime| {
-                    let params = &control.params;
-                    // Constructor-level diagnostics ahead of the full reconfigure.
-                    // 0 = ok, 1 = imu buffer params, 2 = baro/mag, 3 = range, 4 = gnss.
-                    let probe = v6x_rust_led::estimator::constructor_probe(
-                        params.aiding,
-                        params.range,
-                        params.gnss,
-                    );
-                    if probe != 0 {
-                        return Err(probe);
-                    }
-                    let staged = runtime.main.reconfigure_staged(
-                        params.imu,
-                        params.aiding,
-                        params.range,
-                        params.gnss,
-                        0,
-                    );
-                    if staged != 0 {
-                        return Err(10 + staged);
-                    }
-                    runtime
-                        .main
-                        .configure_output(params.output)
-                        .map_err(stage(2))?;
-                    let staged = runtime.independent.reconfigure_staged(
-                        params.imu,
-                        params.aiding,
-                        params.range,
-                        0,
-                    );
-                    if staged != 0 {
-                        return Err(30 + staged);
-                    }
-                    runtime
-                        .independent
-                        .configure_output(params.output)
-                        .map_err(stage(4))?;
-                    runtime.finish_reconfigure(params.enabled, params.algorithm);
-                    Ok(())
-                };
-                // One retry: the constructor inputs are catalog-validated; a single
-                // transient failure with otherwise-identical inputs must not wedge
-                // bring-up. The failure code stays visible for the root-cause hunt.
-                let mut configured = configure_once(runtime);
-                if configured.is_err() {
-                    configured = configure_once(runtime);
-                }
-                let fault = configured.as_ref().err().copied().unwrap_or(0);
-                LAST_CONFIG_FAULT.store(fault, Ordering::Relaxed);
-                if fault != 0 {
-                    let core = runtime.main.core();
-                    let imu = core.debug_params();
-                    let live = [
-                        imu.predict_us as f32,
-                        imu.delay_max_ms,
-                        imu.imu_ctrl as f32,
-                        imu.velocity_limit,
-                        imu.gyro_noise,
-                        imu.accel_noise,
-                        imu.gyro_bias_noise,
-                        imu.accel_bias_noise,
-                        imu.gyro_bias_init,
-                        imu.accel_bias_init,
-                        imu.angle_error_init,
-                        imu.no_aid_noise,
-                        imu.heading_noise,
-                        imu.gyro_bias_limit,
-                        imu.accel_bias_limit,
-                        imu.accel_bias_accel_limit,
-                        imu.accel_bias_gyro_limit,
-                        imu.accel_bias_time_constant,
-                        u8::from(core.debug_input_seen()) as f32,
-                        0.0,
-                    ];
-                    cortex_m::interrupt::free(|cs| {
-                        *FAILED_IMU_PARAMS.borrow(cs).borrow_mut() = live;
-                    });
-                }
-                CONFIGURE_MAX_US.fetch_max(
-                    started.elapsed().as_micros().min(u64::from(u32::MAX)) as u32,
-                    Ordering::Relaxed,
-                );
-                match configured {
-                    Ok(()) => {
-                        enabled = true;
-                        crate::imu::set_ahrs_active(true);
-                    }
-                    Err(_) => {
-                        CONFIG_ERRORS.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
-        }
-        if !enabled {
-            Timer::after_millis(20).await;
-            continue;
-        }
-        let filter = &mut *runtime;
-        match with_timeout(Duration::from_millis(20), crate::imu::next_for_ahrs()).await {
-            Ok(sample) => {
-                if CONTROL
-                    .try_get()
-                    .is_some_and(|latest| latest.epoch != epoch)
-                {
-                    continue;
-                }
-                let now = Instant::now().as_micros();
-                let baro = crate::barometer::latest()
-                    .filter(|baro| {
-                        baro.timestamp_sample > last_baro
-                            && baro.timestamp_sample <= sample.sample_timestamp_us
-                    })
-                    .map(|baro| {
-                        last_baro = baro.timestamp_sample;
-                        BaroAltitude {
-                            timestamp: baro.timestamp_sample,
-                            altitude_m: baro.pressure_altitude_m(),
-                        }
-                    });
-                let gps = gnss(
-                    sample.sample_timestamp_us,
-                    now,
-                    &mut last_gps,
-                    &mut gps_device_id,
-                );
-                let started = Instant::now();
-                filter.update(sample, now, baro, gps, None);
-                filter
-                    .record_duration(started.elapsed().as_micros().min(u64::from(u32::MAX)) as u32);
-            }
-            Err(_) => {
-                let status = filter.status();
-                if Instant::now().as_micros().saturating_sub(status.timestamp) > runtime::FRESH_US {
-                    filter.invalidate(Fault::Stale);
-                }
-            }
-        }
-        let now = Instant::now();
-        if now < next_publish {
-            continue;
-        }
-        next_publish = now + Duration::from_millis(50);
-        let baro_device = if last_baro != 0 {
-            v6x_rust_led::bmp388::DEVICE_ID
-        } else {
-            0
-        };
-        publish(
-            filter,
-            epoch,
-            now,
-            [baro_device, gps_device_id],
-            &mut resets,
-        );
-    }
-}
-
-// Keep publication temporaries out of the 8-kHz async poll/update call chain.
-#[inline(never)]
-fn publish(
-    filter: &mut Runtime,
-    epoch: u32,
-    now: Instant,
-    devices: [u32; 2],
-    resets: &mut [PublicationReset; 2],
-) {
-    let mut snapshots = filter.snapshots(now.as_micros());
-    let status = filter.status();
-    for (index, snapshot) in snapshots.iter_mut().enumerate() {
-        snapshot.status.accel_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
-        snapshot.status.gyro_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
-        if devices[0] != 0 {
-            snapshot.status.baro_device_id = devices[0];
-            if let Some(aid) = &mut snapshot.aids[0] {
-                aid.device_id = devices[0];
-            }
-        }
-        if index == 0 {
-            for aid in snapshot.aids[3..].iter_mut().flatten() {
-                aid.device_id = devices[1];
-            }
-        }
-        let source = if index == 0 {
-            match status.selection {
-                Selection::Invalid => 0,
-                Selection::Ekf2 => 1,
-                Selection::Mahony => 2,
-            }
-        } else {
-            1
-        };
-        resets[index].apply(snapshot, epoch, source);
-    }
-    let euler = core::array::from_fn(|index| {
-        snapshots[index].attitude.and_then(|attitude| {
-            EulerAttitude::from_attitude(
-                attitude,
-                (index == 0 && status.selection == Selection::Mahony)
-                    || snapshots[index].status.control_mode_flags & (1 << 1) == 0,
-            )
-        })
-    });
-    OUTPUT.sender().send(Output {
-        epoch,
-        status,
-        snapshots,
-        euler,
-    });
-}
-
-/// Encoding runs in its own thread-executor task, so its scratch space is never
-/// retained underneath another thread task or added to the 8-kHz EKF poll.
 #[embassy_executor::task]
 pub async fn log_task() {
     let mut encoders = [DataEncoder::new(0), DataEncoder::new(1)];
@@ -388,81 +569,96 @@ pub async fn log_task() {
             continue;
         }
         last_output = timestamp;
-        if log_config::rate(Group::Estimator, timestamp) {
-            let runtime_record = runtime_record(output.epoch, output.status, timestamp);
-            if crate::sd_logger::LOGGER
-                .try_record(Class::Normal, timestamp, runtime_record)
-                .is_err()
-            {
+        if !log_config::rate(Group::Estimator, timestamp) {
+            continue;
+        }
+        let record = runtime_record(
+            output.epoch,
+            output.status,
+            output.independent_status,
+            timestamp,
+        );
+        if crate::sd_logger::LOGGER
+            .try_record(Class::Normal, timestamp, record)
+            .is_err()
+        {
+            LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
+        }
+        for (index, (encoder, snapshot)) in encoders.iter_mut().zip(&output.snapshots).enumerate() {
+            let result = encoder.write_snapshot::<LogError>(snapshot, |record| {
+                crate::sd_logger::LOGGER
+                    .try_record(Class::Normal, timestamp, *record)
+                    .map_err(LogError::Queue)
+            });
+            if let Err(error) = result {
+                match error {
+                    LogError::Codec(error) => {
+                        let _ = error;
+                    }
+                    LogError::Queue(error) => {
+                        let _ = error;
+                    }
+                }
                 LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
             }
-            for (index, (encoder, snapshot)) in
-                encoders.iter_mut().zip(&output.snapshots).enumerate()
-            {
-                let result = encoder.write_snapshot::<LogError>(snapshot, |record| {
-                    crate::sd_logger::LOGGER
-                        .try_record(Class::Normal, timestamp, *record)
-                        .map_err(LogError::Queue)
-                });
-                if let Err(error) = result {
-                    // Queue drops already generate dropout evidence; encoder
-                    // faults remain separately visible instead of being ignored.
-                    match error {
-                        LogError::Codec(error) => {
-                            let _ = error;
-                        }
-                        LogError::Queue(error) => {
-                            let _ = error;
-                        }
-                    }
+            if let Some(euler) = output.euler[index] {
+                let record =
+                    ulog::attitude_euler_record(index as u8, euler).expect("fixed Euler schema");
+                if crate::sd_logger::LOGGER
+                    .try_record(Class::Normal, timestamp, record)
+                    .is_err()
+                {
                     LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
-                }
-                if let Some(euler) = output.euler[index] {
-                    let record = ulog::attitude_euler_record(index as u8, euler)
-                        .expect("fixed Euler schema and instance");
-                    if crate::sd_logger::LOGGER
-                        .try_record(Class::Normal, timestamp, record)
-                        .is_err()
-                    {
-                        LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
-                    }
                 }
             }
         }
     }
 }
 
-fn runtime_record(epoch: u32, status: Status, now: u64) -> ulog::Record {
+fn runtime_record(epoch: u32, status: Status, independent: Status, now: u64) -> ulog::Record {
     let mut payload = ulog::Payload::new();
     payload.push_u64(status.timestamp).unwrap();
     for value in [
         epoch,
         status.samples,
-        status.ekf_updates,
-        status.gnss_samples,
+        status.updates,
+        status.measurements,
         status.deadline_misses,
         status.max_update_us,
+        status.recoveries,
+        status.rejected_measurements,
     ] {
         payload.push_u32(value).unwrap();
     }
     payload
         .push_u8(match status.selection {
             Selection::Invalid => 0,
-            Selection::Ekf2 => 1,
+            Selection::Filter => 1,
             Selection::Mahony => 2,
         })
         .unwrap();
     payload.push_u8(fault_code(status.fault)).unwrap();
-    payload
-        .push_u8(fault_code(status.independent_fault))
-        .unwrap();
+    payload.push_u8(fault_code(independent.fault)).unwrap();
     payload.push_u8(0).unwrap();
     ulog::data_record(
         ulog::TopicId::EstimatorRuntime as u16,
         now,
         payload.as_bytes(),
     )
-    .expect("fixed runtime diagnostic fits")
+    .expect("fixed runtime schema")
+}
+
+fn filter_fault_code(fault: FilterFault) -> u32 {
+    match fault {
+        FilterFault::Input => 1,
+        FilterFault::Timeout => 2,
+        FilterFault::Numerics => 3,
+    }
+}
+
+/// Configuration stage in the low byte, filter fault in the next byte.
+fn pack_config(stage: u8, fault: Option<FilterFault>) -> u32 {
+    u32::from(stage) | (fault.map_or(0, filter_fault_code) << 8)
 }
 
 fn fault_code(fault: Option<Fault>) -> u8 {
@@ -472,101 +668,80 @@ fn fault_code(fault: Option<Fault>) -> u8 {
         Some(Fault::Sequence) => 2,
         Some(Fault::Timestamp) => 3,
         Some(Fault::Stale) => 4,
-        Some(Fault::Ekf(v6x_rust_led::estimator::FilterFault::Input)) => 5,
-        Some(Fault::Ekf(v6x_rust_led::estimator::FilterFault::Timeout)) => 6,
-        Some(Fault::Ekf(v6x_rust_led::estimator::FilterFault::Numerics)) => 7,
+        Some(Fault::Filter(FilterFault::Input)) => 5,
+        Some(Fault::Filter(FilterFault::Timeout)) => 6,
+        Some(Fault::Filter(FilterFault::Numerics)) => 7,
         Some(Fault::Deadline) => 8,
     }
 }
 
-fn gnss(imu_time: u64, now: u64, last: &mut u64, device: &mut u32) -> Option<GnssObservation> {
-    let gps = crate::dronecan_can::latest_gps()?;
-    if gps.timestamp <= *last
-        || gps.timestamp > imu_time
-        || now.saturating_sub(gps.timestamp) > v6x_rust_led::gps::GPS_FRESH_US
-        || gps.fix_type < 3
-        || !gps.vel_ned_valid
-        || !gps.latitude_deg.is_finite()
-        || !gps.longitude_deg.is_finite()
-        || !gps.altitude_msl_m.is_finite()
-        || [
-            gps.eph,
-            gps.epv,
-            gps.s_variance_m_s,
-            gps.hdop,
-            gps.vdop,
-            gps.vel_n_m_s,
-            gps.vel_e_m_s,
-            gps.vel_d_m_s,
-        ]
-        .iter()
-        .any(|v| !v.is_finite())
-        || gps.s_variance_m_s < 0.0
-        || gps.eph < 0.0
-        || gps.epv < 0.0
-    {
-        return None;
-    }
-    *last = gps.timestamp;
-    *device = gps.device_id;
-    Some(GnssObservation {
-        sample: GnssSample {
-            timestamp: gps.timestamp,
-            latitude_deg: gps.latitude_deg,
-            longitude_deg: gps.longitude_deg,
-            altitude_msl_m: gps.altitude_msl_m as f32,
-            velocity_ned_m_s: [gps.vel_n_m_s, gps.vel_e_m_s, gps.vel_d_m_s],
-            horizontal_accuracy_m: gps.eph,
-            vertical_accuracy_m: gps.epv,
-            // Fixed EKF2.cpp forwards this field directly despite its legacy
-            // name; taking another square root would change PX4 semantics.
-            speed_accuracy_m_s: gps.s_variance_m_s,
-            fix_type: gps.fix_type,
-            satellites: gps.satellites_used,
-        },
-        pdop: libm::sqrtf(gps.hdop * gps.hdop + gps.vdop * gps.vdop),
-        spoofed: gps.spoofing_state > 1,
-    })
-}
-
 pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     let control = CONTROL.try_get();
-    let latest = latest();
-    writeln!(output, "EKF2_RUNTIME schema=1 requested={} epoch={} active={} data_only=true nav_qualified=false mag_available=false range_available=false baro_available={} config_errors={} log_errors={} configure_max_us={} executor=TIM5 priority=4 imu_priority=3",
-        control.is_some_and(|c| c.params.enabled), control.map_or(0, |c| c.epoch), latest.is_some(), crate::barometer::latest().is_some(),
-        CONFIG_ERRORS.load(Ordering::Relaxed), LOG_ERRORS.load(Ordering::Relaxed), CONFIGURE_MAX_US.load(Ordering::Relaxed))?;
-    let fault = LAST_CONFIG_FAULT.load(Ordering::Relaxed);
-    writeln!(
-        output,
-        "EKF2_CONFIG last_fault={} (0=ok; stage*10+variant: 11-15 main_cfg sub-steps, 2x main_out, 3x ind_cfg sub-steps, 4x ind_out; variant 1=input 2=timeout 3=numerics)",
-        fault
-    )?;
-    writeln!(
-        output,
-        "EKF2_OUTPUT_FAULT code={} (0=none 1=params 2=input_seen 3=buffer_length; 40+i catalog miss, 50+i value range, 70 predict, 71 ctrl, 72 tau, 73 length)",
-        v6x_rust_led::estimator::last_output_fault()
-    )?;
-    let (value, min, max) = v6x_rust_led::estimator::failed_range();
-    writeln!(
-        output,
-        "EKF2_FAILED_RANGE value={value} min={min} max={max} (bits {:08x} {:08x} {:08x})",
-        value.to_bits(),
-        min.to_bits(),
-        max.to_bits()
-    )?;
-    let values = cortex_m::interrupt::free(|cs| *FAILED_IMU_PARAMS.borrow(cs).borrow());
-    writeln!(
-        output,
-        "EKF2_LIVE_IMU_PARAMS predict_us={} delay_max_ms={} imu_ctrl={} vel_lim={} gyr_noise={} acc_noise={} gyr_b_noise={} acc_b_noise={} gbias_init={} abias_init={} angerr_init={} noaid_noise={} head_noise={} gyr_b_lim={} abl_lim={} abl_acclim={} abl_gyrlim={} abl_tau={} input_seen={} pad={}",
-        values[0], values[1], values[2], values[3], values[4], values[5], values[6],
-        values[7], values[8], values[9], values[10], values[11], values[12], values[13],
-        values[14], values[15], values[16], values[17], values[18], values[19]
-    )?;
-    if let Some(output_state) = latest {
-        let status = output_state.status;
-        writeln!(output, "EKF2_STATE timestamp_sample={} samples={} updates={} gnss_samples={} selected={:?} fault={:?} independent_fault={:?} max_update_us={} deadline_misses={} relative_yaw=true",
-            status.timestamp, status.samples, status.ekf_updates, status.gnss_samples, status.selection, status.fault,
-            status.independent_fault, status.max_update_us, status.deadline_misses)?;
+    writeln!(output, "EKF2_RUNTIME schema=2 requested={} epoch={} active={} data_only=true nav_qualified=false config_errors={} last_config_fault={} config_stage={} configure_max_us={} input_drops={} aid_drops={} log_errors={} worker=TIM5/P4 frontend_publish=TIM7/P3 update_budget_us={}",
+        control.is_some_and(|v| v.params.enabled), control.map_or(0, |v| v.epoch), ACTIVE_EPOCH.load(Ordering::Acquire) != 0,
+        CONFIG_ERRORS.load(Ordering::Relaxed), LAST_CONFIG_FAULT.load(Ordering::Relaxed), config_stage::current(), CONFIGURE_MAX_US.load(Ordering::Relaxed),
+        INPUT_DROPS.load(Ordering::Relaxed), AID_DROPS.load(Ordering::Relaxed), LOG_ERRORS.load(Ordering::Relaxed), runtime::DEADLINE_US)?;
+    let (main_config, independent_config) = (
+        MAIN_CONFIG.load(Ordering::Relaxed),
+        INDEPENDENT_CONFIG.load(Ordering::Relaxed),
+    );
+    writeln!(output, "EKF2_CONFIG main_stage={} main_fault={} independent_stage={} independent_fault={} config_retries={}",
+        main_config & 0xff, (main_config >> 8) & 0xff,
+        independent_config & 0xff, (independent_config >> 8) & 0xff,
+        config_stage::retry_count())?;
+    if let Some(control) = control {
+        let params = control.params;
+        writeln!(output, "EKF2_CONFIG_PARAMS buffer_length={:?} predict_us={} delay_max_ms={} imu_ctrl={} baro_ctrl={} baro_delay_ms={} mag_type={} mag_delay_ms={} range_ctrl={} range_delay_ms={} gps_ctrl={} gps_delay_ms={} gps_mode={}",
+            params.buffer_length(), params.imu.predict_us, params.imu.delay_max_ms, params.imu.imu_ctrl,
+            params.aiding.baro_control, params.aiding.baro_delay_ms, params.aiding.mag_type, params.aiding.mag_delay_ms,
+            params.range.control, params.range.delay_ms, params.gnss.control, params.gnss.delay_ms, params.gnss.mode)?;
+    }
+    if let Some(state) = OUTPUT.try_get() {
+        for (name, status) in [
+            ("main", state.status),
+            ("independent", state.independent_status),
+        ] {
+            writeln!(output, "EKF2_STATE instance={name} samples={} updates={} measurements={} selected={:?} mode={:?} fault={:?} last_fault={:?} recoveries={} deadline_misses={} max_update_us={}",
+                status.samples, status.updates, status.measurements, status.selection, status.mode, status.fault,
+                status.last_fault, status.recoveries, status.deadline_misses, status.max_update_us)?;
+        }
+        writeln!(
+            output,
+            "EKF2_AIDS baro_available={} mag_available={} range_available={}",
+            state.snapshots[0].aids[0].is_some(),
+            state.snapshots[0].aids[1].is_some(),
+            state.snapshots[0].aids[2].is_some()
+        )?;
+    }
+    if let Some(perf) = PERF.try_get() {
+        for (name, timing) in [
+            "shared_input",
+            "main_ingest",
+            "independent_ingest",
+            "main_step",
+            "independent_step",
+            "prepare_attitude",
+            "snapshot",
+        ]
+        .into_iter()
+        .zip(perf.timings)
+        {
+            writeln!(output, "EKF2_TIMING path={name} n={} max_us={} p99_upper_us={} dwt_includes_preemption=true",
+                timing.samples, timing.max_us, timing.p99_upper_us)?;
+        }
+        writeln!(
+            output,
+            "EKF2_CLOCK windows={} sensor_dt_us={} tim2_dt_us={} error_ppm={}",
+            perf.clock.windows,
+            perf.clock.sensor_dt_us,
+            perf.clock.tim2_dt_us,
+            perf.clock.error_ppm
+        )?;
+    }
+    if let Some(stats) = PUBLISH_PERF.try_get() {
+        writeln!(output, "EKF2_PUBLISH target_hz=1000 releases={} missed={} repeated={} max_late_us={} max_age_us={} max_us={} p99_upper_us={}",
+            stats.releases, stats.missed, stats.repeated, stats.max_late_us, stats.max_age_us,
+            stats.timing.max_us, stats.timing.p99_upper_us)?;
     }
     Ok(())
 }

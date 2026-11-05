@@ -16,12 +16,15 @@ pub struct RangeSensorParams {
     pub maximum_fog_distance_m: f32,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct RangeObservation {
     pub timestamp: Timestamp,
     pub distance_m: f32,
     /// PX4 quality percent: -1 unknown, 0 invalid, 1..100 measured quality.
     pub quality_percent: i8,
+    /// Actual sensor limits travel with the delayed observation. Host fixtures
+    /// may use None to retain their explicitly configured synthetic limits.
+    pub limits: Option<[f32; 2]>,
 }
 
 pub struct RangeSensorChecks {
@@ -86,6 +89,13 @@ impl RangeSensorChecks {
     pub fn set_sample(&mut self, sample: RangeObservation) -> Result<(), FilterFault> {
         if !sample.distance_m.is_finite() || !(-1..=100).contains(&sample.quality_percent) {
             return Err(FilterFault::Input);
+        }
+        if let Some([minimum, maximum]) = sample.limits {
+            if !minimum.is_finite() || !maximum.is_finite() || minimum < 0.0 || maximum <= minimum {
+                return Err(FilterFault::Input);
+            }
+            self.params.minimum_m = minimum;
+            self.params.maximum_m = maximum;
         }
         self.sample = Some(sample);
         self.ready = true;
@@ -226,6 +236,7 @@ mod tests {
                     timestamp: time,
                     distance_m: 10.0,
                     quality_percent: 100,
+                    limits: None,
                 })
                 .unwrap();
             checks.run(time, ROTATION, true).unwrap();
@@ -238,6 +249,7 @@ mod tests {
                     timestamp: time,
                     distance_m: 1.0,
                     quality_percent: 100,
+                    limits: None,
                 })
                 .unwrap();
             checks.run(time, ROTATION, true).unwrap();
@@ -250,6 +262,7 @@ mod tests {
                     timestamp: time,
                     distance_m: 10.0,
                     quality_percent: 100,
+                    limits: None,
                 })
                 .unwrap();
             checks.run(time, ROTATION, true).unwrap();
@@ -274,6 +287,7 @@ mod tests {
                 timestamp: 500_000,
                 distance_m: 1.0,
                 quality_percent: 100,
+                limits: None,
             })
             .unwrap();
         checks.run(500_000, ROTATION, true).unwrap();
@@ -283,6 +297,7 @@ mod tests {
                 timestamp: 1_000_001,
                 distance_m: 1.0,
                 quality_percent: 100,
+                limits: None,
             })
             .unwrap();
         checks.run(1_000_001, ROTATION, true).unwrap();
@@ -294,6 +309,7 @@ mod tests {
                 timestamp: 1_500_000,
                 distance_m: 31.0,
                 quality_percent: 100,
+                limits: None,
             })
             .unwrap();
         checks.run(1_500_000, ROTATION, true).unwrap();
@@ -303,6 +319,7 @@ mod tests {
                 timestamp: 1_600_000,
                 distance_m: 1.0,
                 quality_percent: 0,
+                limits: None,
             })
             .unwrap();
         checks.run(1_600_000, ROTATION, true).unwrap();
@@ -312,6 +329,7 @@ mod tests {
                 timestamp: 2_700_001,
                 distance_m: 1.0,
                 quality_percent: 100,
+                limits: None,
             })
             .unwrap();
         checks

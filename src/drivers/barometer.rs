@@ -171,6 +171,15 @@ pub async fn run(i2c: I2c<'static, Blocking, Master>, power: Peri<'static, perip
                     error: None,
                 });
                 crate::sd_logger::record_baro(sample);
+                crate::estimator::submit_measurement(
+                    v6x_rust_led::estimator::Measurement::Baro(
+                        v6x_rust_led::estimator::imu_ekf::baro_mag::BaroAltitude {
+                            timestamp: sample.timestamp_sample,
+                            altitude_m: sample.pressure_altitude_m(),
+                        },
+                    ),
+                    bmp388::DEVICE_ID,
+                );
             }
         }
         .await;

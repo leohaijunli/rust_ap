@@ -19,7 +19,7 @@ pub struct BiasEstimator {
 }
 
 impl BiasEstimator {
-    pub fn new(state: f32, variance: f32) -> Result<Self, FilterFault> {
+    pub const fn new(state: f32, variance: f32) -> Result<Self, FilterFault> {
         if !state.is_finite() || !variance.is_finite() || variance < 0.0 {
             return Err(FilterFault::Input);
         }

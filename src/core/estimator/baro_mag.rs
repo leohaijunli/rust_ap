@@ -32,7 +32,7 @@ pub struct BaroMagSample {
 }
 
 /// A real pressure-height observation does not imply a magnetometer sample.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BaroAltitude {
     pub timestamp: Timestamp,
     pub altitude_m: f32,
@@ -71,8 +71,20 @@ pub struct AidStatus {
     pub rejected: bool,
 }
 
+impl AidStatus {
+    pub(crate) const EMPTY: Self = Self {
+        timestamp: 0,
+        innovation: [0.0; 3],
+        variance: [0.0; 3],
+        ratio: [0.0; 3],
+        fused: false,
+        rejected: false,
+    };
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct BaroMagParams {
+    pub baro_control: i32,
     pub baro_noise: f32,
     pub baro_gate: f32,
     pub baro_delay_ms: f32,
@@ -85,11 +97,23 @@ pub struct BaroMagParams {
     pub mag_check: i32,
     pub mag_type: i32,
     pub height_reference: i32,
+    pub ground_effect_deadzone_m: f32,
+    pub ground_effect_max_height_m: f32,
+    pub mag_check_strength_gauss: f32,
+    pub mag_check_inclination_deg: f32,
+    pub mag_accel_limit_m_s2: f32,
 }
 
 impl Default for BaroMagParams {
     fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl BaroMagParams {
+    pub(super) const fn defaults() -> Self {
         Self {
+            baro_control: default_int("EKF2_BARO_CTRL"),
             baro_noise: default_float("EKF2_BARO_NOISE"),
             baro_gate: default_float("EKF2_BARO_GATE"),
             baro_delay_ms: default_float("EKF2_BARO_DELAY"),
@@ -102,6 +126,11 @@ impl Default for BaroMagParams {
             mag_check: default_int("EKF2_MAG_CHECK"),
             mag_type: default_int("EKF2_MAG_TYPE"),
             height_reference: default_int("EKF2_HGT_REF"),
+            ground_effect_deadzone_m: default_float("EKF2_GND_EFF_DZ"),
+            ground_effect_max_height_m: default_float("EKF2_GND_MAX_HGT"),
+            mag_check_strength_gauss: default_float("EKF2_MAG_CHK_STR"),
+            mag_check_inclination_deg: default_float("EKF2_MAG_CHK_INC"),
+            mag_accel_limit_m_s2: default_float("EKF2_MAG_ACCLIM"),
         }
     }
 }
@@ -143,6 +172,11 @@ impl Aids {
             params.mag_delay_ms,
             params.mag_earth_noise,
             params.mag_bias_noise,
+            params.ground_effect_deadzone_m,
+            params.ground_effect_max_height_m,
+            params.mag_check_strength_gauss,
+            params.mag_check_inclination_deg,
+            params.mag_accel_limit_m_s2,
         ]
         .iter()
         .any(|v| !v.is_finite() || *v < 0.0)
@@ -150,6 +184,7 @@ impl Aids {
             || params.mag_check & !7 != 0
             || ![0, 1, 5, 6].contains(&params.mag_type)
             || !(0..=3).contains(&params.height_reference)
+            || !(0..=1).contains(&params.baro_control)
         {
             return Err(FilterFault::Input);
         }
@@ -246,16 +281,54 @@ impl Aids {
         Ok(())
     }
 
+    pub fn push_mag(
+        &mut self,
+        sample: super::super::MagSample,
+        filter: &ImuEkf,
+    ) -> Result<(), FilterFault> {
+        if sample.timestamp <= self.last_input
+            || sample.timestamp > filter.latest_us
+            || sample.field_gauss.iter().any(|v| !v.is_finite())
+        {
+            return Err(FilterFault::Input);
+        }
+        self.last_input = sample.timestamp;
+        let interval = (filter.latest_us - filter.delayed_us) / (self.mag.length as u64 - 1);
+        let time = sample.timestamp as i64
+            - (self.params.mag_delay_ms * 1000.0) as i64
+            - (filter.average_dt_s * 5e5) as i64;
+        if time >= (self.mag.newest_time() + interval) as i64 {
+            self.mag.push(
+                BaroMagSample {
+                    timestamp: sample.timestamp,
+                    altitude_m: f32::NAN,
+                    field_gauss: sample.field_gauss,
+                },
+                time as u64,
+            );
+            self.last_mag_push = filter.latest_us;
+            self.mag_started = true;
+        }
+        Ok(())
+    }
+
     pub fn shift_altitude(&mut self, delta: f32) -> Result<(), FilterFault> {
         self.baro_bias.set_bias(self.baro_bias.bias() + delta)
     }
 
     pub fn control_baro(&mut self, filter: &mut ImuEkf) -> Result<(), FilterFault> {
+        if self.params.baro_control == 0 {
+            filter.control &= !BARO;
+            if filter.height_reference == 0 {
+                filter.height_reference = 4;
+            }
+            return Ok(());
+        }
         // Pinned updateGroundEffect runs before pressure-height fusion.
         if filter.control & (1 << 7) != 0 && filter.control & (1 << 8) == 0 {
             if filter.terrain_valid {
-                let near_ground =
-                    filter.state[24] + filter.global.altitude_m < default_float("EKF2_GND_MAX_HGT");
+                let near_ground = filter.state[24] + filter.global.altitude_m
+                    < self.params.ground_effect_max_height_m;
                 if near_ground {
                     filter.control |= 1 << 20;
                 } else {
@@ -307,7 +380,7 @@ impl Aids {
                 self.baro_status.innovation[0] = innovation.clamp(-limit, limit);
                 self.baro_status.rejected = false;
             }
-            let deadzone = default_float("EKF2_GND_EFF_DZ");
+            let deadzone = self.params.ground_effect_deadzone_m;
             if filter.control & (1 << 20) != 0
                 && deadzone > 0.0
                 && self.baro_status.innovation[0] < 0.0
@@ -657,7 +730,7 @@ impl Aids {
         let mut failing = false;
         if self.params.mag_check & 1 != 0 {
             failing = if let Some(wmm) = self.wmm {
-                (strength - wmm.strength_gauss).abs() > default_float("EKF2_MAG_CHK_STR")
+                (strength - wmm.strength_gauss).abs() > self.params.mag_check_strength_gauss
             } else {
                 self.params.mag_check & 4 != 0 || !(0.05..=0.85).contains(&strength)
             };
@@ -667,7 +740,7 @@ impl Aids {
                 let earth = math::rotate(math::rotation(filter.quaternion()), field);
                 let inclination = libm::asinf(earth[2] / math::norm(&earth).max(1e-4));
                 failing |= math::wrap_pi_f32(inclination - wmm.inclination_deg.to_radians()).abs()
-                    > default_float("EKF2_MAG_CHK_INC").to_radians();
+                    > self.params.mag_check_inclination_deg.to_radians();
             } else {
                 failing |= self.params.mag_check & 4 != 0;
             }
@@ -699,7 +772,7 @@ impl Aids {
         if self.mag_heading_lpf.abs() >= filter.params.heading_noise {
             filter.control &= !MAG_CONSISTENT;
         } else if filter.horizontal_aiding()
-            && math::norm(&filter.horizontal_accel_lpf) > default_float("EKF2_MAG_ACCLIM")
+            && math::norm(&filter.horizontal_accel_lpf) > self.params.mag_accel_limit_m_s2
         {
             filter.control |= MAG_CONSISTENT;
         }

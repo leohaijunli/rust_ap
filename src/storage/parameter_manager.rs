@@ -73,7 +73,7 @@ impl<'d> ParameterManager<'d> {
 
     pub fn set(&self, id: Id, value: f32) -> Result<bool, parameters::Error> {
         let candidate = self.values.borrow().snapshot().with(id, value)?;
-        let estimator = v6x_rust_led::estimator::runtime::Params::from_parameters(candidate)
+        let estimator = v6x_rust_led::estimator::product::Params::from_parameters(candidate)
             .map_err(|_| parameters::Error::Configuration)?;
         if estimator.enabled && (crate::OUTPUT_STATE.armed || crate::OUTPUT_STATE.outputs_enabled) {
             return Err(parameters::Error::Configuration);

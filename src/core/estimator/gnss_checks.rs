@@ -6,7 +6,7 @@
 
 use super::{ekf2_parameter, FilterFault, GnssSample, ParamValue};
 
-fn default_value(name: &str) -> f32 {
+const fn default_value(name: &str) -> f32 {
     match ekf2_parameter(name)
         .expect("fixed GNSS catalog parameter")
         .default
@@ -31,6 +31,12 @@ pub struct GnssCheckParams {
 
 impl Default for GnssCheckParams {
     fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl GnssCheckParams {
+    pub(super) const fn defaults() -> Self {
         Self {
             mask: default_value("EKF2_GPS_CHECK") as u16,
             minimum_fix: default_value("EKF2_REQ_FIX") as u8,
@@ -57,6 +63,18 @@ pub struct GnssChecks {
 }
 
 impl GnssChecks {
+    pub(super) const fn dormant() -> Self {
+        Self {
+            params: GnssCheckParams::defaults(),
+            initial_passed: false,
+            passed: false,
+            last_fail_us: 0,
+            last_pass_us: 0,
+            previous_time_us: 0,
+            failure_bits: 0,
+        }
+    }
+
     pub fn new(params: GnssCheckParams) -> Result<Self, FilterFault> {
         if params.mask & !0x7ff != 0
             || [

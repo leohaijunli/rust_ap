@@ -41,7 +41,7 @@ pub(super) struct GsfYaw {
 }
 
 impl GsfYaw {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             models: [EMPTY; 5],
             tilt_aligned: false,

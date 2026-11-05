@@ -24,7 +24,7 @@ const HEIGHT: u64 = 1 << 11;
 const GNSS_FAULT: u64 = 1 << 45;
 const HEIGHT_FAULT: u64 = 1 << 47;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct GnssObservation {
     pub sample: GnssSample,
     pub pdop: f32,
@@ -41,7 +41,8 @@ mod tests {
             offset_body_m: [1.0, 0.0, 0.5],
             ..GnssParams::default()
         };
-        let mut aids = GnssAids::new(params, 20).unwrap();
+        let mut aids = GnssAids::dormant();
+        aids.reset_to(params, 20).unwrap();
         let mut core = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
         let sample = GnssSample {
             timestamp: 1_000_000,
@@ -148,6 +149,40 @@ pub struct GnssParams {
 
 impl Default for GnssParams {
     fn default() -> Self {
+        Self::defaults()
+    }
+}
+
+impl GnssObservation {
+    pub fn from_sensor_gps(gps: &crate::px4_messages::SensorGps) -> Option<Self> {
+        if !gps.vel_ned_valid {
+            return None;
+        }
+        let observation = Self {
+            sample: GnssSample {
+                timestamp: gps.timestamp,
+                latitude_deg: gps.latitude_deg,
+                longitude_deg: gps.longitude_deg,
+                altitude_msl_m: gps.altitude_msl_m as f32,
+                velocity_ned_m_s: [gps.vel_n_m_s, gps.vel_e_m_s, gps.vel_d_m_s],
+                horizontal_accuracy_m: gps.eph,
+                vertical_accuracy_m: gps.epv,
+                // Fixed EKF2 forwards this legacy-named field without sqrt.
+                speed_accuracy_m_s: gps.s_variance_m_s,
+                fix_type: gps.fix_type,
+                satellites: gps.satellites_used,
+            },
+            pdop: libm::sqrtf(gps.hdop * gps.hdop + gps.vdop * gps.vdop),
+            spoofed: gps.spoofing_state > 1,
+        };
+        super::Measurement::Gnss(observation)
+            .valid()
+            .then_some(observation)
+    }
+}
+
+impl GnssParams {
+    const fn defaults() -> Self {
         Self {
             control: default_int("EKF2_GPS_CTRL"),
             mode: default_int("EKF2_GPS_MODE"),
@@ -156,7 +191,7 @@ impl Default for GnssParams {
             velocity_noise_m_s: default_float("EKF2_GPS_V_NOISE"),
             position_gate: default_float("EKF2_GPS_P_GATE"),
             velocity_gate: default_float("EKF2_GPS_V_GATE"),
-            checks: GnssCheckParams::default(),
+            checks: GnssCheckParams::defaults(),
             offset_body_m: [0.0; 3],
         }
     }
@@ -165,7 +200,7 @@ impl Default for GnssParams {
 /// Main five-sensor instance; sensor sharing is by copied read-only DTO only.
 pub struct GnssEkf {
     core: ImuEkf,
-    aids: Option<GnssAids>,
+    aids: GnssAids,
     profile: Option<Profile>,
 }
 
@@ -182,7 +217,7 @@ impl GnssEkf {
     pub(super) const fn dormant() -> Self {
         Self {
             core: ImuEkf::dormant(),
-            aids: None,
+            aids: GnssAids::dormant(),
             profile: None,
         }
     }
@@ -209,12 +244,13 @@ impl GnssEkf {
         t0: u64,
     ) -> Result<(), FilterFault> {
         self.profile = None;
-        self.aids = None;
+        super::config_stage::enter(super::config_stage::IMU_INIT);
         self.core.initialize_range(&imu, baro_mag, range, t0)?;
         self.core
             .initial_horizontal_noise(params.position_noise_m, params.velocity_noise_m_s);
         let length =
             libm::ceilf(imu.delay_max_ms / (imu.predict_us as f32 / 1000.0)).max(2.0) as usize;
+        super::config_stage::enter(super::config_stage::GNSS);
         self.enable_gnss(params, length)?;
         self.profile = Some(Profile {
             params,
@@ -226,64 +262,9 @@ impl GnssEkf {
         Ok(())
     }
 
-    /// Bring-up diagnostic: 0 ok, 1 imu params, 2 core initialize, 3 baro/mag,
-    /// 4 range, 5 gnss aids. Same constructors and order as `reconfigure`.
-    pub fn reconfigure_staged(
-        &mut self,
-        imu: ImuEkfParams,
-        baro_mag: BaroMagParams,
-        range: RangeParams,
-        params: GnssParams,
-        t0: u64,
-    ) -> u32 {
-        if imu.buffer_length().is_err() {
-            return 1;
-        }
-        if self.core.initialize_only(&imu, t0).is_err() {
-            return 2;
-        }
-        if self.core.params_differ(&imu) {
-            return 12;
-        }
-        if self.core.enable_baro_mag_probe(baro_mag).is_err() {
-            return 3;
-        }
-        if self.core.params_differ(&imu) {
-            return 13;
-        }
-        if self.core.enable_range_probe(range).is_err() {
-            return 4;
-        }
-        if self.core.params_differ(&imu) {
-            return 14;
-        }
-        self.core
-            .initial_horizontal_noise(params.position_noise_m, params.velocity_noise_m_s);
-        if self.core.params_differ(&imu) {
-            return 15;
-        }
-        let length =
-            libm::ceilf(imu.delay_max_ms / (imu.predict_us as f32 / 1000.0)).max(2.0) as usize;
-        if self.enable_gnss(params, length).is_err() {
-            return 5;
-        }
-        if self.core.params_differ(&imu) {
-            return 16;
-        }
-        self.profile = Some(Profile {
-            params,
-            imu_params: imu,
-            baro_mag_params: baro_mag,
-            range_params: range,
-            output_params: super::output_predictor::OutputParams::default(),
-        });
-        0
-    }
-
     #[inline(never)]
     fn enable_gnss(&mut self, params: GnssParams, length: usize) -> Result<(), FilterFault> {
-        self.aids = Some(GnssAids::new(params, length)?);
-        Ok(())
+        self.aids.reset_to(params, length)
     }
 
     pub fn reset(&mut self, t0: u64) -> Result<(), FilterFault> {
@@ -312,16 +293,10 @@ impl GnssEkf {
         Ok(())
     }
     pub fn status(&self) -> [AidStatus; 3] {
-        self.aids
-            .as_ref()
-            .map_or([AidStatus::default(); 3], |aids| {
-                [aids.position, aids.velocity, aids.height]
-            })
+        [self.aids.position, self.aids.velocity, self.aids.height]
     }
     pub fn quality_failure_bits(&self) -> u16 {
-        self.aids
-            .as_ref()
-            .map_or(0, |aids| aids.checks.failure_bits())
+        self.aids.checks.failure_bits()
     }
 
     pub fn standard_output(&mut self, now: u64) -> super::standard_output::Snapshot {
@@ -345,7 +320,7 @@ impl GnssEkf {
         gnss: Option<GnssObservation>,
         range: Option<RangeObservation>,
     ) -> Result<bool, FilterFault> {
-        let aids = self.aids.as_mut().ok_or(FilterFault::Input)?;
+        let aids = &mut self.aids;
         aids.pending = gnss;
         self.core.update_extended(imu, baro_mag, range, aids)
     }
@@ -357,10 +332,100 @@ impl GnssEkf {
         gnss: Option<GnssObservation>,
         range: Option<RangeObservation>,
     ) -> Result<bool, FilterFault> {
-        let aids = self.aids.as_mut().ok_or(FilterFault::Input)?;
+        let aids = &mut self.aids;
         aids.pending = gnss;
         self.core.pending_baro(baro);
         self.core.update_extended(imu, None, range, aids)
+    }
+}
+
+impl super::NavFilter for GnssEkf {
+    type Params = super::runtime_params::Params;
+
+    fn new(params: &Self::Params, t0: u64) -> Self {
+        let mut filter = const { Self::dormant() };
+        let _ = filter.configure_from_snapshot(params, t0); // Stored in health().
+        filter
+    }
+
+    fn push_imu(&mut self, sample: &ImuDelta) {
+        // ingest_imu stores the returned failure in the core health state.
+        let _ = self.core.ingest_imu(sample);
+    }
+
+    fn push_measurement(&mut self, measurement: super::Measurement) {
+        if self.core.health().fault.is_some() {
+            return;
+        }
+        let result = match measurement {
+            super::Measurement::Gnss(observation) => {
+                self.aids.pending = Some(observation);
+                self.aids.push(&self.core)
+            }
+            other => self.core.enqueue(other),
+        };
+        if let Err(fault) = result {
+            self.core.invalidate(fault);
+        }
+    }
+
+    fn step(&mut self, now: u64) -> super::StepReport {
+        let before = self.all_aid_status();
+        let result = self
+            .core
+            .check_fresh(now)
+            .and_then(|()| self.core.step_extended(&mut self.aids));
+        match result {
+            Ok(updated) => super::StepReport::from_aids(updated, before, self.all_aid_status()),
+            Err(fault) => {
+                self.core.invalidate(fault);
+                super::StepReport::default()
+            }
+        }
+    }
+
+    fn output(&self) -> super::NavOutput {
+        self.core.output()
+    }
+    fn health(&self) -> super::FilterHealth {
+        self.core.health()
+    }
+}
+
+impl GnssEkf {
+    #[inline(never)]
+    pub fn configure_from_snapshot(
+        &mut self,
+        params: &super::runtime_params::Params,
+        t0: u64,
+    ) -> Result<(), FilterFault> {
+        super::config_stage::enter(super::config_stage::VALIDATE);
+        let result = params
+            .validate(true)
+            .and_then(|()| {
+                self.reconfigure(params.imu, params.aiding, params.range, params.gnss, t0)
+            })
+            .and_then(|()| {
+                super::config_stage::enter(super::config_stage::OUTPUT);
+                self.configure_output(params.output)
+            });
+        if let Err(fault) = result {
+            self.core.invalidate(fault);
+        }
+        result
+    }
+
+    fn all_aid_status(&self) -> [AidStatus; 6] {
+        let (baro, mag) = self.core.aid_status().unwrap_or_default();
+        let [position, velocity, height] = self.status();
+        [
+            baro,
+            mag,
+            self.core.range_status().unwrap_or_default(),
+            position,
+            velocity,
+            height,
+        ]
     }
 }
 
@@ -388,13 +453,9 @@ struct GnssAids {
     height_bias: BiasEstimator,
 }
 
-/// Bring-up diagnostic: run the GNSS aid constructor without filter state.
-pub fn constructor_probe(params: GnssParams, length: usize) -> Result<(), FilterFault> {
-    GnssAids::new(params, length).map(|_| ())
-}
-
 impl GnssAids {
-    fn new(params: GnssParams, length: usize) -> Result<Self, FilterFault> {
+    #[inline(never)]
+    fn reset_to(&mut self, params: GnssParams, length: usize) -> Result<(), FilterFault> {
         if params.control & !7 != 0
             || params.mode != 0 // Only the Auto reset policy is implemented in this profile.
             || [
@@ -410,29 +471,58 @@ impl GnssAids {
         {
             return Err(FilterFault::Input);
         }
-        Ok(Self {
-            params,
-            buffer: ObservationBuffer::new(length),
-            checks: GnssChecks::new(params.checks)?,
+        let checks = GnssChecks::new(params.checks)?;
+        const INITIAL: GnssAids = GnssAids::dormant();
+        *self = INITIAL;
+        self.params = params;
+        self.buffer.clear(length);
+        self.checks = checks;
+        Ok(())
+    }
+
+    const fn dormant() -> Self {
+        const EMPTY: GnssObservation = GnssObservation {
+            sample: GnssSample {
+                timestamp: 0,
+                latitude_deg: 0.0,
+                longitude_deg: 0.0,
+                altitude_msl_m: 0.0,
+                velocity_ned_m_s: [0.0; 3],
+                horizontal_accuracy_m: 0.0,
+                vertical_accuracy_m: 0.0,
+                speed_accuracy_m_s: 0.0,
+                fix_type: 0,
+                satellites: 0,
+            },
+            pdop: 0.0,
+            spoofed: false,
+        };
+        Self {
+            params: GnssParams::defaults(),
+            buffer: ObservationBuffer::with_initial(2, EMPTY),
+            checks: GnssChecks::dormant(),
             yaw: GsfYaw::new(),
             pending: None,
-            last_sample: GnssObservation::default(),
+            last_sample: EMPTY,
             started: false,
             data_ready: false,
             last_input: 0,
             last_push: 0,
-            position: AidStatus::default(),
-            velocity: AidStatus::default(),
-            height: AidStatus::default(),
-            position_observation: GlobalPosition::default(),
+            position: AidStatus::EMPTY,
+            velocity: AidStatus::EMPTY,
+            height: AidStatus::EMPTY,
+            position_observation: GlobalPosition::ZERO,
             velocity_observation: [0.0; 3],
             position_variance: 0.0,
             velocity_variance: [0.0; 3],
             last_position_fuse: 0,
             last_velocity_fuse: 0,
             last_height_fuse: 0,
-            height_bias: BiasEstimator::new(0.0, 0.0)?,
-        })
+            height_bias: match BiasEstimator::new(0.0, 0.0) {
+                Ok(v) => v,
+                Err(_) => panic!("zero bias"),
+            },
+        }
     }
 
     fn status(

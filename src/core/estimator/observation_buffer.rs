@@ -14,15 +14,28 @@ pub(super) struct ObservationBuffer<T: Copy + Default> {
 
 impl<T: Copy + Default> ObservationBuffer<T> {
     pub fn new(length: usize) -> Self {
-        assert!((2..=64).contains(&length));
+        Self::with_initial(length, T::default())
+    }
+
+    pub const fn with_initial(length: usize, initial: T) -> Self {
+        assert!(length >= 2 && length <= 64);
         Self {
-            samples: [T::default(); 64],
+            samples: [initial; 64],
             times: [0; 64],
             length,
             head: 0,
             tail: 0,
             first: true,
         }
+    }
+
+    pub fn clear(&mut self, length: usize) {
+        assert!((2..=64).contains(&length));
+        self.times.fill(0);
+        self.length = length;
+        self.head = 0;
+        self.tail = 0;
+        self.first = true;
     }
 
     pub fn newest_time(&self) -> u64 {

@@ -133,6 +133,7 @@ def main():
     parser.add_argument("--release", type=Path, default=Path(os.environ.get("CARGO_TARGET_DIR", "target")) / "thumbv7em-none-eabihf/release")
     parser.add_argument("--fault-injection", action="store_true")
     parser.add_argument("--fault-dump", action="store_true")
+    parser.add_argument("--estimator-mahony", action="store_true")
     args = parser.parse_args()
     if args.fault_injection and args.fault_dump:
         parser.error("--fault-injection and --fault-dump are mutually exclusive")
@@ -140,6 +141,7 @@ def main():
         name for name, enabled in (
             ("fault-injection", args.fault_injection),
             ("fault-dump", args.fault_dump),
+            ("estimator-mahony", args.estimator_mahony),
         ) if enabled
     ]
     release = args.release.resolve()

@@ -16,7 +16,7 @@ use v6x_rust_led::estimator::{
     imu_ekf::{ImuEkf, ImuEkfParams},
     output_predictor::OutputParams,
     range_sensor::RangeObservation,
-    GnssSample, ImuDelta,
+    GnssSample, ImuDelta, MagSample, Measurement, NavFilter, RangeSample,
 };
 
 const HEADER: &str = concat!(
@@ -53,7 +53,58 @@ impl HostFilter {
         &mut self,
         imu: &ImuDelta,
         aiding: Option<AidInput>,
+        split: bool,
     ) -> Result<bool, v6x_rust_led::estimator::FilterFault> {
+        if split {
+            let events = aiding
+                .map(|v| {
+                    [
+                        Some(Measurement::Baro(
+                            v6x_rust_led::estimator::imu_ekf::baro_mag::BaroAltitude {
+                                timestamp: v.baro_mag.timestamp,
+                                altitude_m: v.baro_mag.altitude_m,
+                            },
+                        )),
+                        Some(Measurement::Mag(MagSample {
+                            timestamp: v.baro_mag.timestamp,
+                            field_gauss: v.baro_mag.field_gauss,
+                        })),
+                        v.gnss.map(Measurement::Gnss),
+                        v.range.map(|v| {
+                            let [min_distance_m, max_distance_m] = v.limits.unwrap_or([0.1, 30.0]);
+                            Measurement::Range(RangeSample {
+                                timestamp: v.timestamp,
+                                distance_m: v.distance_m,
+                                min_distance_m,
+                                max_distance_m,
+                                quality: v.quality_percent,
+                            })
+                        }),
+                    ]
+                })
+                .unwrap_or([None; 4]);
+            return match self {
+                Self::Basic(filter) => {
+                    filter.ingest_imu(imu)?;
+                    for event in events.into_iter().flatten() {
+                        filter.push_measurement(event)?;
+                    }
+                    filter.step()
+                }
+                Self::Main(filter) => {
+                    filter.push_imu(imu);
+                    for event in events.into_iter().flatten() {
+                        filter.push_measurement(event);
+                    }
+                    let report = filter.step(imu.timestamp);
+                    if let Some(fault) = filter.health().fault {
+                        Err(fault)
+                    } else {
+                        Ok(report.updated)
+                    }
+                }
+            };
+        }
         match self {
             Self::Basic(filter) => filter.update_aided(imu, aiding.map(|a| a.baro_mag)),
             Self::Main(filter) => filter.update(
@@ -135,7 +186,9 @@ fn hash_sample(hash: &mut u64, imu: &ImuDelta) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<_> = env::args().collect();
+    let mut args: Vec<_> = env::args().collect();
+    let split = args.iter().any(|v| v == "--split");
+    args.retain(|v| v != "--split");
     let flags = args.get(4..).unwrap_or_default();
     let nis = flags.iter().any(|flag| flag == "--nis");
     let output_mode = flags.iter().any(|flag| flag == "--output");
@@ -256,6 +309,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     timestamp,
                     distance_m: finite(fields[12])?,
                     quality_percent: fields[13].parse()?,
+                    limits: None,
                 };
                 if !(-1..=100).contains(&range.quality_percent) {
                     return Err("invalid range quality".into());
@@ -409,7 +463,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return Err("more than one aid event per IMU sample is not supported".into());
             }
             let updated = filter
-                .update(&imu, aiding)
+                .update(&imu, aiding, split)
                 .map_err(|fault| format!("IMU EKF: {fault:?}"))?;
             if updated {
                 updates += 1;

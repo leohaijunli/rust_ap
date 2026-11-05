@@ -104,6 +104,7 @@ impl Filter {
             timestamp,
             distance_m: 1.0,
             quality_percent: 100,
+            limits: None,
         });
         let result = match self {
             Self::Gnss(filter) => {

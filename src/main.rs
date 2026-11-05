@@ -254,7 +254,7 @@ async fn application(p: Peripherals, spawner: Spawner) {
         .unwrap();
     static DRONECAN: StaticCell<dronecan_can::State> = StaticCell::new();
     let dronecan: &'static dronecan_can::State = DRONECAN.init(dronecan_can::State::new());
-    estimator::start(p.TIM5);
+    estimator::start(p.TIM5, fast_spawner);
     let can_spawner = CAN_EXECUTOR.start(embassy_stm32::interrupt::TIM6_DAC);
     can_spawner
         .spawn(dronecan_can::io_task(p.FDCAN1, p.PD0, p.PD1))

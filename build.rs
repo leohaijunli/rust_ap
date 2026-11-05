@@ -66,6 +66,9 @@ fn main() {
     if env::var_os("CARGO_FEATURE_FAULT_DUMP").is_some() {
         features.push("fault-dump");
     }
+    if env::var_os("CARGO_FEATURE_ESTIMATOR_MAHONY").is_some() {
+        features.push("estimator-mahony");
+    }
     features.sort();
     if features.is_empty() {
         hash(b"default");

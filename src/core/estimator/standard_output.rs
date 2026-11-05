@@ -75,7 +75,7 @@ pub struct AngularVelocity {
     pub xyz_derivative: [f32; 3],
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LocalPosition {
     pub timestamp: u64,
     pub timestamp_sample: u64,
@@ -154,7 +154,7 @@ pub struct GlobalPosition {
     pub dead_reckoning: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct EstimatorStatus {
     pub timestamp: u64,
     pub timestamp_sample: u64,
@@ -250,6 +250,93 @@ pub(super) struct GnssDiagnostics {
 }
 
 impl Snapshot {
+    /// Generic attitude-only algorithms expose unknown navigation/uncertainty,
+    /// rather than manufacturing an EKF state or finite position accuracy.
+    pub fn attitude_only(output: super::NavOutput, health: super::FilterHealth, now: u64) -> Self {
+        let live =
+            health.valid && now >= output.timestamp && now - output.timestamp <= IMU_FRESH_US;
+        Self {
+            source: Source::Gnss,
+            attitude: live.then_some(Attitude {
+                timestamp: now,
+                timestamp_sample: output.timestamp,
+                q: output.q_body_to_ned,
+                delta_q_reset: output.delta_q_reset,
+                quat_reset_counter: output.quat_reset_counter,
+            }),
+            angular_velocity: live.then_some(AngularVelocity {
+                timestamp: now,
+                timestamp_sample: output.timestamp,
+                xyz: output.angular_velocity_body_rad_s,
+                xyz_derivative: [f32::NAN; 3],
+            }),
+            local_position: LocalPosition {
+                timestamp: now,
+                timestamp_sample: output.timestamp,
+                x: f32::NAN,
+                y: f32::NAN,
+                z: f32::NAN,
+                vx: f32::NAN,
+                vy: f32::NAN,
+                vz: f32::NAN,
+                z_deriv: f32::NAN,
+                ax: f32::NAN,
+                ay: f32::NAN,
+                az: f32::NAN,
+                heading: math::yaw(math::rotation(output.q_body_to_ned)),
+                heading_var: f32::INFINITY,
+                tilt_var: f32::NAN,
+                unaided_heading: f32::NAN,
+                ref_lat: f64::NAN,
+                ref_lon: f64::NAN,
+                ref_alt: f32::NAN,
+                dist_bottom: f32::NAN,
+                dist_bottom_var: f32::INFINITY,
+                eph: f32::INFINITY,
+                epv: f32::INFINITY,
+                evh: f32::INFINITY,
+                evv: f32::INFINITY,
+                vxy_max: f32::NAN,
+                vz_max: f32::NAN,
+                hagl_min: f32::NAN,
+                hagl_max_z: f32::NAN,
+                hagl_max_xy: f32::NAN,
+                ..LocalPosition::default()
+            },
+            global_position: None,
+            status: EstimatorStatus {
+                timestamp: now,
+                timestamp_sample: output.timestamp,
+                solution_status_flags: u16::from(live),
+                output_tracking_error: [f32::NAN; 3],
+                pos_horiz_accuracy: f32::INFINITY,
+                pos_vert_accuracy: f32::INFINITY,
+                hdg_test_ratio: f32::NAN,
+                vel_test_ratio: f32::NAN,
+                pos_test_ratio: f32::NAN,
+                hgt_test_ratio: f32::NAN,
+                tas_test_ratio: f32::NAN,
+                hagl_test_ratio: f32::NAN,
+                beta_test_ratio: f32::NAN,
+                time_slip: f32::NAN,
+                mag_inclination_deg: f32::NAN,
+                mag_inclination_ref_deg: f32::NAN,
+                mag_strength_gs: f32::NAN,
+                mag_strength_ref_gs: f32::NAN,
+                ..EstimatorStatus::default()
+            },
+            states: EstimatorStates {
+                timestamp: now,
+                timestamp_sample: output.timestamp,
+                states: [f32::NAN; 25],
+                n_states: 0,
+                covariances: [f32::NAN; 24],
+            },
+            aids: [None; 6],
+            odometry: None,
+        }
+    }
+
     /// Capture once per publication cycle: reset the integral accumulators once,
     /// then share this immutable snapshot between ULog and both MAVLink links.
     pub(super) fn from_core(

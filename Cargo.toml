@@ -13,6 +13,7 @@ mavlink = { version = "0.17.1", default-features = false, features = ["common", 
 default = []
 fault-injection = []
 fault-dump = []
+estimator-mahony = []
 
 [target.'cfg(target_os = "none")'.dependencies]
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
@@ -46,10 +47,5 @@ bench = false
 codegen-units = 1
 debug = 2
 lto = true
-opt-level = "s"
-panic = "abort"
-
-# The dual EKF update has a measured 1 ms deadline; optimize application math
-# for execution time while retaining size optimization for dependencies.
-[profile.release.package.v6x-rust-led]
 opt-level = 3
+panic = "abort"

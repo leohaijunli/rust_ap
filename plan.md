@@ -179,6 +179,8 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 ### EKF2 后续移植约束
 
+2026-11-05 工程师追加授权：按 A1 实施泛型 `Runtime<F: NavFilter>`、1 kHz 姿态、事件量测与共享预处理/恢复，以新代码重测；四阶段内容见 [EKF 运行时重构计划](docs/ekf2-runtime-refactor.md)。已有黄金数据、必要验证与 E7 实物依赖保留，当前代码实施不预记为阶段通过。
+
 1. **范围**：M1 仍用 Mahony 建立可运行姿态基线。新增 `P6a-e / EKF-01～03` 作为 M1 后续阶段，移植 PX4 v1.17.0 中 EKF 的 state、predict、covariance、aiding、innovation gate 与 health/reset 逻辑；不移植 uORB 和模块调度层。
 2. **Rust 接口**：在 `src/core/estimator/` 定义固件唯一依赖的 `NavFilter`（`new/push_imu/push_measurement/step/output/health`）、内部 `AidSource`，以及 `ImuDelta` / `Measurement` / `NavOutput` DTO；接口与分层见 [EKF2 移植方案](docs/ekf2-port.md)。IMU 通过现有 16 槽有界队列输入；GNSS/后续传感器用带时间与有效性的快照；输出通过 `Watch` 独立给控制、ULog 和 MAVLink。
 3. **首个融合子集**：E1-H 先做无外部 aid 的 IMU 核心，保留固定 PX4 的降采样、延迟缓冲、预测、约束及内部伪观测；yaw 为相对值，位置/高度不可视为有效导航。E2-H～E6-H 可用明确标注的合成观测开发，不冒充实物；真实传感器接入与硬件资格仍按原依赖验收。

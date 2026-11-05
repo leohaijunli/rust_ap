@@ -117,8 +117,8 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
     Topic {
         id: TopicId::EstimatorRuntime,
         name: "rust_estimator_runtime",
-        format: "rust_estimator_runtime:uint64_t timestamp;uint64_t timestamp_sample;uint32_t epoch;uint32_t samples;uint32_t ekf_updates;uint32_t gnss_samples;uint32_t deadline_misses;uint32_t max_update_us;uint8_t selected;uint8_t fault;uint8_t independent_fault;bool nav_qualified;",
-        payload_len: 44,
+        format: "rust_estimator_runtime:uint64_t timestamp;uint64_t timestamp_sample;uint32_t epoch;uint32_t samples;uint32_t updates;uint32_t measurements;uint32_t deadline_misses;uint32_t max_update_us;uint32_t recoveries;uint32_t rejected_measurements;uint8_t selected;uint8_t fault;uint8_t independent_fault;bool nav_qualified;",
+        payload_len: 52,
     },
     Topic {
         id: TopicId::AttitudeEuler,

@@ -1076,6 +1076,14 @@ fn publish_gnss(fix: GnssFix2, source_node_id: u8, now_us: u64) {
     let snapshot = process_fix2(&fix, source_node_id, now_us, &auxiliary);
     crate::sd_logger::record_sensor_gps(snapshot);
     GNSS.sender().send(snapshot);
+    if let Some(observation) =
+        v6x_rust_led::estimator::gnss::GnssObservation::from_sensor_gps(&snapshot)
+    {
+        crate::estimator::submit_measurement(
+            v6x_rust_led::estimator::Measurement::Gnss(observation),
+            snapshot.device_id,
+        );
+    }
 }
 
 /// Latest sensor_gps snapshot for MAVLink; freshness is the caller's rule.

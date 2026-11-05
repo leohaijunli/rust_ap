@@ -90,7 +90,7 @@ impl PublicationReset {
 mod tests {
     use super::*;
     use crate::{
-        estimator::runtime::{Params, Runtime},
+        estimator::{product::ProductRuntime, runtime_params::Params},
         icm42688::Sample,
         parameters::{Id, Snapshot as Parameters},
     };
@@ -100,7 +100,7 @@ mod tests {
         let params =
             Params::from_parameters(Parameters::default().with(Id::EstEnable, 1.0).unwrap())
                 .unwrap();
-        let mut runtime = Runtime::new(params, 0).unwrap();
+        let mut runtime = ProductRuntime::new(params, 0).unwrap();
         runtime.update(
             Sample {
                 sample_timestamp_us: 1_000_000,
@@ -115,7 +115,8 @@ mod tests {
             None,
             None,
         );
-        let mut snapshot = runtime.snapshots(1_000_020)[0];
+        let mut snapshot = runtime.filter_mut().standard_output(1_000_020);
+        snapshot.attitude = runtime.attitude_at(1_000_020).map(|v| v.attitude);
         let mut tracker = PublicationReset::default();
         tracker.apply(&mut snapshot, 1, 2);
         let mut next = snapshot;

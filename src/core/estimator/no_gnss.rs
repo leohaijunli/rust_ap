@@ -1,4 +1,4 @@
-//! Independent EKF instance whose public input contract excludes GNSS.
+//! Independent EKF: the typed input API excludes GNSS; NavFilter ignores it.
 
 use super::{
     imu_ekf::{
@@ -13,9 +13,9 @@ use super::{
 
 /// Barometer, magnetometer and range-aided estimator for local dead reckoning.
 ///
-/// GNSS cannot be supplied through this type. That separation is intentional:
-/// callers must publish its horizontal solution as invalid local navigation and
-/// use the dedicated odometry stream rather than global-position messages.
+/// The typed API rejects GNSS, and the common NavFilter API discards it before
+/// touching filter state. Unconstrained horizontal navigation remains invalid
+/// and uses the dedicated odometry stream with unbounded uncertainty.
 pub struct NoGnssEkf {
     core: ImuEkf,
 }
@@ -34,41 +34,8 @@ impl NoGnssEkf {
         range: RangeParams,
         t0: u64,
     ) -> Result<(), FilterFault> {
+        super::config_stage::enter(super::config_stage::IMU_INIT);
         self.core.initialize_range(&imu, baro, range, t0)
-    }
-
-    /// Bring-up diagnostic returning which internal step rejected the inputs:
-    /// 0 ok, 1 imu buffer params, 2 core initialize, 3 baro/mag aids, 4 range aids.
-    /// Runs the same constructors as `reconfigure`; on success the state equals it.
-    pub fn reconfigure_staged(
-        &mut self,
-        imu: ImuEkfParams,
-        baro: BaroMagParams,
-        range: RangeParams,
-        t0: u64,
-    ) -> u32 {
-        if imu.buffer_length().is_err() {
-            return 1;
-        }
-        if self.core.initialize_only(&imu, t0).is_err() {
-            return 2;
-        }
-        if self.core.params_differ(&imu) {
-            return 12;
-        }
-        if self.core.enable_baro_mag_probe(baro).is_err() {
-            return 3;
-        }
-        if self.core.params_differ(&imu) {
-            return 13;
-        }
-        if self.core.enable_range_probe(range).is_err() {
-            return 4;
-        }
-        if self.core.params_differ(&imu) {
-            return 14;
-        }
-        0
     }
 
     pub fn new(
@@ -131,6 +98,78 @@ impl NoGnssEkf {
         range: Option<RangeObservation>,
     ) -> Result<bool, FilterFault> {
         self.core.update_baro(imu, baro, range)
+    }
+}
+
+impl super::NavFilter for NoGnssEkf {
+    type Params = super::runtime_params::Params;
+
+    fn new(params: &Self::Params, t0: u64) -> Self {
+        let mut filter = const { Self::dormant() };
+        let _ = filter.configure_from_snapshot(params, t0); // Stored in health().
+        filter
+    }
+
+    fn push_imu(&mut self, sample: &ImuDelta) {
+        let _ = self.core.ingest_imu(sample); // Failure remains in health().
+    }
+
+    fn push_measurement(&mut self, measurement: super::Measurement) {
+        // The common trait can carry GNSS, but this instance never consumes it.
+        // Its typed legacy API also continues to reject GNSS at compile time.
+        if matches!(measurement, super::Measurement::Gnss(_)) || self.core.health().fault.is_some()
+        {
+            return;
+        }
+        if let Err(fault) = self.core.enqueue(measurement) {
+            self.core.invalidate(fault);
+        }
+    }
+
+    fn step(&mut self, now: u64) -> super::StepReport {
+        let before = self.all_aid_status();
+        let result = self.core.check_fresh(now).and_then(|()| self.core.step());
+        match result {
+            Ok(updated) => super::StepReport::from_aids(updated, before, self.all_aid_status()),
+            Err(fault) => {
+                self.core.invalidate(fault);
+                super::StepReport::default()
+            }
+        }
+    }
+
+    fn output(&self) -> super::NavOutput {
+        self.core.output()
+    }
+    fn health(&self) -> super::FilterHealth {
+        self.core.health()
+    }
+}
+
+impl NoGnssEkf {
+    #[inline(never)]
+    pub fn configure_from_snapshot(
+        &mut self,
+        params: &super::runtime_params::Params,
+        t0: u64,
+    ) -> Result<(), FilterFault> {
+        super::config_stage::enter(super::config_stage::VALIDATE);
+        let result = params
+            .validate(false)
+            .and_then(|()| self.reconfigure(params.imu, params.aiding, params.range, t0))
+            .and_then(|()| {
+                super::config_stage::enter(super::config_stage::OUTPUT);
+                self.configure_output(params.output)
+            });
+        if let Err(fault) = result {
+            self.core.invalidate(fault);
+        }
+        result
+    }
+
+    fn all_aid_status(&self) -> [super::imu_ekf::baro_mag::AidStatus; 3] {
+        let (baro, mag) = self.core.aid_status().unwrap_or_default();
+        [baro, mag, self.core.range_status().unwrap_or_default()]
     }
 }
 
@@ -231,6 +270,7 @@ mod tests {
                 timestamp,
                 distance_m: 1.0,
                 quality_percent: 100,
+                limits: None,
             });
             estimator
                 .update(

@@ -103,6 +103,10 @@ jobs:
           .venv/bin/python tools/gen_parameter_metadata.py --check --rust "target/$host/debug/examples/parameter_catalog"
           .venv/bin/python tools/check_bmp388.py --rust "target/$host/debug/examples/bmp388_compensation"
           .venv/bin/python -m unittest discover -s tools -p 'test_upload_windows.py'
+      - name: Qualify split estimator API against committed PX4 evidence
+        run: |
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          .venv/bin/python tools/check_ekf2_refactor.py --rust "target/$host/release/examples/ekf2_input"
       - name: Host tests, lint, H753 build and package checks
         run: bash tools/firmware.sh check
       - name: Separate fault-injection build (never flashed in CI)
@@ -124,5 +128,6 @@ jobs:
             target/ekf2-host-gnss-range*/**/report.json
             target/ekf2-host-output/**/report.json
             target/ekf2-host-standard/**/report.json
+            target/ekf2-refactor/**/report.json
             target/bmp388-host/report.json
             target/p1-fault-injection/thumbv7em-none-eabihf/release/disassembly.txt
