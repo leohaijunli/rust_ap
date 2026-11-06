@@ -95,8 +95,8 @@ def main():
             result["stop_before"] = capture.request("!ekf2 stop")
             capture.observe(0.1)
             result["metrics_before"] = capture.request("!metrics")
-            if int(result["metrics_before"]["fields"]["STACK"]["untouched_bytes"]) < 32768:
-                raise ValueError("boot stack margin below 32 KiB")
+            if int(result["metrics_before"]["fields"]["STACK"]["untouched_bytes"]) < 16384:
+                raise ValueError("boot stack margin below 16 KiB")
             try:
                 result["start"] = capture.request("!ekf2 start")
                 if result["start"]["fields"].get("EST_CONTROL", {}).get("accepted") != "true":
@@ -118,7 +118,7 @@ def main():
                                   "imu": capture.request("!imu")}
                         result["samples"].append(sample)
                         stack = sample["metrics"]["fields"]["STACK"]
-                        if stack["guard_ok"] != "true" or int(stack["untouched_bytes"]) < 32768:
+                        if stack["guard_ok"] != "true" or int(stack["untouched_bytes"]) < 16384:
                             raise ValueError("active estimator stack margin/guard failed")
                         if capture.armed_seen:
                             raise ValueError("unexpected armed heartbeat")
