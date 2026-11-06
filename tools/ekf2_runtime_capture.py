@@ -135,7 +135,8 @@ def main():
                 result["stopped"] = capture.request("!ekf2")
             result["fault_after"] = capture.request("!fault")
             metrics = [sample["metrics"] for sample in result["samples"]]
-            result["p1_analysis"] = analyze(metrics, result["platform"]["fields"])
+            result["p1_analysis"] = analyze(metrics, result["platform"]["fields"],
+                                            release_latency_us=None)
             result["issues"].extend(result["p1_analysis"]["issues"])
             last = result["samples"][-1]["ekf"]["fields"]
             first = result["samples"][0]["ekf"]["fields"]

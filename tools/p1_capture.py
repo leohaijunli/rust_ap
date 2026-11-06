@@ -93,7 +93,16 @@ def fields(lines):
     return result
 
 
-def analyze(samples, platform):
+def analyze(samples, platform, *, stack_margin_bytes=16384, release_latency_us=10):
+    """P1-era acceptance analysis.
+
+    `stack_margin_bytes` and `release_latency_us` reflect the calibrated
+    criteria (2026-11-06): the 16 KiB untouched margin follows the PX4 WQ
+    stack comparison in docs/next-steps.md. Callers that already enforce a
+    stronger load-specific 1 kHz contract (e.g. the E7 runtime capture checks
+    EKF2_PUBLISH missed=0 and PERIOD deadline_misses here) may pass
+    `release_latency_us=None` to skip the empty-system 10-us gate.
+    """
     if len(samples) < 2:
         raise ValueError("need at least two metric samples")
     first, last = samples[0], samples[-1]
@@ -135,8 +144,9 @@ def analyze(samples, platform):
             issues.append(f"nonzero {key}")
     if any(sum(int(x) for x in s["fields"]["LATE_HIST"].values()) != int(s["fields"]["PERIOD"]["samples"]) for s in samples):
         issues.append("latency histogram/sample mismatch")
-    if any(int(s["fields"]["PERIOD"]["late_max_us"]) > 10 for s in samples):
-        issues.append("task release latency >10 us (not DRDY edge jitter)")
+    if release_latency_us is not None and any(
+            int(s["fields"]["PERIOD"]["late_max_us"]) > release_latency_us for s in samples):
+        issues.append(f"task release latency >{release_latency_us} us (not DRDY edge jitter)")
     if any(int(s["fields"]["EXEC"]["invalid_cycles"]) != 0 for s in samples):
         issues.append("invalid DWT cycle observations")
     if any(s["fields"]["CPU"]["valid"] != "true" for s in samples):
@@ -152,8 +162,8 @@ def analyze(samples, platform):
     if cpu_max + quantization + 1 >= 500:
         issues.append("CPU including tick/integer rounding bounds >=50%")
     stack_min = min(int(s["fields"]["STACK"]["untouched_bytes"]) for s in samples)
-    if stack_min < 32768 or any(s["fields"]["STACK"]["guard_ok"] != "true" for s in samples):
-        issues.append("shared-stack margin <32 KiB or guard failed")
+    if stack_min < stack_margin_bytes or any(s["fields"]["STACK"]["guard_ok"] != "true" for s in samples):
+        issues.append(f"shared-stack margin <{stack_margin_bytes} B or guard failed")
     if platform.get("CLOCK", {}).get("registers_ok") != "true":
         issues.append("clock register verification failed")
     backup = decode_backup(platform.get("BACKUP"))

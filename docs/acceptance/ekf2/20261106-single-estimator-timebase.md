@@ -41,4 +41,5 @@
 - **顺带修复历史 bug**：`record_can_stats` 误用 `Group::Health` 限流器，`rust_runtime_health` 被 10 Hz can_stats 饿死（三轮数据吻合：2 Hz / 0 / 仅前 0.9 s）。改回 `Group::Can` 后板验（source=`ad99705b817a8c7f`）：health 与 can_stats 并存（116/116 行 ≈10 Hz），12 s 会话 dropout=0、无损坏。
 - 残余 −32270～−32444 ppm 传感器时间偏差仅影响诊断口径，不进入积分；归因需保留 FIFO tick 分布等更多证据，[时基说明](../../imu-timebase.md)继续保留该限制。
 - 共享栈判据按工程师确认放宽（2026-11-06）：untouched ≥16 KiB（原 ≥32 KiB）。依据 PX4 v1.17.0 默认 WQ 栈预算（INS0/EKF2 6000 B，SPI/hp/uavcan/lp/tty/manager 合计 ≈15.3 KB，等效路径 ≈21.3 KB 拆在 ~7 个独立任务栈）；本项目同样内容压在单个 64 KiB 共享栈，实测 touched 33392 B 与 PX4 同量级略高（含 IRQ 嵌套）。新余量 ≈ 实测的 2×，也是 PX4 最大单 WQ 栈的 2.7×。对比表见[下一步计划](../../next-steps.md)。
+- **按新判据的完整 65 s 采集通过**（source=`ad99705b817a8c7f`，`target/ekf2-runtime/20261106-tim8-run3-16kib-gate`）：`passed=true, issues=[]`；`Filter/Running`、fault=None、6784 updates、`deadline_misses=0`、`max_update_us=560`、`integration_error_ppm=0`（66 窗口）、1 kHz 发布 `missed=0`、栈最低 30728 B >16 KiB、CPU 28.7%<50%、PERIOD `deadline_misses=0`（P1 空载 10 µs release 门不再并入 E7 联合负载判定，1 kHz 合同由 `EKF2_PUBLISH missed=0` 与 `PERIOD deadline_misses=0` 承担，`p1_capture.analyze` 已参数化）。
 - GNSS 实物融合、日志/双链路、M1/E7 资格仍按原依赖门，不放行。后续执行顺序见[下一步计划](../../next-steps.md)。

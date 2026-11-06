@@ -69,7 +69,7 @@ M4 / 结构化优化（仅门后）
 
 | 决策 | 背景 | 选项 |
 | --- | --- | --- |
-| 共享栈 32 KiB 门 | ✅ 已决策（2026-11-06）：放宽为 untouched ≥16 KiB。依据：PX4 v1.17.0 Kconfig 默认 WQ 栈 —— INS0（EKF2）6000 B、SPI 2392、hp_default 2800、uavcan 3624、lp_default 3500、tty 1728、manager 1280，等效活跃路径合计 ≈21.3 KB（拆在 ~7 个独立任务栈）；本项目同样内容压在单个 64 KiB 共享栈，实测 touched 33392 B 同量级略高（含 IRQ 嵌套）。16 KiB 余量 ≈ 实测的 2×，也是 PX4 最大单 WQ 栈的 2.7×。采集工具两处门已同步（`ekf2_runtime_capture.py`） |
+| 共享栈 32 KiB 门 | ✅ 已决策（2026-11-06）：放宽为 untouched ≥16 KiB。依据：PX4 v1.17.0 Kconfig 默认 WQ 栈 —— INS0（EKF2）6000 B、SPI 2392、hp_default 2800、uavcan 3624、lp_default 3500、tty 1728、manager 1280，等效活跃路径合计 ≈21.3 KB（拆在 ~7 个独立任务栈）；本项目同样内容压在单个 64 KiB 共享栈，实测 touched 33392 B 同量级略高（含 IRQ 嵌套）。16 KiB 余量 ≈ 实测的 2×，也是 PX4 最大单 WQ 栈的 2.7×。采集工具两处门已同步（`ekf2_runtime_capture.py`、`p1_capture.analyze` 参数化）；**按新判据的 65 s 完整采集 passed=true, issues=[]**（栈最低 30728 B、CPU 28.7%、deadline_misses=0、发布 missed=0、积分 0 ppm）。 |
 | dropout 验收 | 剩余 3 次 ≥65.5 ms 卡级停顿/65 s | H-04 给出允许丢失窗口数值后按窗口判定 |
 | `LOG_CAN_HZ` | 已砍 raw_command，400 Hz 只剩 ESC/Status | 维持 400 或按事件记录 |
 | 传感器时间残差 | −3.24%，不影响积分 | 追查 or 保留诊断口径不动 |
