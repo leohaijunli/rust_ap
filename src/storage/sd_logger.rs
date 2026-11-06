@@ -1061,21 +1061,11 @@ async fn write_definitions<W: Write>(
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
     }
-    let record = ulog::raw_subscription(
-        ulog::INDEPENDENT_EULER_ID,
-        1,
-        TopicId::AttitudeEuler.definition().name,
-    )
-    .expect("fixed independent Euler subscription");
-    writer.write_all(record.as_bytes()).await?;
-    bytes_written += record.as_bytes().len() as u32;
-    for instance in [0, 1] {
-        for topic in &v6x_rust_led::estimator::standard_ulog::TOPICS {
-            let record = v6x_rust_led::estimator::standard_ulog::subscription(topic.id, instance)
-                .expect("fixed estimator subscription");
-            writer.write_all(record.as_bytes()).await?;
-            bytes_written += record.as_bytes().len() as u32;
-        }
+    for topic in &v6x_rust_led::estimator::standard_ulog::TOPICS {
+        let record = v6x_rust_led::estimator::standard_ulog::subscription(topic.id)
+            .expect("fixed estimator subscription");
+        writer.write_all(record.as_bytes()).await?;
+        bytes_written += record.as_bytes().len() as u32;
     }
     let dirty = parameters.is_dirty();
     let mut encoder = DataEncoder::new();

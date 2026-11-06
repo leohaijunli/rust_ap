@@ -78,13 +78,6 @@ def yaw(q):
     return math.atan2(r[1][0], r[0][0])
 
 
-def body_rotation_variance(row):
-    r = rotation(trace_vector(row, "state", 4))
-    covariance = trace_vector(row, "rot_cov", 9)
-    return [sum(r[i][axis] * covariance[i * 3 + j] * r[j][axis]
-                for i in range(3) for j in range(3)) for axis in range(3)]
-
-
 def read_csv(path):
     with path.open(encoding="utf-8", newline="") as file:
         return list(csv.DictReader(file))
@@ -118,10 +111,10 @@ def verify_upstream(root):
         require(declarations == extracted, f"pinned message extract changed: {filename}")
 
 
-def check_local(row, raw, no_gps):
+def check_local(row, raw):
     healthy = bool(int(raw["healthy"]))
     control = int(raw["control"])
-    horizontal = healthy and not no_gps and bool(control & ((1 << 2) | (1 << 44)))
+    horizontal = healthy and bool(control & ((1 << 2) | (1 << 44)))
     vertical = healthy and bool(control & ((1 << 9) | (1 << 10) | (1 << 11) | (1 << 44)))
     expected = {
         "timestamp": int(raw["timestamp"]), "timestamp_sample": int(raw["latest"]),
@@ -162,7 +155,7 @@ def check_local(row, raw, no_gps):
         for field in ("ref_lat", "ref_lon", "ref_alt"):
             equal(row[field], math.nan, f"local.{field}")
     else:
-        require(not no_gps and row["z_global"] and 0 < row["ref_timestamp"] <= row["timestamp_sample"],
+        require(row["z_global"] and 0 < row["ref_timestamp"] <= row["timestamp_sample"],
                 "invalid global-reference timestamp/flags")
         for field in ("ref_lat", "ref_lon", "ref_alt"):
             require(math.isfinite(row[field]), f"global reference {field} not finite")
@@ -253,26 +246,18 @@ def global_int_fields(global_row, local, home_altitude=None):
             "hdg": scaled(degrees, 100)}
 
 
-def check_covariance(actual, values, label):
-    expected = [math.nan] * 21
-    for index, value in values.items():
-        expected[index] = value
-    for index, (a, b) in enumerate(zip(actual, expected, strict=True)):
-        equal(a, b, f"{label}[{index}]")
-
-
-def check_frames(log, trace, messages, no_gps):
+def check_frames(log, trace, messages):
     rows = {name: {int(row["timestamp"]): row for row in dataset_rows(log, name)}
             for name in ("vehicle_attitude", "vehicle_angular_velocity", "vehicle_local_position", "estimator_status")}
-    global_rows = {} if no_gps else {int(row["timestamp"]): row for row in dataset_rows(log, "vehicle_global_position")}
+    global_rows = {int(row["timestamp"]): row for row in dataset_rows(log, "vehicle_global_position")}
     by_ms = {time // 1000: time for time in rows["vehicle_local_position"]}
     counts = Counter()
     for sequence, message in enumerate(messages):
         kind = message.get_type()
         counts[kind] += 1
         require(message.get_seq() == sequence % 256, "MAVLink v2 sequence/wrap mismatch")
-        require(message.get_srcSystem() == 1 and message.get_srcComponent() == (197 if no_gps else 1),
-                "MAVLink estimator source/independent component mismatch")
+        require(message.get_srcSystem() == 1 and message.get_srcComponent() == 1,
+                "MAVLink estimator source component mismatch")
         if kind == "ESTIMATOR_STATUS":
             require(message.time_usec in rows["estimator_status"], "ESTIMATOR_STATUS lost microsecond timestamp")
             row = rows["estimator_status"][message.time_usec]
@@ -283,61 +268,42 @@ def check_frames(log, trace, messages, no_gps):
                                   ("pos_horiz_accuracy", "pos_horiz_accuracy"), ("pos_vert_accuracy", "pos_vert_accuracy")):
                 equal(getattr(message, field), row[source], f"MAVLink ESTIMATOR_STATUS.{field}")
             continue
-        require(kind in ({"ODOMETRY"} if no_gps else {"ATTITUDE_QUATERNION", "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT"}),
-                f"unexpected/forbidden estimator stream: {kind}")
-        timestamp = message.time_usec + 100 if kind == "ODOMETRY" else by_ms.get(message.time_boot_ms)
+        require(kind in {"ATTITUDE_QUATERNION", "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT"},
+                f"unexpected estimator stream: {kind}")
+        timestamp = by_ms.get(message.time_boot_ms)
         require(timestamp in trace, f"{kind}: sample/publication timestamp mismatch")
         local = rows["vehicle_local_position"][timestamp]
-        if kind in ("ATTITUDE_QUATERNION", "ODOMETRY"):
+        if kind == "ATTITUDE_QUATERNION":
             require(timestamp in rows["vehicle_attitude"], "unhealthy attitude sent")
             att = rows["vehicle_attitude"][timestamp]
             angular = rows["vehicle_angular_velocity"][timestamp]
             for index, value in enumerate(columns(att, "q", 4)):
-                actual = message.q[index] if kind == "ODOMETRY" else getattr(message, f"q{index + 1}")
-                equal(actual, value, f"{kind}.quaternion[{index}]")
+                equal(getattr(message, f"q{index + 1}"), value, f"{kind}.quaternion[{index}]")
             for index, field in enumerate(("rollspeed", "pitchspeed", "yawspeed")):
                 equal(getattr(message, field), angular[f"xyz[{index}]"], f"{kind}.{field}")
-        if kind == "ATTITUDE_QUATERNION":
             require(message.repr_offset_q == [0.0] * 4, "ordinary attitude representation offset mismatch")
-        elif kind in ("LOCAL_POSITION_NED", "ODOMETRY"):
+        elif kind == "LOCAL_POSITION_NED":
             for field in ("x", "y", "z", "vx", "vy", "vz"):
                 equal(getattr(message, field), local[field], f"{kind}.{field}")
-            if kind == "LOCAL_POSITION_NED":
-                require(all(local[field] for field in ("xy_valid", "z_valid", "v_xy_valid", "v_z_valid")),
-                        "LOCAL_POSITION_NED published an invalid axis")
-            else:
-                require(message.frame_id == mavlink.MAV_FRAME_LOCAL_NED and message.child_frame_id == mavlink.MAV_FRAME_LOCAL_NED,
-                        "ODOMETRY frame semantics mismatch")
-                require(message.estimator_type == mavlink.MAV_ESTIMATOR_TYPE_AUTOPILOT and message.quality == 0,
-                        "ODOMETRY source/quality mismatch")
-                raw = trace[timestamp]
-                require(message.reset_counter == sum(int(raw[f"reset{i}"]) for i in range(5)) % 256,
-                        "ODOMETRY reset sum/wrap mismatch")
-                orientation = body_rotation_variance(raw)
-                check_covariance(message.pose_covariance, {0: math.inf, 6: math.inf, 11: float(raw["cov8"]),
-                                 15: orientation[0], 18: orientation[1], 20: orientation[2]}, "ODOMETRY.pose_covariance")
-                check_covariance(message.velocity_covariance, {0: math.inf, 6: math.inf, 11: float(raw["cov5"])}, "ODOMETRY.velocity_covariance")
+            require(all(local[field] for field in ("xy_valid", "z_valid", "v_xy_valid", "v_z_valid")),
+                    "LOCAL_POSITION_NED published an invalid axis")
         else:
             require(timestamp in global_rows, "GLOBAL_POSITION_INT without a valid global snapshot")
             expected = global_int_fields(global_rows[timestamp], local)
             for field, value in expected.items():
                 require(getattr(message, field) == value, f"GLOBAL_POSITION_INT.{field}: unit/cast mismatch")
-    expected = {"ESTIMATOR_STATUS": len(rows["estimator_status"])}
-    if no_gps:
-        expected["ODOMETRY"] = len(rows["vehicle_attitude"])
-    else:
-        expected |= {"ATTITUDE_QUATERNION": len(rows["vehicle_attitude"]), "GLOBAL_POSITION_INT": len(global_rows),
-                     "LOCAL_POSITION_NED": sum(all(row[key] for key in ("xy_valid", "z_valid", "v_xy_valid", "v_z_valid"))
-                                                for row in rows["vehicle_local_position"].values())}
+    expected = {"ESTIMATOR_STATUS": len(rows["estimator_status"]),
+                "ATTITUDE_QUATERNION": len(rows["vehicle_attitude"]),
+                "GLOBAL_POSITION_INT": len(global_rows),
+                "LOCAL_POSITION_NED": sum(all(row[key] for key in ("xy_valid", "z_valid", "v_xy_valid", "v_z_valid"))
+                                          for row in rows["vehicle_local_position"].values())}
     require(dict(counts) == expected, "standard MAVLink stream counts/validity suppression mismatch")
     return dict(counts)
 
 
-def check(directory, mode):
-    require(mode in ("gnss", "no-gps"), "unsupported E6 mode")
-    no_gps = mode == "no-gps"
+def check(directory):
     fixture = json.loads((directory / "fixture.json").read_text(encoding="utf-8"))
-    require(fixture["schema"] == 1 and fixture["px4_ref"] == PX4_REVISION and fixture["mode"] == mode
+    require(fixture["schema"] == 1 and fixture["px4_ref"] == PX4_REVISION and fixture["mode"] == "gnss"
             and fixture["synthetic"] is True and fixture["hardware_validation"] == "not run", "fixture provenance mismatch")
     log = ULog(str(directory / "estimator.ulg"))
     require(not log.file_corruption and not log.dropouts, "ULog corruption/dropout in host fixture")
@@ -347,11 +313,10 @@ def check(directory, mode):
     require(len(log.initial_parameters) == 142, "EKF parameter snapshot missing")
     check_schema(log)
     names = {item.name for item in log.data_list}
-    expected_names = set(MESSAGES) - ({"vehicle_global_position", *AID_TOPICS[3:]} if no_gps else set())
-    require(names == expected_names and len(log.data_list) == len(expected_names),
-            "standard ULog topic set/forbidden no-GPS global output mismatch")
+    require(names == set(MESSAGES) and len(log.data_list) == len(MESSAGES),
+            "standard ULog topic set/global output mismatch")
     for dataset in log.data_list:
-        require(dataset.multi_id == int(no_gps), "estimator ULog multi_id mismatch")
+        require(dataset.multi_id == 0, "estimator ULog multi_id mismatch")
         times = dataset.data["timestamp"].tolist()
         require(times and all(a < b for a, b in zip(times, times[1:])), f"{dataset.name}: publication time regressed/repeated")
         require(all(0 < int(sample) <= int(time) for time, sample in zip(times, dataset.data["timestamp_sample"], strict=True)),
@@ -363,7 +328,7 @@ def check(directory, mode):
     require(len(locals_) == len(trace), "local output omitted diagnostic snapshots")
     local_by_time = {int(row["timestamp"]): row for row in locals_}
     for row in locals_:
-        check_local(row, trace[int(row["timestamp"])], no_gps)
+        check_local(row, trace[int(row["timestamp"])])
     aid_rows = read_csv(directory / "aids.csv")
     aid_index = 0
     gnss_ratios = {3: [0.0, 0.0], 4: [0.0, 0.0, 0.0]}
@@ -397,60 +362,50 @@ def check(directory, mode):
         require(all(math.isfinite(value) for value in columns(row, "xyz", 3)), "non-finite angular velocity")
         for value in columns(row, "xyz_derivative", 3):
             equal(value, math.nan, "unknown angular acceleration")
-    if not no_gps:
-        for row in dataset_rows(log, "vehicle_global_position"):
-            raw = trace[int(row["timestamp"])]
-            local = local_by_time[int(row["timestamp"])]
-            require(row["lat_lon_valid"] and row["alt_valid"] and local["xy_valid"] and local["z_valid"], "invalid global output")
-            for name, source in (("lat", "global_lat"), ("lon", "global_lon"), ("alt", "global_alt")):
-                if name in ("lat", "lon"):
-                    equal(row[name], float(raw[source]), f"vehicle_global_position.{name}", rel_tol=0, abs_tol=1e-10)
-                else:
-                    equal(row[name], float(raw[source]), f"vehicle_global_position.{name}")
-            for name, value in {"alt_ellipsoid": math.nan, "delta_alt": -float(raw["delta_p2"]),
-                                "delta_terrain": -float(raw["delta_p2"]), "terrain_alt": -float(raw["state24"]),
-                                "lat_lon_reset_counter": int(raw["reset3"]), "alt_reset_counter": int(raw["reset4"]),
-                                "terrain_reset_counter": int(raw["reset5"]), "eph": local["eph"], "epv": local["epv"],
-                                "terrain_alt_valid": local["dist_bottom_valid"], "dead_reckoning": local["dead_reckoning"]}.items():
-                equal(row[name], value, f"vehicle_global_position.{name}")
-    aid_count = check_aids(log, directory, int(no_gps))
+    for row in dataset_rows(log, "vehicle_global_position"):
+        raw = trace[int(row["timestamp"])]
+        local = local_by_time[int(row["timestamp"])]
+        require(row["lat_lon_valid"] and row["alt_valid"] and local["xy_valid"] and local["z_valid"], "invalid global output")
+        for name, source in (("lat", "global_lat"), ("lon", "global_lon"), ("alt", "global_alt")):
+            if name in ("lat", "lon"):
+                equal(row[name], float(raw[source]), f"vehicle_global_position.{name}", rel_tol=0, abs_tol=1e-10)
+            else:
+                equal(row[name], float(raw[source]), f"vehicle_global_position.{name}")
+        for name, value in {"alt_ellipsoid": math.nan, "delta_alt": -float(raw["delta_p2"]),
+                            "delta_terrain": -float(raw["delta_p2"]), "terrain_alt": -float(raw["state24"]),
+                            "lat_lon_reset_counter": int(raw["reset3"]), "alt_reset_counter": int(raw["reset4"]),
+                            "terrain_reset_counter": int(raw["reset5"]), "eph": local["eph"], "epv": local["epv"],
+                            "terrain_alt_valid": local["dist_bottom_valid"], "dead_reckoning": local["dead_reckoning"]}.items():
+            equal(row[name], value, f"vehicle_global_position.{name}")
+    aid_count = check_aids(log, directory, 0)
     messages = read_mavlink(directory / "mavlink.bin")
     require(len(messages) == fixture["mavlink_frames"], "MAVLink frame count mismatch")
-    counts = check_frames(log, trace, messages, no_gps)
+    counts = check_frames(log, trace, messages)
     latest = raw_rows[-1]
     theoretical = 0.5 * 0.05 * 60**2
     equal(float(latest["truth_north"]), theoretical, "60-second free integral")
     drift_error = math.hypot(float(latest["p0"]) - theoretical, float(latest["p1"]))
     stationary_bias_error = math.hypot(float(latest["p0"]), float(latest["p1"]))
-    covered = sum(math.hypot(float(row["p0"]) - float(row["truth_north"]), float(row["p1"]))
-                  <= 3 * math.sqrt(message.pose_covariance[0] + message.pose_covariance[6])
-                  for message in messages if message.get_type() == "ODOMETRY"
-                  for row in [trace[message.time_usec + 100]])
-    if no_gps:
-        require(0.5 * theoretical <= drift_error <= 1.5 * theoretical, "ambiguous no-GPS motion error is not the expected drift scale")
-        require(covered == counts["ODOMETRY"], "published no-GPS uncertainty does not cover drift")
-    return {"schema": 1, "px4_ref": PX4_REVISION, "mode": mode, "synthetic": True,
+    return {"schema": 1, "px4_ref": PX4_REVISION, "mode": "gnss", "synthetic": True,
             "ulog_topics": {item.name: len(item.data["timestamp"]) for item in log.data_list},
             "schema_fields_checked": sum(len(px4_fields(name)) for name in set(MESSAGES.values())),
             "publications": len(trace), "aid_records_checked": aid_count, "mavlink": counts,
             "free_integral_60s_m": theoretical, "final_motion_error_m": drift_error,
             "final_stationary_bias_error_m": stationary_bias_error,
             "conditioned_local_horizontal_sigma_m": float(locals_[-1]["eph"]),
-            "odometry_horizontal_sigma": "unbounded (+infinity); not a finite accuracy claim" if no_gps else "not emitted in main stream",
-            "odometry_3sigma_covered": covered, "hardware_validation": "not run",
+            "hardware_validation": "not run",
             "artifacts": {name: hashlib.sha256((directory / name).read_bytes()).hexdigest()
                           for name in ("estimator.ulg", "mavlink.bin", "core.csv", "aids.csv", "fixture.json")}}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=("no-gps", "gnss"), default="no-gps")
     parser.add_argument("--rust", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--px4-root", type=Path)
     args = parser.parse_args()
-    directory = args.output or ROOT / "target/ekf2-host-standard" / args.case
+    directory = args.output or ROOT / "target/ekf2-host-standard" / "gnss"
     try:
         if args.px4_root:
             verify_upstream(args.px4_root)
@@ -460,8 +415,8 @@ def main():
             if args.rust is None:
                 subprocess.run(["cargo", "build", "--release", "--locked", "--target", host, "--example", "ekf2_standard"], cwd=ROOT, check=True)
                 args.rust = ROOT / f"target/{host}/release/examples/ekf2_standard{'.exe' if os.name == 'nt' else ''}"
-            subprocess.run([str(args.rust), args.case, str(directory)], cwd=ROOT, check=True)
-        report = check(directory, args.case)
+            subprocess.run([str(args.rust), str(directory)], cwd=ROOT, check=True)
+        report = check(directory)
         (directory / "report.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
         print(json.dumps(report, sort_keys=True, allow_nan=False))
     except (ValueError, OSError, subprocess.CalledProcessError) as error:

@@ -9,7 +9,6 @@ use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorBaro, SensorGps, Sen
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 800;
 pub const TOPIC_COUNT: usize = 14;
-pub const INDEPENDENT_EULER_ID: u16 = 38;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -28,7 +27,7 @@ pub enum TopicId {
     ParameterChange = 8,
     CurrentSensor = 9,
     SensorGps = 10,
-    // 11..34 are reserved for the independent estimator topic registry.
+    // 11..22 are reserved for the standard estimator topic registry.
     SensorBaro = 35,
     EstimatorRuntime = 36,
     AttitudeEuler = 37,
@@ -117,8 +116,8 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
     Topic {
         id: TopicId::EstimatorRuntime,
         name: "rust_estimator_runtime",
-        format: "rust_estimator_runtime:uint64_t timestamp;uint64_t timestamp_sample;uint32_t epoch;uint32_t samples;uint32_t updates;uint32_t measurements;uint32_t deadline_misses;uint32_t max_update_us;uint32_t recoveries;uint32_t rejected_measurements;uint8_t selected;uint8_t fault;uint8_t independent_fault;bool nav_qualified;",
-        payload_len: 52,
+        format: "rust_estimator_runtime:uint64_t timestamp;uint64_t timestamp_sample;uint32_t epoch;uint32_t samples;uint32_t updates;uint32_t measurements;uint32_t deadline_misses;uint32_t max_update_us;uint32_t recoveries;uint32_t rejected_measurements;uint8_t selected;uint8_t fault;bool nav_qualified;",
+        payload_len: 51,
     },
     Topic {
         id: TopicId::AttitudeEuler,
@@ -178,7 +177,6 @@ pub enum Error {
     TooLong,
     InvalidText,
     InvalidLength,
-    InvalidInstance,
     TimestampRegression,
 }
 
@@ -188,7 +186,6 @@ impl core::fmt::Display for Error {
             Self::TooLong => "ULog record exceeds buffer capacity",
             Self::InvalidText => "invalid ULog key or topic name",
             Self::InvalidLength => "ULog payload length does not match schema",
-            Self::InvalidInstance => "ULog encoder and estimator instance differ",
             Self::TimestampRegression => "ULog timestamp regressed",
         })
     }
@@ -272,12 +269,8 @@ pub fn data_record(message_id: u16, timestamp_us: u64, fields: &[u8]) -> Result<
     Ok(builder.finish())
 }
 
-pub fn attitude_euler_record(instance: u8, value: EulerAttitude) -> Result<Record, Error> {
-    let id = match instance {
-        0 => TopicId::AttitudeEuler as u16,
-        1 => INDEPENDENT_EULER_ID,
-        _ => return Err(Error::InvalidInstance),
-    };
+pub fn attitude_euler_record(value: EulerAttitude) -> Result<Record, Error> {
+    let id = TopicId::AttitudeEuler as u16;
     let mut fields = Payload::new();
     fields.push_u64(value.timestamp_sample)?;
     for angle in [value.roll, value.pitch, value.yaw] {

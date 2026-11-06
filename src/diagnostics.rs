@@ -160,12 +160,12 @@ async fn periodic(_timer: Peri<'static, peripherals::TIM7>) {
 /// No ISR can execute inside the timed WFE bracket; its time stays in busy time.
 pub fn idle() {
     free(|_| {
-        let start = embassy_stm32::pac::TIM2.cnt().read() as u16;
+        let start = embassy_stm32::pac::TIM8.cnt().read().cnt();
         cortex_m::asm::dsb();
         cortex_m::asm::wfe();
-        let end = embassy_stm32::pac::TIM2.cnt().read() as u16;
+        let end = embassy_stm32::pac::TIM8.cnt().read().cnt();
         let exit_start = DWT::cycle_count();
-        // TIM2 has a half-overflow interrupt at most 32768 us away. It wakes
+        // TIM8 has a half-overflow interrupt at most 32768 us away. It wakes
         // this shallow sleep, so the u16 wrapping difference is unambiguous.
         IDLE_US.fetch_add(u32::from(end.wrapping_sub(start)), Ordering::Relaxed);
         IDLE_CALLS.fetch_add(1, Ordering::Relaxed);

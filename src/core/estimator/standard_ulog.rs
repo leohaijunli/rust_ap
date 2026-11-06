@@ -96,8 +96,8 @@ impl TopicId {
         &TOPICS[self.index()]
     }
 
-    pub const fn message_id(self, instance: u8) -> u16 {
-        self as u16 + instance as u16 * TOPIC_COUNT as u16
+    pub const fn message_id(self) -> u16 {
+        self as u16
     }
 }
 
@@ -119,24 +119,19 @@ pub fn format_record(topic: TopicId, out: &mut [u8; FORMAT_CAPACITY]) -> Result<
     Ok(length + 3)
 }
 
-pub fn subscription(topic: TopicId, instance: u8) -> Result<Record, Error> {
-    ulog::raw_subscription(
-        topic.message_id(instance),
-        instance,
-        topic.definition().name,
-    )
+pub fn subscription(topic: TopicId) -> Result<Record, Error> {
+    ulog::raw_subscription(topic.message_id(), 0, topic.definition().name)
 }
 
+#[derive(Default)]
 pub struct DataEncoder {
-    instance: u8,
     last_timestamp: [u64; TOPIC_COUNT],
     last_sample: [u64; 6],
 }
 
 impl DataEncoder {
-    pub const fn new(instance: u8) -> Self {
+    pub const fn new() -> Self {
         Self {
-            instance,
             last_timestamp: [0; TOPIC_COUNT],
             last_sample: [0; 6],
         }
@@ -154,11 +149,7 @@ impl DataEncoder {
         if timestamp < self.last_timestamp[topic.index()] {
             return Err(Error::TimestampRegression);
         }
-        let record = ulog::data_record(
-            topic.message_id(self.instance),
-            timestamp,
-            payload.as_bytes(),
-        )?;
+        let record = ulog::data_record(topic.message_id(), timestamp, payload.as_bytes())?;
         self.last_timestamp[topic.index()] = timestamp;
         Ok(record)
     }
@@ -171,9 +162,6 @@ impl DataEncoder {
         snapshot: &Snapshot,
         mut write: impl FnMut(&Record) -> Result<(), E>,
     ) -> Result<(), E> {
-        if self.instance != snapshot.source.instance() {
-            return Err(Error::InvalidInstance.into());
-        }
         if let Some(attitude) = snapshot.attitude {
             write(&self.encode(
                 TopicId::Attitude,
@@ -409,7 +397,7 @@ pub fn states_payload(v: EstimatorStates) -> Payload {
 fn aid_payload(v: AidSource, dimensions: usize) -> Payload {
     assert!((1..=3).contains(&dimensions));
     let mut p = time(v.status.timestamp);
-    byte(&mut p, v.estimator_instance);
+    byte(&mut p, 0); // Single estimator instance.
     p.push_u32(v.device_id).unwrap();
     p.push_u64(0).unwrap(); // Last fusion time is not available in AidStatus.
     if dimensions == 2 {
@@ -467,7 +455,7 @@ mod tests {
                 .sum();
             assert_eq!(topic.payload_len, actual, "{}", topic.name);
             assert!(TOPICS[..index].iter().all(|other| other.name != topic.name));
-            assert_eq!(subscription(topic.id, 1).unwrap().as_bytes()[3], 1);
+            assert_eq!(subscription(topic.id).unwrap().as_bytes()[3], 0);
         }
         assert_eq!(ulog::TOPIC_COUNT, 14);
         assert!(crate::log_queue::RUNTIME_RECORD_LEN >= 218);
@@ -475,7 +463,7 @@ mod tests {
 
     #[test]
     fn raw_registry_rejects_wrong_payload_and_timestamp_regression() {
-        let mut encoder = DataEncoder::new(1);
+        let mut encoder = DataEncoder::new();
         let value = Attitude {
             timestamp: 100,
             timestamp_sample: 90,
@@ -487,7 +475,7 @@ mod tests {
         let bytes = encoder
             .encode(TopicId::Attitude, value.timestamp, &payload)
             .unwrap();
-        assert_eq!(&bytes.as_bytes()[3..5], &23_u16.to_le_bytes());
+        assert_eq!(&bytes.as_bytes()[3..5], &11_u16.to_le_bytes());
         assert_eq!(
             encoder.encode(TopicId::Attitude, 99, &payload),
             Err(Error::TimestampRegression)
@@ -496,24 +484,5 @@ mod tests {
             encoder.encode(TopicId::States, 100, &payload),
             Err(Error::InvalidLength)
         );
-    }
-
-    #[test]
-    fn encoder_rejects_another_estimator_instance_before_writing() {
-        use crate::estimator::{
-            imu_ekf::{baro_mag::BaroMagParams, range::RangeParams, ImuEkfParams},
-            no_gnss::NoGnssEkf,
-        };
-        let mut filter = NoGnssEkf::new(
-            ImuEkfParams::default(),
-            BaroMagParams::default(),
-            RangeParams::default(),
-            0,
-        )
-        .unwrap();
-        let snapshot = filter.standard_output(0);
-        let result = DataEncoder::new(0)
-            .write_snapshot::<Error>(&snapshot, |_| panic!("wrong instance must not write"));
-        assert_eq!(result, Err(Error::InvalidInstance));
     }
 }

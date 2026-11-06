@@ -5,12 +5,11 @@ use crate::{
         gnss::{GnssEkf, GnssObservation},
         imu_ekf::baro_mag::BaroAltitude,
         mahony::Mahony,
-        no_gnss::NoGnssEkf,
         product::{self, Params, SharedImu},
         runtime::{Fault, FilterMode, MeasurementError, Runtime, Selection, DEADLINE_US},
         GnssSample, ImuDelta, MagSample, Measurement, NavFilter, RangeSample,
     },
-    icm42688::Sample,
+    icm42688::{FifoBatch, Sample},
     parameters::{Id, Snapshot},
 };
 
@@ -60,21 +59,24 @@ fn imu(timestamp: u64) -> ImuDelta {
 
 #[test]
 fn shared_one_khz_integrals_track_the_raw_eight_khz_reference_during_rotation() {
-    use super::{imu_ekf::baro_mag::BaroMagSample, math, runtime::ImuBridge};
+    use super::{imu_ekf::baro_mag::BaroMagSample, math};
 
     let mut p = params();
     p.gnss.checks.healthy_time_us = 1_000_000;
     let mut reference = GnssEkf::new(p.imu, p.aiding, p.range, p.gnss, 0).unwrap();
     let mut runtime = Runtime::<GnssEkf>::new(p, 0).unwrap();
-    let mut bridge = ImuBridge::new();
     let mut shared = SharedImu::default();
+    let mut batch = FifoBatch {
+        count: 8,
+        ..FifoBatch::default()
+    };
     let mut truth = math::IDENTITY;
     let mut maximum = [0.0_f32; 3];
     let mut compared = 0;
     for index in 1..=80_000_u64 {
         let time = 1_000_000 + index * 125;
         let ticks = (index * 125 / 16 - (index - 1) * 125 / 16) as u16;
-        let dt = f32::from(ticks) * 16e-6;
+        let dt = 0.000125;
         let t = index as f32 * 0.000125;
         let rate = [0.2 * libm::sinf(t), 0.15 * libm::cosf(0.7 * t), 0.15];
         truth = math::normalize(math::multiply(
@@ -113,10 +115,31 @@ fn shared_one_khz_integrals_track_the_raw_eight_khz_reference_during_rotation() 
             pdop: 1.0,
             spoofed: false,
         });
-        reference
-            .update(&bridge.convert(sample, time).unwrap(), aiding, gnss, None)
-            .unwrap();
-        let integrated = shared.push(sample, time).unwrap();
+        // Independent raw-rate reference on physical MCU time. The first
+        // eight samples seed the FIFO frontend without inventing an interval.
+        if index > 8 {
+            reference
+                .update(
+                    &ImuDelta {
+                        timestamp: time,
+                        delta_angle_rad: rate.map(|value| value * dt),
+                        delta_velocity_m_s: gravity.map(|value| value * dt),
+                        delta_angle_dt_s: dt,
+                        delta_velocity_dt_s: dt,
+                        delta_velocity_clipping: [false; 3],
+                    },
+                    aiding,
+                    gnss,
+                    None,
+                )
+                .unwrap();
+        }
+        batch.samples[((index - 1) % 8) as usize] = sample;
+        let integrated = if index.is_multiple_of(8) {
+            shared.push(&batch, time).unwrap()
+        } else {
+            None
+        };
         if let Some(delta) = integrated {
             runtime.ingest_imu(delta, time).unwrap();
         }
@@ -220,7 +243,6 @@ fn generic_algorithms_run_and_attitude_reads_do_not_advance_or_consume_state() {
         );
     }
     run::<GnssEkf>();
-    run::<NoGnssEkf>();
     run::<Mahony>();
     let mut main = product::main_storage();
     main.reconfigure(params(), 0, true).unwrap();
@@ -272,48 +294,38 @@ fn a_single_overrun_continues_and_sustained_overruns_recover_without_reconfigura
 }
 
 #[test]
-fn product_publication_keeps_source_reset_metadata_and_revokes_stale_attitudes() {
+fn product_publication_keeps_reset_metadata_and_revokes_stale_attitudes() {
+    use crate::estimator::publication_reset::PublicationReset;
+
     let mut main = product::main_storage();
-    let mut independent = product::independent_storage();
     main.reconfigure(params(), 0, true).unwrap();
-    independent.reconfigure(params(), 0, true).unwrap();
     let mut time = 1_000_000;
     for _ in 0..500 {
         time += 1_000;
         let mut delta = imu(time);
         delta.delta_angle_rad[2] = 0.0002;
         main.ingest_imu(delta, time).unwrap();
-        independent.ingest_imu(delta, time).unwrap();
         main.maintain(time);
-        independent.maintain(time);
     }
-    let mut resets =
-        core::array::from_fn(|_| crate::estimator::publication_reset::PublicationReset::default());
-    let before = product::snapshots(&mut main, &mut independent, time, &mut resets);
+    let mut resets = PublicationReset::default();
+    let before = product::snapshot(&mut main, time, &mut resets);
     for _ in 0..3 {
         main.record_duration(DEADLINE_US + 1);
     }
     let fast = main.attitude_at(time).unwrap().attitude;
-    let after = product::snapshots(&mut main, &mut independent, time, &mut resets);
-    let attitude = after[0].attitude.unwrap();
+    let after = product::snapshot(&mut main, time, &mut resets);
+    let attitude = after.attitude.unwrap();
     assert_eq!(
         attitude.quat_reset_counter,
-        before[0]
-            .attitude
-            .unwrap()
-            .quat_reset_counter
-            .wrapping_add(1)
+        before.attitude.unwrap().quat_reset_counter.wrapping_add(1)
     );
     assert_eq!(attitude.quat_reset_counter, fast.quat_reset_counter);
     assert_eq!(attitude.delta_q_reset, fast.delta_q_reset);
-    assert_eq!(after[0].status.reset_count_quat, fast.quat_reset_counter);
-    assert!(after[0].odometry.is_none());
-    for snapshot in product::snapshots(&mut main, &mut independent, time + 5_001, &mut resets) {
-        assert!(snapshot.attitude.is_none());
-        assert!(snapshot.odometry.is_none());
-        assert!(snapshot.global_position.is_none());
-        assert_eq!(snapshot.status.solution_status_flags & 1, 0);
-    }
+    assert_eq!(after.status.reset_count_quat, fast.quat_reset_counter);
+    let stale = product::snapshot(&mut main, time + 5_001, &mut resets);
+    assert!(stale.attitude.is_none());
+    assert!(stale.global_position.is_none());
+    assert_eq!(stale.status.solution_status_flags & 1, 0);
 }
 
 #[test]
@@ -321,6 +333,10 @@ fn sequence_gap_resynchronizes_shared_input_and_recovers_the_filter() {
     let mut shared = SharedImu::default();
     let mut runtime = Runtime::<GnssEkf>::new(params(), 0).unwrap();
     let mut sequence = 0_u32;
+    let mut batch = FifoBatch {
+        count: 8,
+        ..FifoBatch::default()
+    };
     for index in 0..64_000_u64 {
         if index == 32_000 {
             sequence += 1;
@@ -335,7 +351,11 @@ fn sequence_gap_resynchronizes_shared_input_and_recovers_the_filter() {
             sensor_timestamp: 8,
         };
         sequence += 1;
-        match shared.push(sample, time) {
+        batch.samples[(index % 8) as usize] = sample;
+        if !(index + 1).is_multiple_of(8) {
+            continue;
+        }
+        match shared.push(&batch, time) {
             Ok(Some(delta)) => {
                 runtime.ingest_imu(delta, time).unwrap();
                 runtime.maintain(time);
@@ -359,21 +379,20 @@ fn sequence_gap_resynchronizes_shared_input_and_recovers_the_filter() {
     assert_eq!(runtime.status().fault, None);
     assert_eq!(runtime.status().last_fault, Some(Fault::Sequence));
     assert!(shared.clock.windows > 0);
-    // Synthetic 128-us sensor intervals at 125-us TIM2 spacing must expose,
-    // rather than silently conceal, a ~2.4% clock disagreement.
-    assert!((shared.clock.error_ppm - 24_000).abs() < 10);
+    // Eight ticks at PX4's scale give 136.533 us, versus the synthetic 125-us
+    // MCU spacing. Sensor clock disagreement remains visible but is not dt.
+    assert!((shared.clock.error_ppm - 92_267).abs() < 10);
+    assert_eq!(shared.clock.integration_error_ppm, 0);
 }
 
 #[test]
-fn separate_aid_events_fuse_without_gnss_and_bad_gnss_cannot_change_independent_state() {
+fn aid_events_fuse_without_gnss_and_invalid_gnss_is_rejected() {
     let mut values = params();
     values.range.control = 2;
     let mut main = Runtime::<GnssEkf>::new(values, 0).unwrap();
-    let mut independent = Runtime::<NoGnssEkf>::new(values, 0).unwrap();
     for index in 1..=6_000_u64 {
         let time = 1_000_000 + index * 1_000;
         main.ingest_imu(imu(time), time).unwrap();
-        independent.ingest_imu(imu(time), time).unwrap();
         if index.is_multiple_of(20) {
             for event in [
                 Measurement::Baro(BaroAltitude {
@@ -393,25 +412,21 @@ fn separate_aid_events_fuse_without_gnss_and_bad_gnss_cannot_change_independent_
                 }),
             ] {
                 main.apply_measurement(event, time).unwrap();
-                independent.apply_measurement(event, time).unwrap();
             }
         }
         main.maintain(time);
-        independent.maintain(time);
     }
-    for core in [main.filter().core(), independent.filter().core()] {
-        let (baro, mag) = core.aid_status().unwrap();
-        assert!(
-            baro.fused && mag.fused,
-            "baro={baro:?} mag={mag:?} health={:?} control={:x}",
-            core.health(),
-            core.control_status()
-        );
-        assert!(core.range_status().unwrap().timestamp > 0);
-        assert_ne!(core.control_status() & (1 << 1), 0);
-    }
-    let state = *independent.filter().core().state();
-    let covariance = *independent.filter().core().covariance();
+    let core = main.filter().core();
+    let (baro, mag) = core.aid_status().unwrap();
+    assert!(
+        baro.fused && mag.fused,
+        "baro={baro:?} mag={mag:?} health={:?} control={:x}",
+        core.health(),
+        core.control_status()
+    );
+    assert!(core.range_status().unwrap().timestamp > 0);
+    assert_ne!(core.control_status() & (1 << 1), 0);
+
     let bad = Measurement::Gnss(GnssObservation {
         sample: GnssSample {
             timestamp: 7_000_000,
@@ -425,16 +440,7 @@ fn separate_aid_events_fuse_without_gnss_and_bad_gnss_cannot_change_independent_
         main.apply_measurement(bad, 7_000_000),
         Err(MeasurementError::Invalid)
     );
-    assert_eq!(independent.filter().core().state(), &state);
-    assert_eq!(independent.filter().core().covariance(), &covariance);
     assert_eq!(main.status().fault, None);
-
-    // Even the shared trait's GNSS variant is ignored by the no-GNSS algorithm.
-    let mut no_gnss = <NoGnssEkf as NavFilter>::new(&values, 0);
-    let before = *no_gnss.core().state();
-    no_gnss.push_measurement(bad);
-    assert_eq!(no_gnss.core().state(), &before);
-    assert_eq!(no_gnss.health().fault, None);
 }
 
 #[test]
@@ -522,19 +528,13 @@ fn restart_from_board_defaults_reports_the_failing_configuration_stage() {
     let values = Snapshot::default().with(Id::EstEnable, 1.0).unwrap();
     let p = Params::from_parameters(values).unwrap();
     let mut main = product::main_storage();
-    let mut independent = product::independent_storage();
     main.reconfigure(p, 0, true).unwrap();
-    independent.reconfigure(p, 0, true).unwrap();
     assert_eq!(config_stage::current(), config_stage::IDLE);
 
     let mut time = 1_000_000;
     advance(&mut main, &mut time, 3_000, 100);
-    advance(&mut independent, &mut time, 3_000, 100);
 
     main.reconfigure(p, 0, true)
         .unwrap_or_else(|fault| panic!("main {fault:?} at stage {}", config_stage::current()));
-    independent.reconfigure(p, 0, true).unwrap_or_else(|fault| {
-        panic!("independent {fault:?} at stage {}", config_stage::current())
-    });
     assert_eq!(config_stage::current(), config_stage::IDLE);
 }

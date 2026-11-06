@@ -141,19 +141,18 @@ def main():
             first = result["samples"][0]["ekf"]["fields"]
             if any(sample["ekf"]["fields"]["EKF2_RUNTIME"]["active"] != "true" for sample in result["samples"]):
                 result["issues"].append("runtime inactive during capture; cached snapshots are not a live baseline")
-            for instance in ("main", "independent"):
-                state = last[f"EKF2_STATE:{instance}"]
-                if state["fault"] != "None" or state["selected"] != "Filter" or int(state["updates"]) == 0:
-                    result["issues"].append(f"{instance}: not running healthy filter output")
-                before = first[f"EKF2_STATE:{instance}"]
-                if int(state["samples"]) <= int(before["samples"]) or int(state["updates"]) <= int(before["updates"]):
-                    result["issues"].append(f"{instance}: sample/update counters did not advance")
+            state = last["EKF2_STATE:main"]
+            if state["fault"] != "None" or state["selected"] != "Filter" or int(state["updates"]) == 0:
+                result["issues"].append("main: not running healthy filter output")
+            before = first["EKF2_STATE:main"]
+            if int(state["samples"]) <= int(before["samples"]) or int(state["updates"]) <= int(before["updates"]):
+                result["issues"].append("main: sample/update counters did not advance")
             publish = last["EKF2_PUBLISH"]
             if int(publish["missed"]) != 0:
                 result["issues"].append("1-kHz publication skipped periods")
             clock = last["EKF2_CLOCK"]
-            if int(clock["windows"]) == 0 or abs(int(clock["error_ppm"])) > 100:
-                result["issues"].append("IMU integration/TIM2 disagreement exceeds 100 ppm")
+            if int(clock["windows"]) == 0 or abs(int(clock["integration_error_ppm"])) > 100:
+                result["issues"].append("IMU integration/TIM8 disagreement exceeds 100 ppm")
             if capture.bad_frames:
                 result["issues"].append("MAVLink parse errors")
             result["wire"] = {"types": dict(capture.types), "bad_frames": capture.bad_frames,

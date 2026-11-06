@@ -54,13 +54,6 @@ impl DownSampler {
         result
     }
 
-    fn with_input_period(predict_us: u32, dt_s: f32) -> Self {
-        let mut result = Self::new(predict_us);
-        result.average_dt_s = dt_s;
-        result.reset();
-        result
-    }
-
     fn reset(&mut self) {
         self.sample = EMPTY;
         self.quaternion = math::IDENTITY;
@@ -111,77 +104,6 @@ impl DownSampler {
                 .all(|value| value.is_finite())
             && self.sample.delta_angle_dt_s.is_finite()
             && self.sample.delta_velocity_dt_s.is_finite()
-    }
-}
-
-/// One board input bridge and one 8-kHz -> ~1-kHz integrator, shared by all
-/// algorithm instances. Bias correction remains private to each filter.
-pub struct SharedImu {
-    bridge: super::runtime::ImuBridge,
-    downsampler: DownSampler,
-    clock_start: u64,
-    integrated_us: u64,
-    pub clock: ClockReport,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ClockReport {
-    pub windows: u32,
-    pub sensor_dt_us: u64,
-    pub tim2_dt_us: u64,
-    pub error_ppm: i32,
-}
-
-impl Default for SharedImu {
-    fn default() -> Self {
-        Self {
-            bridge: super::runtime::ImuBridge::new(),
-            downsampler: DownSampler::with_input_period(1_000, 0.000125),
-            clock_start: 0,
-            integrated_us: 0,
-            clock: ClockReport::default(),
-        }
-    }
-}
-
-impl SharedImu {
-    pub fn push(
-        &mut self,
-        sample: crate::icm42688::Sample,
-        now: u64,
-    ) -> Result<Option<ImuDelta>, super::runtime::Fault> {
-        let delta = match self.bridge.convert(sample, now) {
-            Ok(delta) => delta,
-            Err(fault) => {
-                *self = Self::default();
-                return Err(fault);
-            }
-        };
-        let duration = u64::from(sample.sensor_timestamp) * 16;
-        if self.clock_start == 0 {
-            self.clock_start = sample.sample_timestamp_us.saturating_sub(duration);
-        }
-        self.integrated_us += duration;
-        let elapsed = sample.sample_timestamp_us.saturating_sub(self.clock_start);
-        // A one-second window makes the 16-us sensor quantization visible
-        // without pretending that each 10-ms window can establish 100 ppm.
-        if elapsed >= 1_000_000 {
-            self.clock = ClockReport {
-                windows: self.clock.windows.wrapping_add(1),
-                sensor_dt_us: self.integrated_us,
-                tim2_dt_us: elapsed,
-                error_ppm: (((self.integrated_us as i64 - elapsed as i64) * 1_000_000)
-                    / elapsed as i64) as i32,
-            };
-            self.clock_start = sample.sample_timestamp_us;
-            self.integrated_us = 0;
-        }
-        let result = self.downsampler.update(&delta);
-        if !self.downsampler.numerics_valid() {
-            *self = Self::default();
-            return Err(super::runtime::Fault::Input);
-        }
-        Ok(result)
     }
 }
 

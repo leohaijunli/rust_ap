@@ -6,8 +6,11 @@ pub const WHO_AM_I_VALUE: u8 = 0x47;
 pub const READ: u8 = 0x80;
 pub const FIFO_BYTES: usize = 2048;
 pub const FIFO_PACKET_BYTES: usize = 20;
+pub const MAX_FIFO_SAMPLES: usize = 8;
 pub const SOURCE_ID: u8 = 0;
 pub const GRAVITY_M_S2: f32 = 9.80665;
+/// PX4 v1.17.0 / TDK DS-000347 section 12.7, TMST_RES=1 without CLKIN.
+pub const FIFO_TIMESTAMP_SCALE_US: f32 = 16.0 * (32.0 / 30.0);
 
 pub mod register {
     pub const DEVICE_CONFIG: u8 = 0x11;
@@ -192,7 +195,7 @@ pub enum ConfigError {
     StaleLimit,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Sample {
     pub sample_timestamp_us: u64,
     pub sequence: u32,
@@ -200,6 +203,13 @@ pub struct Sample {
     pub accel_m_s2: [f32; 3],
     pub temperature_c: f32,
     pub sensor_timestamp: u16,
+}
+
+/// One actual FIFO read, oldest sample first. Only `count` entries are valid.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FifoBatch {
+    pub samples: [Sample; MAX_FIFO_SAMPLES],
+    pub count: u8,
 }
 
 impl Sample {
@@ -291,6 +301,20 @@ pub const fn reconstruct_u32_timestamp(now_us: u64, captured_low: u32) -> u64 {
     timestamp
 }
 
+/// A fresh watermark IRQ already timestamps the last sample of the requested
+/// batch. Only the read-time fallback is shifted for a sample left in the FIFO.
+pub fn fifo_sample_timestamp(
+    now_us: u64,
+    drdy_us: Option<u64>,
+    unread_duration_us: u64,
+    config: Config,
+) -> u64 {
+    let batch_period_us = config.sample_period_us() * config.fifo_batch_samples() as u64;
+    drdy_us
+        .filter(|&timestamp| timestamp <= now_us && now_us - timestamp < batch_period_us)
+        .unwrap_or_else(|| now_us.saturating_sub(unread_duration_us))
+}
+
 fn signed20(msb: u8, lsb: u8, low: u8) -> i32 {
     let value = (u32::from(msb) << 12) | (u32::from(lsb) << 4) | u32::from(low & 0x0f);
     if value & 0x80000 != 0 {
@@ -346,6 +370,8 @@ mod tests {
         assert_eq!(Config::DEFAULT.fifo_batch_samples(), 8);
         assert_eq!(Config::DEFAULT.sample_period_us(), 125);
         assert_eq!(Config::DEFAULT.log_decimation(), 40);
+        // At 1 kHz, 32 intervals contain 1875 ticks (58.59375 ticks/interval).
+        assert_eq!(libm::roundf(1_875.0 * FIFO_TIMESTAMP_SCALE_US), 32_000.0);
         assert_eq!(SETTINGS[5].apply(0xff), 0x03);
         assert_eq!(SETTINGS[6].apply(0xff), 0x03);
         assert_eq!(SETTINGS[12].set, 160);
@@ -403,6 +429,24 @@ mod tests {
         assert!(!sample.is_stale(3_000, Config::DEFAULT));
         assert!(sample.is_stale(3_001, Config::DEFAULT));
         assert_eq!(sample.age_us(u64::MAX), u32::MAX);
+    }
+
+    #[test]
+    fn watermark_timestamp_is_not_shifted_twice_when_one_sample_remains() {
+        let config = Config::DEFAULT;
+        assert_eq!(
+            fifo_sample_timestamp(10_050, Some(10_000), 125, config),
+            10_000
+        );
+        assert_eq!(fifo_sample_timestamp(10_050, None, 125, config), 9_925);
+        assert_eq!(
+            fifo_sample_timestamp(11_000, Some(10_000), 125, config),
+            10_875
+        );
+        assert_eq!(
+            fifo_sample_timestamp(10_050, Some(10_100), 0, config),
+            10_050
+        );
     }
 
     #[test]

@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from check_ekf2_standard import (
-    MESSAGES, check_covariance, check_frames, check_schema, equal, global_int_fields,
+    MESSAGES, check_schema, equal, global_int_fields,
     mavlink, px4_fields, read_mavlink,
 )
 
@@ -48,18 +48,8 @@ class StandardOutputTests(unittest.TestCase):
         self.assertEqual(actual, {"lat": 473977429, "lon": -85455949, "alt": 100125,
                                   "relative_alt": 10125, "vx": 123, "vy": -123, "vz": 12, "hdg": 0})
 
-    def test_unknown_cross_covariance_is_not_zero_filled(self):
-        values = [math.nan] * 21
-        values[0] = math.inf
-        values[6] = math.inf
-        values[11] = 4.0
-        check_covariance(values, {0: math.inf, 6: math.inf, 11: 4.0}, "covariance")
-        values[1] = 0.0
-        with self.assertRaises(ValueError):
-            check_covariance(values, {0: math.inf, 6: math.inf, 11: 4.0}, "covariance")
-
     def test_mavlink_crc_and_truncation_are_rejected(self):
-        encoder = mavlink.MAVLink(None, srcSystem=1, srcComponent=197)
+        encoder = mavlink.MAVLink(None, srcSystem=1, srcComponent=1)
         message = mavlink.MAVLink_estimator_status_message(1234567, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         frame = bytearray(message.pack(encoder))
         with tempfile.TemporaryDirectory() as directory:
@@ -73,14 +63,6 @@ class StandardOutputTests(unittest.TestCase):
             path.write_bytes(frame)
             with self.assertRaisesRegex(ValueError, "CRC/frame"):
                 read_mavlink(path)
-
-    def test_no_gps_rejects_a_global_position_message(self):
-        log = SimpleNamespace(data_list=[SimpleNamespace(name=name, data={"timestamp": [100]}) for name in
-                                        ("vehicle_attitude", "vehicle_angular_velocity", "vehicle_local_position", "estimator_status")])
-        message = SimpleNamespace(get_type=lambda: "GLOBAL_POSITION_INT", get_seq=lambda: 0,
-                                  get_srcSystem=lambda: 1, get_srcComponent=lambda: 197)
-        with self.assertRaisesRegex(ValueError, "forbidden"):
-            check_frames(log, {100: {}}, [message], no_gps=True)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+# QGC advertises a CRC of the exact embedded JSON bytes.
+/src/core/metadata/*.json text eol=lf

@@ -16,7 +16,7 @@ use v6x_rust_led::{
     config::Algorithm,
     estimator::{
         config_stage,
-        product::{self, ClockReport, IndependentRuntime, Params, ProductRuntime, SharedImu},
+        product::{self, ClockReport, Params, ProductRuntime, SharedImu},
         publication_reset::PublicationReset,
         runtime::{self, AttitudeEstimate, Fault, Runtime, Selection, Status},
         standard_output::{EulerAttitude, Snapshot},
@@ -26,8 +26,7 @@ use v6x_rust_led::{
     },
     log_config::{self, Group},
     log_queue::{Class, PushError},
-    parameters,
-    ulog,
+    parameters, ulog,
 };
 
 #[derive(Clone, Copy)]
@@ -40,15 +39,14 @@ struct Control {
 pub struct Output {
     pub epoch: u32,
     pub status: Status,
-    pub independent_status: Status,
-    pub snapshots: [Snapshot; 2],
-    pub euler: [Option<EulerAttitude>; 2],
+    pub snapshot: Snapshot,
+    pub euler: Option<EulerAttitude>,
 }
 
 #[derive(Clone, Copy)]
 struct AttitudeFrame {
     epoch: u32,
-    estimates: [Option<AttitudeEstimate>; 2],
+    estimate: Option<AttitudeEstimate>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -66,15 +64,13 @@ struct AidEvent {
 
 #[derive(Clone, Copy)]
 struct Performance {
-    timings: [TimingReport; 7],
+    timings: [TimingReport; 5],
     clock: ClockReport,
 }
 
 struct WorkerTimings {
     main_ingest: Timing,
-    independent_ingest: Timing,
     main: Timing,
-    independent: Timing,
     attitude: Timing,
     snapshot: Timing,
 }
@@ -105,19 +101,16 @@ static CONFIG_ERRORS: AtomicU32 = AtomicU32::new(0);
 static CONFIGURE_MAX_US: AtomicU32 = AtomicU32::new(0);
 static LAST_CONFIG_FAULT: AtomicU32 = AtomicU32::new(0);
 static MAIN_CONFIG: AtomicU32 = AtomicU32::new(0);
-static INDEPENDENT_CONFIG: AtomicU32 = AtomicU32::new(0);
 static LOG_ERRORS: AtomicU32 = AtomicU32::new(0);
 static INPUT_DROPS: AtomicU32 = AtomicU32::new(0);
 static AID_DROPS: AtomicU32 = AtomicU32::new(0);
 static MAIN: ConstStaticCell<ProductRuntime> = ConstStaticCell::new(product::main_storage());
-static INDEPENDENT: ConstStaticCell<IndependentRuntime> =
-    ConstStaticCell::new(product::independent_storage());
 static EXECUTOR: InterruptExecutor = InterruptExecutor::new();
 
 pub fn start(timer: Peri<'static, peripherals::TIM5>, fast: SendSpawner) {
     EXECUTOR
         .start(interrupt::TIM5)
-        .spawn(task(MAIN.take(), INDEPENDENT.take(), timer))
+        .spawn(task(MAIN.take(), timer))
         .unwrap();
     fast.spawn(input_task()).unwrap();
     fast.spawn(attitude_task()).unwrap();
@@ -125,7 +118,7 @@ pub fn start(timer: Peri<'static, peripherals::TIM5>, fast: SendSpawner) {
 
 #[interrupt]
 unsafe fn TIM5() {
-    // The one worker owns both runtime references. Other tasks exchange DTOs.
+    // The worker owns the runtime. Other tasks exchange DTOs.
     unsafe { EXECUTOR.on_interrupt() };
 }
 
@@ -193,26 +186,20 @@ pub fn latest() -> Option<Output> {
     {
         return None;
     }
-    let frame = ATTITUDE_OUTPUT
+    let estimate = ATTITUDE_OUTPUT
         .try_get()
-        .filter(|v| v.epoch == control.epoch);
-    for (index, snapshot) in output.snapshots.iter_mut().enumerate() {
-        let estimate = frame
-            .and_then(|f| f.estimates[index])
-            .and_then(|v| v.at(now));
-        snapshot.attitude = estimate.map(|v| v.attitude);
-        snapshot.angular_velocity = estimate.map(|v| v.angular_velocity);
-        snapshot.status.solution_status_flags &= !1;
-        if let Some(v) = estimate {
-            snapshot.status.solution_status_flags |= 1;
-            snapshot.status.reset_count_quat = v.attitude.quat_reset_counter;
-            snapshot.local_position.heading_reset_counter = v.attitude.quat_reset_counter;
-        } else {
-            snapshot.odometry = None;
-        }
-        output.euler[index] =
-            estimate.and_then(|v| EulerAttitude::from_attitude(v.attitude, v.relative_yaw));
+        .filter(|v| v.epoch == control.epoch)
+        .and_then(|v| v.estimate)
+        .and_then(|v| v.at(now));
+    output.snapshot.attitude = estimate.map(|v| v.attitude);
+    output.snapshot.angular_velocity = estimate.map(|v| v.angular_velocity);
+    output.snapshot.status.solution_status_flags &= !1;
+    if let Some(v) = estimate {
+        output.snapshot.status.solution_status_flags |= 1;
+        output.snapshot.status.reset_count_quat = v.attitude.quat_reset_counter;
+        output.snapshot.local_position.heading_reset_counter = v.attitude.quat_reset_counter;
     }
+    output.euler = estimate.and_then(|v| EulerAttitude::from_attitude(v.attitude, v.relative_yaw));
     Some(output)
 }
 
@@ -252,15 +239,17 @@ async fn input_task() {
             last_sample = 0;
         }
         match with_timeout(Duration::from_millis(20), crate::imu::next_for_ahrs()).await {
-            Ok(sample) => {
+            Ok(batch) => {
                 if ACTIVE_EPOCH.load(Ordering::Acquire) != epoch {
                     continue;
                 }
                 let started = DWT::cycle_count();
                 let now = Instant::now().as_micros();
-                last_sample = sample.sample_timestamp_us;
-                match shared.push(sample, now) {
-                    Ok(Some(delta)) => send_input(Input::Imu(delta)),
+                match shared.push(&batch, now) {
+                    Ok(Some(delta)) => {
+                        last_sample = delta.timestamp;
+                        send_input(Input::Imu(delta));
+                    }
                     Ok(None) => {}
                     Err(fault) => send_input(Input::Fault(fault)),
                 }
@@ -309,13 +298,12 @@ async fn attitude_task() {
         stats.releases = stats.releases.wrapping_add(1);
         stats.missed = stats.missed.saturating_add((late / 1_000) as u32);
         stats.max_late_us = stats.max_late_us.max(late.min(u64::from(u32::MAX)) as u32);
-        let estimates = ATTITUDE_INPUT
+        let estimate = ATTITUDE_INPUT
             .try_get()
             .filter(|v| v.epoch == epoch)
-            .map_or([None; 2], |v| {
-                v.estimates.map(|v| v.and_then(|v| v.at(now)))
-            });
-        if let Some(main) = estimates[0] {
+            .and_then(|v| v.estimate)
+            .and_then(|v| v.at(now));
+        if let Some(main) = estimate {
             let sample = main.attitude.timestamp_sample;
             stats.repeated = stats
                 .repeated
@@ -325,7 +313,7 @@ async fn attitude_task() {
         }
         ATTITUDE_OUTPUT
             .sender()
-            .send(AttitudeFrame { epoch, estimates });
+            .send(AttitudeFrame { epoch, estimate });
         timing.record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
         if stats.releases.is_multiple_of(1_000) {
             stats.timing = timing.report();
@@ -346,21 +334,15 @@ fn service<F: NavFilter>(runtime: &mut Runtime<F>, now: u64, timing: &mut Timing
 }
 
 #[embassy_executor::task]
-async fn task(
-    main: &'static mut ProductRuntime,
-    independent: &'static mut IndependentRuntime,
-    _timer: Peri<'static, peripherals::TIM5>,
-) {
+async fn task(main: &'static mut ProductRuntime, _timer: Peri<'static, peripherals::TIM5>) {
     let mut epoch = 0;
     let mut enabled = false;
-    let mut resets = [PublicationReset::default(), PublicationReset::default()];
+    let mut resets = PublicationReset::default();
     let mut devices = [0_u32; 4];
     let mut next_publish = Instant::now();
     let mut timing = WorkerTimings {
         main_ingest: Timing::EMPTY,
-        independent_ingest: Timing::EMPTY,
         main: Timing::EMPTY,
-        independent: Timing::EMPTY,
         attitude: Timing::EMPTY,
         snapshot: Timing::EMPTY,
     };
@@ -376,7 +358,6 @@ async fn task(
             INPUT.clear();
             AIDS.clear();
             main.disable();
-            independent.disable();
             enabled = false;
             devices = [0; 4];
             if control.params.enabled {
@@ -387,20 +368,14 @@ async fn task(
                 // apart, so a transient memory value is not blamed twice.
                 let mut attempt = 0;
                 let configured = loop {
-                    let main_result = main.reconfigure(control.params, 0, prefer_filter);
-                    let main_stage = config_stage::current();
-                    MAIN_CONFIG.store(pack_config(main_stage, main_result.err()), Ordering::Relaxed);
-                    let independent_result = independent.reconfigure(control.params, 0, true);
-                    INDEPENDENT_CONFIG.store(
-                        pack_config(config_stage::current(), independent_result.err()),
-                        Ordering::Relaxed,
-                    );
-                    let configured = main_result.and(independent_result);
-                    if configured.is_ok() || attempt >= 2 {
-                        break configured;
+                    let result = main.reconfigure(control.params, 0, prefer_filter);
+                    let stage = config_stage::current();
+                    MAIN_CONFIG.store(pack_config(stage, result.err()), Ordering::Relaxed);
+                    if result.is_ok() || attempt >= 2 {
+                        break result;
                     }
                     attempt += 1;
-                    config_stage::note_retry(main_stage);
+                    config_stage::note_retry(stage);
                     Timer::after_millis(1).await;
                 };
                 CONFIGURE_MAX_US.fetch_max(
@@ -409,9 +384,6 @@ async fn task(
                 );
                 match configured {
                     Ok(()) => {
-                        if !prefer_filter {
-                            independent.disable();
-                        }
                         LAST_CONFIG_FAULT.store(0, Ordering::Relaxed);
                         enabled = true;
                         APPLIED_ALGORITHM.store(
@@ -444,15 +416,9 @@ async fn task(
                 timing
                     .main_ingest
                     .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
-                let started = DWT::cycle_count();
-                let _ = independent.ingest_imu(delta, now);
-                timing
-                    .independent_ingest
-                    .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
             }
             Either3::First(Input::Fault(fault)) => {
                 main.invalidate(fault);
-                independent.invalidate(fault);
             }
             Either3::Second(event) => {
                 let index = match event.measurement {
@@ -463,9 +429,6 @@ async fn task(
                 };
                 let accepted =
                     event.received <= now && main.apply_measurement(event.measurement, now).is_ok();
-                if !matches!(event.measurement, Measurement::Gnss(_)) {
-                    let _ = independent.apply_measurement(event.measurement, now);
-                }
                 if accepted {
                     devices[index] = event.device_id;
                 }
@@ -476,35 +439,24 @@ async fn task(
         let started = DWT::cycle_count();
         ATTITUDE_INPUT.sender().send(AttitudeFrame {
             epoch,
-            estimates: [main.attitude_at(now), independent.attitude_at(now)],
+            estimate: main.attitude_at(now),
         });
         timing
             .attitude
             .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
         service(main, now, &mut timing.main);
-        service(independent, now, &mut timing.independent);
         let now = Instant::now();
         let started = DWT::cycle_count();
         ATTITUDE_INPUT.sender().send(AttitudeFrame {
             epoch,
-            estimates: [
-                main.attitude_at(now.as_micros()),
-                independent.attitude_at(now.as_micros()),
-            ],
+            estimate: main.attitude_at(now.as_micros()),
         });
         timing
             .attitude
             .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
         if now >= next_publish {
             let started = DWT::cycle_count();
-            publish(
-                main,
-                independent,
-                epoch,
-                now.as_micros(),
-                devices,
-                &mut resets,
-            );
+            publish(main, epoch, now.as_micros(), devices, &mut resets);
             timing
                 .snapshot
                 .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
@@ -513,9 +465,7 @@ async fn task(
                 timings: [
                     shared,
                     timing.main_ingest.report(),
-                    timing.independent_ingest.report(),
                     timing.main.report(),
-                    timing.independent.report(),
                     timing.attitude.report(),
                     timing.snapshot.report(),
                 ],
@@ -529,31 +479,27 @@ async fn task(
 #[inline(never)]
 fn publish(
     main: &mut ProductRuntime,
-    independent: &mut IndependentRuntime,
     epoch: u32,
     now: u64,
     devices: [u32; 4],
-    resets: &mut [PublicationReset; 2],
+    resets: &mut PublicationReset,
 ) {
-    let mut snapshots = product::snapshots(main, independent, now, resets);
-    for snapshot in &mut snapshots {
-        snapshot.status.accel_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
-        snapshot.status.gyro_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
-        snapshot.status.baro_device_id = devices[0];
-        snapshot.status.mag_device_id = devices[1];
-        for (aid_index, aid) in snapshot.aids.iter_mut().enumerate() {
-            if let Some(aid) = aid {
-                aid.device_id = devices[aid_index.min(3)];
-            }
+    let mut snapshot = product::snapshot(main, now, resets);
+    snapshot.status.accel_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
+    snapshot.status.gyro_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
+    snapshot.status.baro_device_id = devices[0];
+    snapshot.status.mag_device_id = devices[1];
+    for (aid_index, aid) in snapshot.aids.iter_mut().enumerate() {
+        if let Some(aid) = aid {
+            aid.device_id = devices[aid_index.min(3)];
         }
     }
     OUTPUT.sender().send(Output {
         epoch,
         status: main.status(),
-        independent_status: independent.status(),
-        snapshots,
+        snapshot,
         // latest() derives Euler angles from the matching fast attitude frame.
-        euler: [None; 2],
+        euler: None,
     });
 }
 
@@ -570,7 +516,7 @@ impl From<ulog::Error> for LogError {
 
 #[embassy_executor::task]
 pub async fn log_task() {
-    let mut encoders = [DataEncoder::new(0), DataEncoder::new(1)];
+    let mut encoder = DataEncoder::new();
     let mut logger_was_ready = false;
     let mut file_index = 0;
     let mut last_output = 0;
@@ -579,7 +525,7 @@ pub async fn log_task() {
         let ready = crate::sd_logger::ready();
         let index = crate::sd_logger::snapshot().file_index;
         if ready && (!logger_was_ready || index != file_index) {
-            encoders = [DataEncoder::new(0), DataEncoder::new(1)];
+            encoder = DataEncoder::new();
             last_output = 0;
         }
         logger_was_ready = ready;
@@ -590,7 +536,7 @@ pub async fn log_task() {
         let Some(output) = latest() else {
             continue;
         };
-        let timestamp = output.snapshots[0].status.timestamp;
+        let timestamp = output.snapshot.status.timestamp;
         if timestamp <= last_output {
             continue;
         }
@@ -598,50 +544,42 @@ pub async fn log_task() {
         if !log_config::rate(Group::Estimator, timestamp) {
             continue;
         }
-        let record = runtime_record(
-            output.epoch,
-            output.status,
-            output.independent_status,
-            timestamp,
-        );
+        let record = runtime_record(output.epoch, output.status, timestamp);
         if crate::sd_logger::LOGGER
             .try_record(Class::Normal, timestamp, record)
             .is_err()
         {
             LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
         }
-        for (index, (encoder, snapshot)) in encoders.iter_mut().zip(&output.snapshots).enumerate() {
-            let result = encoder.write_snapshot::<LogError>(snapshot, |record| {
-                crate::sd_logger::LOGGER
-                    .try_record(Class::Normal, timestamp, *record)
-                    .map_err(LogError::Queue)
-            });
-            if let Err(error) = result {
-                match error {
-                    LogError::Codec(error) => {
-                        let _ = error;
-                    }
-                    LogError::Queue(error) => {
-                        let _ = error;
-                    }
+        let result = encoder.write_snapshot::<LogError>(&output.snapshot, |record| {
+            crate::sd_logger::LOGGER
+                .try_record(Class::Normal, timestamp, *record)
+                .map_err(LogError::Queue)
+        });
+        if let Err(error) = result {
+            match error {
+                LogError::Codec(error) => {
+                    let _ = error;
                 }
-                LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
+                LogError::Queue(error) => {
+                    let _ = error;
+                }
             }
-            if let Some(euler) = output.euler[index] {
-                let record =
-                    ulog::attitude_euler_record(index as u8, euler).expect("fixed Euler schema");
-                if crate::sd_logger::LOGGER
-                    .try_record(Class::Normal, timestamp, record)
-                    .is_err()
-                {
-                    LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
-                }
+            LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
+        }
+        if let Some(euler) = output.euler {
+            let record = ulog::attitude_euler_record(euler).expect("fixed Euler schema");
+            if crate::sd_logger::LOGGER
+                .try_record(Class::Normal, timestamp, record)
+                .is_err()
+            {
+                LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
 }
 
-fn runtime_record(epoch: u32, status: Status, independent: Status, now: u64) -> ulog::Record {
+fn runtime_record(epoch: u32, status: Status, now: u64) -> ulog::Record {
     let mut payload = ulog::Payload::new();
     payload.push_u64(status.timestamp).unwrap();
     for value in [
@@ -664,7 +602,6 @@ fn runtime_record(epoch: u32, status: Status, independent: Status, now: u64) -> 
         })
         .unwrap();
     payload.push_u8(fault_code(status.fault)).unwrap();
-    payload.push_u8(fault_code(independent.fault)).unwrap();
     payload.push_u8(0).unwrap();
     ulog::data_record(
         ulog::TopicId::EstimatorRuntime as u16,
@@ -703,18 +640,18 @@ fn fault_code(fault: Option<Fault>) -> u8 {
 
 pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     let control = CONTROL.try_get();
-    writeln!(output, "EKF2_RUNTIME schema=2 requested={} epoch={} active={} data_only=true nav_qualified=false config_errors={} last_config_fault={} config_stage={} configure_max_us={} input_drops={} aid_drops={} log_errors={} worker=TIM5/P4 frontend_publish=TIM7/P3 update_budget_us={}",
+    writeln!(output, "EKF2_RUNTIME schema=3 requested={} epoch={} active={} data_only=true nav_qualified=false config_errors={} last_config_fault={} config_stage={} configure_max_us={} input_drops={} aid_drops={} log_errors={} worker=TIM5/P4 frontend_publish=TIM7/P3 update_budget_us={}",
         control.is_some_and(|v| v.params.enabled), control.map_or(0, |v| v.epoch), ACTIVE_EPOCH.load(Ordering::Acquire) != 0,
         CONFIG_ERRORS.load(Ordering::Relaxed), LAST_CONFIG_FAULT.load(Ordering::Relaxed), config_stage::current(), CONFIGURE_MAX_US.load(Ordering::Relaxed),
         INPUT_DROPS.load(Ordering::Relaxed), AID_DROPS.load(Ordering::Relaxed), LOG_ERRORS.load(Ordering::Relaxed), runtime::DEADLINE_US)?;
-    let (main_config, independent_config) = (
-        MAIN_CONFIG.load(Ordering::Relaxed),
-        INDEPENDENT_CONFIG.load(Ordering::Relaxed),
-    );
-    writeln!(output, "EKF2_CONFIG main_stage={} main_fault={} independent_stage={} independent_fault={} config_retries={}",
-        main_config & 0xff, (main_config >> 8) & 0xff,
-        independent_config & 0xff, (independent_config >> 8) & 0xff,
-        config_stage::retry_count())?;
+    let main_config = MAIN_CONFIG.load(Ordering::Relaxed);
+    writeln!(
+        output,
+        "EKF2_CONFIG main_stage={} main_fault={} config_retries={}",
+        main_config & 0xff,
+        (main_config >> 8) & 0xff,
+        config_stage::retry_count()
+    )?;
     if let Some(control) = control {
         let params = control.params;
         writeln!(output, "EKF2_CONFIG_PARAMS buffer_length={:?} predict_us={} delay_max_ms={} imu_ctrl={} baro_ctrl={} baro_delay_ms={} mag_type={} mag_delay_ms={} range_ctrl={} range_delay_ms={} gps_ctrl={} gps_delay_ms={} gps_mode={}",
@@ -723,29 +660,23 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
             params.range.control, params.range.delay_ms, params.gnss.control, params.gnss.delay_ms, params.gnss.mode)?;
     }
     if let Some(state) = OUTPUT.try_get() {
-        for (name, status) in [
-            ("main", state.status),
-            ("independent", state.independent_status),
-        ] {
-            writeln!(output, "EKF2_STATE instance={name} samples={} updates={} measurements={} selected={:?} mode={:?} fault={:?} last_fault={:?} recoveries={} deadline_misses={} max_update_us={}",
-                status.samples, status.updates, status.measurements, status.selection, status.mode, status.fault,
-                status.last_fault, status.recoveries, status.deadline_misses, status.max_update_us)?;
-        }
+        let status = state.status;
+        writeln!(output, "EKF2_STATE instance=main samples={} updates={} measurements={} selected={:?} mode={:?} fault={:?} last_fault={:?} recoveries={} deadline_misses={} max_update_us={}",
+            status.samples, status.updates, status.measurements, status.selection, status.mode, status.fault,
+            status.last_fault, status.recoveries, status.deadline_misses, status.max_update_us)?;
         writeln!(
             output,
             "EKF2_AIDS baro_available={} mag_available={} range_available={}",
-            state.snapshots[0].aids[0].is_some(),
-            state.snapshots[0].aids[1].is_some(),
-            state.snapshots[0].aids[2].is_some()
+            state.snapshot.aids[0].is_some(),
+            state.snapshot.aids[1].is_some(),
+            state.snapshot.aids[2].is_some()
         )?;
     }
     if let Some(perf) = PERF.try_get() {
         for (name, timing) in [
             "shared_input",
             "main_ingest",
-            "independent_ingest",
             "main_step",
-            "independent_step",
             "prepare_attitude",
             "snapshot",
         ]
@@ -757,11 +688,15 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
         }
         writeln!(
             output,
-            "EKF2_CLOCK windows={} sensor_dt_us={} tim2_dt_us={} error_ppm={}",
+            "EKF2_CLOCK windows={} sensor_dt_us={} tim8_dt_us={} error_ppm={} sensor_samples={} integrated_dt_us={} integration_error_ppm={} raw_sensor_dt_us={} integration_clock=TIM8",
             perf.clock.windows,
             perf.clock.sensor_dt_us,
-            perf.clock.tim2_dt_us,
-            perf.clock.error_ppm
+            perf.clock.tim8_dt_us,
+            perf.clock.error_ppm,
+            perf.clock.sensor_samples,
+            perf.clock.integrated_dt_us,
+            perf.clock.integration_error_ppm,
+            perf.clock.raw_sensor_dt_us
         )?;
     }
     if let Some(stats) = PUBLISH_PERF.try_get() {

@@ -6,23 +6,7 @@
 use super::{
     imu_ekf::{baro_mag::AidStatus, ImuEkf, IMU_FRESH_US},
     math,
-    reset_status::ResetReport,
 };
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Source {
-    Gnss,
-    NoGnss,
-}
-
-impl Source {
-    pub const fn instance(self) -> u8 {
-        match self {
-            Self::Gnss => 0,
-            Self::NoGnss => 1,
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Attitude {
@@ -211,28 +195,12 @@ pub struct EstimatorStates {
 #[derive(Clone, Copy, Debug)]
 pub struct AidSource {
     pub timestamp: u64,
-    pub estimator_instance: u8,
     pub device_id: u32,
     pub status: AidStatus,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Odometry {
-    pub timestamp_sample: u64,
-    pub position: [f32; 3],
-    pub q: [f32; 4],
-    pub velocity: [f32; 3],
-    pub angular_velocity: [f32; 3],
-    pub position_variance: [f32; 3],
-    pub orientation_variance: [f32; 3],
-    pub velocity_variance: [f32; 3],
-    pub reset_counter: u8,
-    pub quality: i8,
-}
-
-#[derive(Clone, Copy, Debug)]
 pub struct Snapshot {
-    pub source: Source,
     pub attitude: Option<Attitude>,
     pub angular_velocity: Option<AngularVelocity>,
     pub local_position: LocalPosition,
@@ -241,7 +209,6 @@ pub struct Snapshot {
     pub states: EstimatorStates,
     /// Barometer, magnetometer, range, GNSS position, velocity, height.
     pub aids: [Option<AidSource>; 6],
-    pub odometry: Option<Odometry>,
 }
 
 pub(super) struct GnssDiagnostics {
@@ -256,7 +223,6 @@ impl Snapshot {
         let live =
             health.valid && now >= output.timestamp && now - output.timestamp <= IMU_FRESH_US;
         Self {
-            source: Source::Gnss,
             attitude: live.then_some(Attitude {
                 timestamp: now,
                 timestamp_sample: output.timestamp,
@@ -333,18 +299,12 @@ impl Snapshot {
                 covariances: [f32::NAN; 24],
             },
             aids: [None; 6],
-            odometry: None,
         }
     }
 
     /// Capture once per publication cycle: reset the integral accumulators once,
     /// then share this immutable snapshot between ULog and both MAVLink links.
-    pub(super) fn from_core(
-        core: &mut ImuEkf,
-        now: u64,
-        source: Source,
-        gnss: Option<GnssDiagnostics>,
-    ) -> Self {
+    pub(super) fn from_core(core: &mut ImuEkf, now: u64, gnss: Option<GnssDiagnostics>) -> Self {
         let output = core.output();
         let resets = core.reset_report();
         let covariances = core::array::from_fn(|i| core.covariance()[i][i]);
@@ -352,14 +312,10 @@ impl Snapshot {
             && now >= output.timestamp
             && now - output.timestamp <= IMU_FRESH_US;
         let validity = core.local_position_validity();
-        let horizontal_valid = live && source == Source::Gnss && validity[0];
+        let horizontal_valid = live && validity[0];
         let vertical_valid = live && (validity[1] || validity[2]);
         let control = core.control_status();
-        let global_reference = if source == Source::Gnss {
-            core.origin.zip(core.origin_altitude)
-        } else {
-            None
-        };
+        let global_reference = core.origin.zip(core.origin_altitude);
         let global_origin = global_reference.is_some();
         let heading_good = live
             && control & (1 << 1) != 0
@@ -495,7 +451,6 @@ impl Snapshot {
         let aid = |status: AidStatus| {
             (status.timestamp != 0).then_some(AidSource {
                 timestamp: now,
-                estimator_instance: source.instance(),
                 device_id: 0,
                 status,
             })
@@ -558,62 +513,7 @@ impl Snapshot {
             mag_strength_gs: f32::NAN,
             mag_strength_ref_gs: f32::NAN,
         };
-        let rotation = math::rotation(core.quaternion());
-        let orientation_variance = core::array::from_fn(|axis| {
-            let mut variance = 0.0;
-            for i in 0..3 {
-                for j in 0..3 {
-                    variance += rotation[i][axis] * core.covariance()[i][j] * rotation[j][axis];
-                }
-            }
-            variance
-        });
-        let odometry = live.then_some(Odometry {
-            timestamp_sample: output.timestamp,
-            position: output.position_ned_m,
-            q: output.q_body_to_ned,
-            velocity: output.velocity_ned_m_s,
-            angular_velocity,
-            position_variance: [
-                if horizontal_valid {
-                    covariances[6]
-                } else {
-                    f32::INFINITY
-                },
-                if horizontal_valid {
-                    covariances[7]
-                } else {
-                    f32::INFINITY
-                },
-                if local.z_valid {
-                    covariances[8]
-                } else {
-                    f32::INFINITY
-                },
-            ],
-            orientation_variance,
-            velocity_variance: [
-                if horizontal_valid {
-                    covariances[3]
-                } else {
-                    f32::INFINITY
-                },
-                if horizontal_valid {
-                    covariances[4]
-                } else {
-                    f32::INFINITY
-                },
-                if local.v_z_valid {
-                    covariances[5]
-                } else {
-                    f32::INFINITY
-                },
-            ],
-            reset_counter: odometry_reset_counter(resets),
-            quality: 0,
-        });
         Self {
-            source,
             attitude,
             angular_velocity: angular,
             local_position: local,
@@ -627,7 +527,6 @@ impl Snapshot {
                 covariances,
             },
             aids,
-            odometry,
         }
     }
 }
@@ -662,12 +561,6 @@ fn solution_status(
     bits.iter()
         .enumerate()
         .fold(0, |flags, (index, set)| flags | (u16::from(*set) << index))
-}
-
-fn odometry_reset_counter(resets: ResetReport) -> u8 {
-    resets.counts[..5]
-        .iter()
-        .fold(0_u8, |sum, count| sum.wrapping_add(*count))
 }
 
 #[cfg(test)]
@@ -735,7 +628,7 @@ mod tests {
         for index in 0..24 {
             core.covariance[index][index] = (index + 1) as f32;
         }
-        let snapshot = Snapshot::from_core(&mut core, 1_000_100, Source::NoGnss, None);
+        let snapshot = Snapshot::from_core(&mut core, 1_000_100, None);
         let local = snapshot.local_position;
         assert_eq!(local.timestamp_sample, 1_000_000);
         assert_eq!(snapshot.states.timestamp_sample, core.timestamp());
@@ -757,12 +650,12 @@ mod tests {
     #[test]
     fn stale_or_faulted_output_revokes_publication_and_solution_validity() {
         let mut core = aligned();
-        let stale = Snapshot::from_core(&mut core, 1_100_001, Source::Gnss, None);
-        assert!(stale.attitude.is_none() && stale.odometry.is_none());
+        let stale = Snapshot::from_core(&mut core, 1_100_001, None);
+        assert!(stale.attitude.is_none());
         assert!(!stale.local_position.z_valid);
         assert_eq!(stale.status.solution_status_flags & 0x7f, 0);
         core.check_fresh(1_100_001).unwrap_err();
-        let faulted = Snapshot::from_core(&mut core, 1_000_000, Source::Gnss, None);
+        let faulted = Snapshot::from_core(&mut core, 1_000_000, None);
         assert!(faulted.attitude.is_none() && faulted.global_position.is_none());
         assert_eq!(faulted.status.solution_status_flags & 0x7f, 0);
     }
@@ -776,18 +669,11 @@ mod tests {
         core.reset_vertical_velocity(2.0, 4.0);
         core.reset_altitude(3.0, 9.0);
         let resets = core.reset_report();
-        let snapshot = Snapshot::from_core(&mut core, 1_000_000, Source::NoGnss, None);
+        let snapshot = Snapshot::from_core(&mut core, 1_000_000, None);
         assert_eq!(snapshot.local_position.delta_z, resets.position_delta[2]);
         assert_eq!(snapshot.local_position.delta_vz, resets.velocity_delta[2]);
         assert_eq!(snapshot.status.reset_count_pod_d, resets.counts[4]);
         assert!(!snapshot.local_position.heading_good_for_control);
         assert!((snapshot.local_position.delta_heading - 0.2).abs() < 1e-6);
-        assert_eq!(
-            odometry_reset_counter(ResetReport {
-                counts: [255, 1, 2, 3, 4, 200],
-                ..resets
-            }),
-            9
-        );
     }
 }

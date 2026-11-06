@@ -1,7 +1,7 @@
 //! Bounded framing and target filtering shared by all byte transports.
 
 use crate::parameters::{Id, COUNT};
-use crate::telemetry::{INDEPENDENT_COMPONENT, MAIN_COMPONENT};
+use crate::telemetry::MAIN_COMPONENT;
 use mavlink::{
     common::MavMessage, MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion,
     Message,
@@ -40,7 +40,7 @@ pub fn addressed_to_vehicle(message: &MavMessage, system: u8) -> bool {
         .is_none_or(|id| id == 0 || id == system)
         && message
             .target_component_id()
-            .is_none_or(|id| matches!(id, 0 | MAIN_COMPONENT | INDEPENDENT_COMPONENT))
+            .is_none_or(|id| matches!(id, 0 | MAIN_COMPONENT))
 }
 
 pub struct FrameParser {
@@ -197,6 +197,11 @@ mod tests {
             1
         ));
         data.target_component = 197;
+        assert!(!addressed_to_vehicle(
+            &MavMessage::COMMAND_LONG(data.clone()),
+            1
+        ));
+        data.target_component = 1;
         assert!(addressed_to_vehicle(&MavMessage::COMMAND_LONG(data), 1));
     }
 

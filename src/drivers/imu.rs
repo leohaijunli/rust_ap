@@ -20,16 +20,16 @@ use embassy_sync::channel::Channel;
 use embassy_sync::watch::Watch;
 use embassy_time::{with_timeout, Duration, Instant, Timer};
 use v6x_rust_led::icm42688::{
-    self, bits, register, Bank, Config, Sample, FIFO_BYTES, FIFO_PACKET_BYTES, SETTINGS,
-    WHO_AM_I_VALUE,
+    self, bits, register, Bank, Config, FifoBatch, Sample, FIFO_BYTES, FIFO_PACKET_BYTES,
+    MAX_FIFO_SAMPLES, SETTINGS, WHO_AM_I_VALUE,
 };
 
 const SPI_HZ: Hertz = Hertz(24_000_000);
-const MAX_FIFO_SAMPLES: usize = 8;
 const TRANSFER_TIMEOUT: Duration = Duration::from_millis(2);
 const RESET_TIMEOUT: Duration = Duration::from_secs(1);
 
-type AhrsQueue = Channel<CriticalSectionRawMutex, Sample, 16>;
+// Two whole FIFO batches retain the previous 16-raw-sample queue budget.
+type AhrsQueue = Channel<CriticalSectionRawMutex, FifoBatch, 2>;
 type Latest = Watch<CriticalSectionRawMutex, Sample, 2>;
 
 static AHRS: AhrsQueue = AhrsQueue::new();
@@ -96,14 +96,21 @@ pub fn set_ahrs_active(enabled: bool) {
     // cleanup, not an overflow or lost sample during continuous operation.
     critical_section::with(|_| {
         AHRS_ACTIVE.store(false, Ordering::Release);
-        let cleared = AHRS.len() as u32;
-        AHRS.clear();
+        let cleared = clear_ahrs();
         STATE.ahrs_cleared.fetch_add(cleared, Ordering::Relaxed);
         AHRS_ACTIVE.store(enabled, Ordering::Release);
     });
 }
 
-pub async fn next_for_ahrs() -> Sample {
+fn clear_ahrs() -> u32 {
+    let mut samples = 0;
+    while let Ok(batch) = AHRS.try_receive() {
+        samples += u32::from(batch.count);
+    }
+    samples
+}
+
+pub async fn next_for_ahrs() -> FifoBatch {
     AHRS.receive().await
 }
 
@@ -131,9 +138,11 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     )?;
     writeln!(
         output,
-        "IMU_CLOCK delta_ticks={} resolution_us=16 integration_us={}",
+        "IMU_CLOCK delta_ticks={} timestamp_scale_us={} sensor_dt_us={} integration_clock=TIM8",
         latest.map_or(0, |sample| sample.sensor_timestamp),
-        latest.map_or(0, |sample| u32::from(sample.sensor_timestamp) * 16)
+        icm42688::FIFO_TIMESTAMP_SCALE_US,
+        latest.map_or(0.0, |sample| f32::from(sample.sensor_timestamp)
+            * icm42688::FIFO_TIMESTAMP_SCALE_US)
     )
 }
 
@@ -170,6 +179,9 @@ pub async fn task(
     let config = v6x_rust_led::config::Config::DEFAULT.imu();
     let mut sequence = 0u32;
     loop {
+        // The amount lost during a reset is unknown. Reserve a sequence value
+        // so the frontend never integrates across a reinitialization.
+        sequence = sequence.wrapping_add(1);
         STATE.initialized.store(false, Ordering::Release);
         if sensor.initialize(config).await.is_err() {
             STATE.transfer_errors.fetch_add(1, Ordering::Relaxed);
@@ -190,36 +202,53 @@ pub async fn task(
                 STATE.drdy_timeouts.fetch_add(1, Ordering::Relaxed);
             }
             let now = Instant::now().as_micros();
-            let newest_timestamp = reconstruct_timestamp(now);
+            let drdy_timestamp = (!timed_out).then(|| reconstruct_timestamp(now));
             match sensor.read_fifo(config).await {
                 Ok(read) if read.samples > 0 => {
                     consecutive_failures = 0;
-                    let newest_timestamp = newest_timestamp.saturating_sub(read.newest_offset_us);
+                    let newest_timestamp = icm42688::fifo_sample_timestamp(
+                        now,
+                        drdy_timestamp,
+                        read.newest_offset_us,
+                        config,
+                    );
+                    let mut batch = FifoBatch {
+                        count: read.samples as u8,
+                        ..FifoBatch::default()
+                    };
+                    let mut batch_valid = true;
                     for index in 0..read.samples {
                         let age = u64::try_from(read.samples - 1 - index).unwrap()
                             * config.sample_period_us();
                         let timestamp = newest_timestamp.saturating_sub(age);
+                        let packet_sequence = sequence;
+                        sequence = sequence.wrapping_add(1);
                         match icm42688::decode_fifo_packet(
                             sensor.packet(index),
                             timestamp,
-                            sequence,
+                            packet_sequence,
                             config,
                         ) {
                             Ok(sample) => {
-                                sequence = sequence.wrapping_add(1);
+                                batch.samples[index] = sample;
                                 publish(sample);
                             }
                             Err(_) => {
+                                batch_valid = false;
                                 STATE.decode_errors.fetch_add(1, Ordering::Relaxed);
                                 consecutive_failures = consecutive_failures.saturating_add(1);
                             }
                         }
+                    }
+                    if batch_valid {
+                        publish_batch(batch);
                     }
                 }
                 Ok(_) => {
                     consecutive_failures = consecutive_failures.saturating_add(1);
                 }
                 Err(_) => {
+                    sequence = sequence.wrapping_add(1);
                     STATE.transfer_errors.fetch_add(1, Ordering::Relaxed);
                     consecutive_failures = consecutive_failures.saturating_add(1);
                 }
@@ -245,12 +274,6 @@ pub async fn task(
 
 fn publish(sample: Sample) {
     LATEST.sender().send(sample);
-    if AHRS_ACTIVE.load(Ordering::Acquire) && AHRS.try_send(sample).is_err() {
-        let dropped = AHRS.len() as u32;
-        AHRS.clear();
-        STATE.ahrs_dropped.fetch_add(dropped, Ordering::Relaxed);
-        let _ = AHRS.try_send(sample);
-    }
     STATE.samples.fetch_add(1, Ordering::Relaxed);
     let error_count = STATE
         .transfer_errors
@@ -258,6 +281,19 @@ fn publish(sample: Sample) {
         .saturating_add(STATE.decode_errors.load(Ordering::Relaxed))
         .saturating_add(STATE.drdy_timeouts.load(Ordering::Relaxed));
     crate::sd_logger::record_imu(sample, error_count);
+}
+
+fn publish_batch(batch: FifoBatch) {
+    if !AHRS_ACTIVE.load(Ordering::Acquire) {
+        return;
+    }
+    critical_section::with(|_| {
+        if AHRS.try_send(batch).is_err() {
+            let dropped = clear_ahrs();
+            STATE.ahrs_dropped.fetch_add(dropped, Ordering::Relaxed);
+            AHRS.try_send(batch).unwrap();
+        }
+    });
 }
 
 fn reconstruct_timestamp(now: u64) -> u64 {

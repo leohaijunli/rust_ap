@@ -11,7 +11,17 @@
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
-## 当前优先工作 — P4b-g / GNSS
+## 当前优先工作 — 单实例 EKF 与 IMU 时基
+
+### 2026-11-06 工程师追加要求
+
+- [x] 删除独立无 GNSS 第二实例及 component 197 / ULog instance 1，主 EKF2/Mahony 保留；示例、解析器和 CI 同步单实例。
+- [x] 改用 PX4 的 FIFO 梯形均值与 MCU 批间隔积分；按追加要求切换 TIM8，FIFO 时间戳采用 `16 × 32/30` 换算。修复 DRDY 重复回扣和丢失未断序，首批/故障后重建基准。[调查与实现](docs/imu-timebase.md)。
+- [x] 核心 180 项、标准输出解析器 7 项用例通过，原始 8 kHz / 批次积分 A/B 满足既定误差门限。[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
+- [x] 完成 TIM8/时间戳换算的受影响项复验、Clippy、标准输出 fixture 和普通固件打包/布局：fmt/Clippy（4 组特性 + host 示例）通过，标准输出 7 项通过，打包 source=`eb0d589438e0a6dc`、最大入口栈帧 11496 B。[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
+- [x] 板载烧录与 65 s 采集（工程师授权）：TIM8 运行、主 EKF2 选 Filter 且 fault=None、`max_update_us=556`、`deadline_misses=0`、1 kHz 发布 `missed=0`、`integration_error_ppm=0`；PX4 换算后传感器时间残差 `-32270 ppm`（不进入积分）。共享栈最低观测 32144 B，按工程师指示仅记录不作门。旧 panic 记录保留，`!ekf2 stop` 已收尾。
+- [ ] 提交并推送本轮改动（此前推送曾受 GitHub 凭据阻塞）。
+- [ ] 后续可选：共享栈如需收口 32 KiB 门，以 32144 B 观测为起点；传感器 −3.23% 时间残差归因需保留 FIFO tick 分布证据；TIM2 原生 32 位时间驱动需自写 embassy time driver（TIM8 已满足当前需求，未排期）。
 
 ### MAVLink 协议补齐与参数/存储重构（2026-11-05 工程师授权，软件完成/板载待验）
 
@@ -34,16 +44,16 @@
 
 四阶段内容与验收：[EKF 运行时重构计划](docs/ekf2-runtime-refactor.md)。
 
-**当前：阶段 3 板载门未过，阶段 4 未开始。本轮协议合并普通包 `f5756b75d6ed78bf` 已刷入；主实例 Running/config_errors=0，但独立实例 Numerics/Fatal、共享栈不足 32 KiB、IMU/TIM2 时间一致性异常仍待收口。`335f484ffd467691` 是此前未回装的软件产物，不以本轮读数补写其验收。** [此前证据](docs/acceptance/ekf2/20261105-runtime-refactor.md)
+**当前：阶段 3 板载门未过，阶段 4 未开始。最近板载包 `f5756b75d6ed78bf` 的主实例 Running/config_errors=0，旧独立实例 Numerics/Fatal、共享栈不足 32 KiB、原始 IMU/TIM2 偏差的记录保留。当前源码已取消第二实例并使用 TIM8 批次积分，等待新版本板载核对。`335f484ffd467691` 是此前未回装的软件产物，不补写其验收。** [此前证据](docs/acceptance/ekf2/20261105-runtime-refactor.md)
 
 - [ ] **阶段 0 / M0：护栏**：参数、延迟配置、单次超时继续运行的软件用例通过；DWT 分路径 max/p99 已接，实测数字待新固件采集。
-- [x] **阶段 1 / M1：泛型 Runtime 本地软件门**：A1 双实例、三种 `NavFilter`、产品别名、原地初始化及旧入口适配完成；Mahony 产品配置 H753 编译通过，主产品 release 通过。
+- [x] **阶段 1 / M1 历史软件门**：A1 双实例、三种 `NavFilter`、产品别名、原地初始化及旧入口适配曾通过；当前按新范围收敛为单产品 Runtime、EKF2/Mahony 和统一 `ImuDelta` 入口。
 - [ ] **阶段 2 / M2：1 kHz 与事件量测**：TIM7/P3 轻量发布、TIM5/P4 独占融合及有界事件入口完成，回放/输出软件检查通过；板上发布时序及 mag/range 实物融合待验。
 - [ ] **阶段 3 / M3：共享预处理与恢复**：9 项 Runtime 专项通过；共享 8→1 kHz 多轴旋转 A/B 的最大差为姿态约 0.288°、速度 0.00582 m/s、位置 0.00363 m。原地初始化已消除 23/24 KiB 嵌套构造帧；IRQ 扣除、板载 CPU/栈及时基仍待验。
 - [x] **阶段 3 板载配置激活**（2026-11-05）：首次普通包 EKF 未激活（`config_errors=1`）。加入 `config_stage` 阶段码与主机复现/板载启停循环定位到**配置后的健康检测瞬态故障**（参数每次读稳定、阶段码随周期随机）。间隔 1 ms 自动重配（最多 3 次）后 8/8 周期 `config_errors=0` 全绿；间隔 10 ms 出现 2 次真实失败，证明与重试时序耦合。当前以 1 ms 重试为防御，`config_retries` 计数可见。**已知问题：根因未定，疑为参数多源头并发访问（`ParameterManager.values` 用 `NoopRawMutex` 无锁 `RefCell`，被 `!ekf2`/`PARAM_SET`/DroneCAN/`main` 共享），待另开分支核查。** 本轮普通包 `282121108641b649`，8/8 全绿证据在 `target/ekf2-config/282121108-run1`。
 - [ ] **阶段 4 / M4：稳定后优化**：H 稀疏化、小角度、协方差/内存及 FPU 指令路径；在前述行为/实时性门通过后实施。
 
-软件检查：
+2026-11-05 历史软件检查（本轮结果见上方）：
 - [x] 45 项原有 estimator host 用例、9 项 Runtime 专项、1 项无 GNSS 编译失败用例通过。
 - [x] 新分步入口 16 个固定 PX4 场景：29214 行状态/P、16000 行输出及对应创新/复位检查通过；旧入口 GNSS/range 回放通过。
 - [x] GNSS / no-GPS 标准输出各 26000 输入、1300 发布、165 字段，经 pyulog/pymavlink 检查通过。
@@ -56,7 +66,7 @@ MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门�
 **2026-11-04 历史板载：`34ef7adba931a677`（诊断包）。E6-H/PX4IO 合并已推送 `1c34dcd`；栈整改包 `f9d3004c0cf4691e` 实测启动余量 44524 B（门通过），但 EKF 更新 1117 µs 超 1 ms 期限后自动回退 Mahony。性能整改后（TIM5 独立执行器 + opt-level=3）发现 reconfigure 窗口内存损坏：参数被写为 230/290 等垃圾值，EKF2 无法激活；损坏定位到 `enable_gnss` 窗口，软件越界写（非硬件），EKF `update()` 路径 14 万样本无损坏。**[分析链](docs/acceptance/ekf2/20261104-e7-bringup.md)。日志/欧拉角输出已验证（858 KiB 完整下载，pyulog 无损坏）。PX4IO Timeout/实体按键禁用仍未解决，不称 E7 完成。
 
 - [x] **E6-H 标准输出/日志 host 门**：独立无 GPS 输入类型、状态隔离、标准姿态/角速度/局部/全球/诊断 schema、MAVLink 编码与 pyulog/pymavlink 独立解析通过；无 GPS 只发独立 `ODOMETRY` / 健康状态，水平无界协方差明确，全球位置禁发。未启用固件 estimator 日志注册表或输出任务。[证据](docs/acceptance/ekf2/20261104-e6-host.md)。
-- [ ] **E7 真实输出/日志**：当前 165 项统一参数（142 个 EKF2）、`!ekf2 start/stop`、气压输入、回退与双链路/日志分发已接入，`f5756b75d6ed78bf` 主实例板载 Running。独立实例 Numerics/Fatal、共享栈不足 32 KiB、IMU/TIM2 不一致阻塞完整门；先定位这些问题，再验启停、期限、真实输出和日志。此前未稳定激活的失败保留在历史记录；完整资格仍依赖 M1、P6a、P4b-g、P2、PL-b。
+- [ ] **E7 真实输出/日志**：165 项统一参数（142 个 EKF2）、`!ekf2 start/stop`、气压输入、回退与双链路/日志分发已接入；旧包 `f5756b75d6ed78bf` 主实例板载 Running。新单实例/TIM8 积分版须核对启停、周期、共享栈、真实输出及日志；此前失败保留为历史结果。完整资格仍依赖 M1、P6a、P4b-g、P2、PL-b。
 
 ### MAVCAN（已完成）
 
@@ -107,7 +117,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [ ] **P4 / SENS-01～04**：软件门、实物 WHO_AM_I/SPI/短时 8 kHz 计数、USB `HIGHRES_IMU` 与旧 `imu_icm42688` 短时 1 kHz ULog 已通过；标准 `sensor_accel` / `sensor_gyro` 速率确认为 200 Hz（`LOG_IMU_HZ` 默认，按样本时间戳抽取，不受批次抖动影响），文档与日志预算已同步；抽取实现修正已包含在当前 `588ab77941985319` 固件（此前修正 build source=`023c2163007a9ddf`，raw/padded=`397952 B`，static RAM=`236872 B`，未单独刷写），随下一次 P4 必验核对；待 DRDY 仪器测量、60 s 标准 `sensor_accel` / `sensor_gyro` 日志、六面方向、校准与故障恢复。[证据](docs/acceptance/p4/README.md)。依赖 P1、P3a、PL-a。
 - [ ] **P4p / PWR-01～04**：INA219 单条 V/A/W、Windows Inspector 同显和短时 ULog 已通过。日志参数默认值读取 bug 已修复并验证参数回显；实际停录/变速、保存后掉电恢复仍待验。曾见 dropout 已定位为 IMU 1 kHz 日志时代的 SD 稳态亏空（产生 ≈98 kB/s > 隐含吞吐 ≈45 kB/s，见[定量分析](docs/logging-budget.md#31-dropout-定量分析2026-11-03)）；200 Hz 现状余量 ≈2.1×，复验并入联合负载（[analyze_dropout.py](tools/analyze_dropout.py)）。参考负载精度、支路供电和断线恢复待工程师配合。[记录](docs/acceptance/ina219/README.md)。
 - [ ] **P6a / EST-01～02**：Mahony AHRS、姿态日志/QGC 方向；相对 yaw。依赖 P4、P2、PL-a。
-- [ ] **P4b-baro / BARO-01～04**：BMP388/I2C4/0x77 驱动、补偿/CRC、标准发布及独立 EKF baro 输入已实现；256 用例对拍与真实 ID/CRC/温压首读通过。待栈整改后的 MAVLink 字段/速率、sensor_baro 独立解析和一次失效恢复，不把首读当精度验收。[记录](docs/acceptance/barometer/20261104-bringup.md)，依赖 P4、PL-a、P2、H-14。
+- [ ] **P4b-baro / BARO-01～04**：BMP388/I2C4/0x77 驱动、补偿/CRC、标准发布及单独的 baro 量测事件已实现；256 用例对拍与真实 ID/CRC/温压首读通过。待栈整改后的 MAVLink 字段/速率、sensor_baro 独立解析和一次失效恢复，不把首读当精度验收。[记录](docs/acceptance/barometer/20261104-bringup.md)，依赖 P4、PL-a、P2、H-14。
 - [ ] **P7 / TEL-01～02**：随真实数据源补遥测与速率控制。依赖相应数据源、P2。
 - [ ] **M1-01～02**：一次 5 分钟数据链联合运行，核对数据、日志和资源；零命令/DISARMED。依赖以上阶段。
 

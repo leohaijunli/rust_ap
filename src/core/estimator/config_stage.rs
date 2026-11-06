@@ -1,7 +1,7 @@
 //! Last executed one-shot configuration step. A failed reconfigure keeps the
 //! stage that faulted so board diagnostics can name it with one console read.
 
-use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 /// Nothing running; the previous attempt either succeeded or never started.
 pub const IDLE: u8 = 0;

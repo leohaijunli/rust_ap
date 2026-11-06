@@ -34,7 +34,6 @@ def summary(sample):
         "config": fields.get("EKF2_CONFIG", {}),
         "params": fields.get("EKF2_CONFIG_PARAMS", {}),
         "main": {key: fields["EKF2_STATE:main"].get(key) for key in INSTANCE_FIELDS},
-        "independent": {key: fields["EKF2_STATE:independent"].get(key) for key in INSTANCE_FIELDS},
         "stack": sample["metrics"]["fields"]["STACK"],
     }
 
@@ -58,7 +57,7 @@ def read_consistent(capture, reads, gap):
     runtime = distinct_of(lambda row: tuple(row["runtime"][field] for field in STABLE_FIELDS))
     params = distinct_of(lambda row: tuple(sorted(row["params"].items())))
     config = distinct_of(lambda row: tuple(sorted(row["config"].items())))
-    modes = distinct_of(lambda row: (row["main"]["mode"], row["independent"]["mode"]))
+    modes = distinct_of(lambda row: (row["main"]["mode"],))
     stable = [len(part) == 1 for part in (runtime, params, config, modes)]
     return {
         "readings": readings,

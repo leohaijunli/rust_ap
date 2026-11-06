@@ -84,17 +84,14 @@ jobs:
           for scenario in gnss_reset baro_reset gsf_yaw vertical_clipping; do
             .venv/bin/python tools/check_ekf2_resets.py --case "$scenario" --rust "target/$host/release/examples/ekf2_input"
           done
-      - name: Qualify independent no-GNSS and standard estimator output
+      - name: Qualify standard estimator output
         run: |
           host="$(rustc -vV | sed -n 's/^host: //p')"
           cargo test --target "$host" --locked --lib estimator::
-          cargo test --target "$host" --locked --doc estimator::no_gnss
           cargo clippy --target "$host" --locked --example ekf2_standard -- -D warnings
           cargo build --release --target "$host" --locked --example ekf2_standard
           .venv/bin/python -m unittest discover -s tools -p 'test_check_ekf2_standard.py'
-          for scenario in no-gps gnss; do
-            .venv/bin/python tools/check_ekf2_standard.py --case "$scenario" --rust "target/$host/release/examples/ekf2_standard" --px4-root target/px4-ekf2-source
-          done
+          .venv/bin/python tools/check_ekf2_standard.py --rust "target/$host/release/examples/ekf2_standard" --px4-root target/px4-ekf2-source
       - name: Check E7 runtime catalog and BMP388 compensation
         run: |
           host="$(rustc -vV | sed -n 's/^host: //p')"

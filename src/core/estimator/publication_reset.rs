@@ -71,9 +71,6 @@ impl PublicationReset {
         snapshot.status.reset_count_vel_d = counts[2];
         snapshot.status.reset_count_pos_ne = counts[3];
         snapshot.status.reset_count_pod_d = counts[4];
-        if let Some(odometry) = &mut snapshot.odometry {
-            odometry.reset_counter = counts[..5].iter().fold(0_u8, |sum, v| sum.wrapping_add(*v));
-        }
         self.previous = Some(Previous {
             epoch,
             source,
@@ -90,8 +87,7 @@ impl PublicationReset {
 mod tests {
     use super::*;
     use crate::{
-        estimator::{product::ProductRuntime, runtime_params::Params},
-        icm42688::Sample,
+        estimator::{product::ProductRuntime, runtime_params::Params, ImuDelta},
         parameters::{Id, Snapshot as Parameters},
     };
 
@@ -101,20 +97,20 @@ mod tests {
             Params::from_parameters(Parameters::default().with(Id::EstEnable, 1.0).unwrap())
                 .unwrap();
         let mut runtime = ProductRuntime::new(params, 0).unwrap();
-        runtime.update(
-            Sample {
-                sample_timestamp_us: 1_000_000,
-                sequence: 0,
-                gyro_rad_s: [0.0; 3],
-                accel_m_s2: [0.0, 0.0, 9.80665],
-                temperature_c: 25.0,
-                sensor_timestamp: 8,
-            },
-            1_000_010,
-            None,
-            None,
-            None,
-        );
+        runtime
+            .ingest_imu(
+                ImuDelta {
+                    timestamp: 1_000_000,
+                    delta_angle_rad: [0.0; 3],
+                    delta_velocity_m_s: [0.0, 0.0, -9.80665 * 0.001],
+                    delta_angle_dt_s: 0.001,
+                    delta_velocity_dt_s: 0.001,
+                    delta_velocity_clipping: [false; 3],
+                },
+                1_000_010,
+            )
+            .unwrap();
+        runtime.maintain(1_000_010);
         let mut snapshot = runtime.filter_mut().standard_output(1_000_020);
         snapshot.attitude = runtime.attitude_at(1_000_020).map(|v| v.attitude);
         let mut tracker = PublicationReset::default();

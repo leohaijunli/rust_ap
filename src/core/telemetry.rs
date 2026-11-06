@@ -5,7 +5,6 @@ use mavlink::{common::*, MessageData};
 use crate::parameters::{Id, Snapshot};
 
 pub const MAIN_COMPONENT: u8 = 1;
-pub const INDEPENDENT_COMPONENT: u8 = 197;
 pub const MIN_INTERVAL_US: i32 = 20_000;
 
 pub struct Entry {
@@ -42,8 +41,6 @@ stream_table! {
     LocalPosition: LOCAL_POSITION_NED_DATA, MAIN_COMPONENT, MavRateEstimator;
     GlobalPosition: GLOBAL_POSITION_INT_DATA, MAIN_COMPONENT, MavRateEstimator;
     EstimatorStatus: ESTIMATOR_STATUS_DATA, MAIN_COMPONENT, MavRateEstimator;
-    IndependentOdometry: ODOMETRY_DATA, INDEPENDENT_COMPONENT, MavRateEstimator;
-    IndependentStatus: ESTIMATOR_STATUS_DATA, INDEPENDENT_COMPONENT, MavRateEstimator;
 }
 
 pub const COUNT: usize = STREAMS.len();
@@ -201,7 +198,7 @@ mod tests {
                 crate::parameters::Group::Link
             );
         }
-        assert_eq!(requested_kind(230, 197), Some(Kind::IndependentStatus));
+        assert_eq!(requested_kind(230, 197), None);
         assert_eq!(requested_kind(30, 197), None);
         assert_eq!(requested_kind(148, 1), Some(Kind::AutopilotVersion));
         for value in [f32::NAN, f32::INFINITY, -1.0, 30.5, 16_777_216.0] {
@@ -217,10 +214,10 @@ mod tests {
         let uart = Scheduler::new(&defaults, 0);
         usb.set_interval(230, 1, -1.0, &defaults, 0).unwrap();
         assert_eq!(usb.interval(230, 1), Some(-1));
-        assert_eq!(usb.interval(230, 197), Some(100_000));
+        assert_eq!(usb.interval(230, 197), None);
         assert_eq!(uart.interval(230, 1), Some(100_000));
         usb.set_interval(230, 0, 250_000.0, &defaults, 1).unwrap();
-        assert_eq!(usb.interval(230, 197), Some(250_000));
+        assert_eq!(usb.interval(230, 1), Some(250_000));
         usb.set_interval(230, 0, 0.0, &defaults, 2).unwrap();
         assert_eq!(usb.interval(230, 1), Some(100_000));
         let changed = defaults.with(Id::MavRateEstimator, 2.0).unwrap();

@@ -4,7 +4,7 @@ use core::fmt;
 
 use cortex_m::peripheral::SCB;
 use embassy_stm32::interrupt::{InterruptExt, Priority};
-use embassy_stm32::pac::{DBGMCU, FLASH, PWR, RCC, SYSCFG, TIM2};
+use embassy_stm32::pac::{DBGMCU, FLASH, PWR, RCC, SYSCFG, TIM8};
 use embassy_stm32::rcc::{
     mux, AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllDiv, PllMul, PllPreDiv, PllSource,
     Sysclk, VoltageScale,
@@ -80,7 +80,8 @@ pub fn init() -> Peripherals {
     let p = crate::backup_domain::init(config);
     assert!(crate::backup_domain::preserved());
 
-    embassy_stm32::interrupt::TIM2.set_priority(Priority::P1);
+    embassy_stm32::interrupt::TIM8_CC.set_priority(Priority::P1);
+    embassy_stm32::interrupt::TIM8_UP_TIM13.set_priority(Priority::P1);
     embassy_stm32::interrupt::EXTI15_10.set_priority(Priority::P0);
     embassy_stm32::interrupt::TIM7.set_priority(Priority::P3);
     embassy_stm32::interrupt::TIM5.set_priority(Priority::P4);
@@ -150,8 +151,8 @@ pub fn clock_registers_ok() -> bool {
         && SYSCFG.pwrcr().read().oden() == 1
         && FLASH.acr().read().latency() == 4
         && FLASH.acr().read().wrhighfreq() == 2
-        && TIM2.psc().read() == 239
-        && TIM2.arr().read() == 65_535
+        && TIM8.psc().read() == 239
+        && TIM8.arr().read().arr() == 65_535
 }
 
 pub fn write_diagnostics(out: &mut impl fmt::Write) -> fmt::Result {
@@ -181,9 +182,10 @@ pub fn write_diagnostics(out: &mut impl fmt::Write) -> fmt::Result {
     writeln!(out, "CORE id={:08x} vtor={:08x} ccr={:08x} scr={:08x} aircr={:08x} dwt_ctrl={:08x} reset_flags={:08x}",
         DBGMCU.idc().read().0, scb.vtor.read(), scb.ccr.read(), scb.scr.read(), scb.aircr.read(),
         unsafe { (*cortex_m::peripheral::DWT::PTR).ctrl.read() }, crate::fault::reset_flags())?;
-    writeln!(out, "TIMER name=TIM2 psc={} arr={} cr1={:08x} irq_priority={} fast_irq_priority={} usb_irq_priority={}",
-        TIM2.psc().read(), TIM2.arr().read(), TIM2.cr1().read().0,
-        embassy_stm32::interrupt::TIM2.get_priority() as u8,
+    writeln!(out, "TIMER name=TIM8 psc={} arr={} cr1={:08x} irq_priority={} update_irq_priority={} fast_irq_priority={} usb_irq_priority={}",
+        TIM8.psc().read(), TIM8.arr().read().arr(), TIM8.cr1().read().0,
+        embassy_stm32::interrupt::TIM8_CC.get_priority() as u8,
+        embassy_stm32::interrupt::TIM8_UP_TIM13.get_priority() as u8,
         embassy_stm32::interrupt::TIM7.get_priority() as u8,
         embassy_stm32::interrupt::OTG_FS.get_priority() as u8)
 }

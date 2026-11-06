@@ -9,7 +9,7 @@ use mavlink::{common::*, MAVLinkV2MessageRaw, MavHeader};
 
 use crate::estimator::standard_output::{
     AngularVelocity, Attitude, EstimatorStatus, EulerAttitude, GlobalPosition, LocalPosition,
-    Odometry, Snapshot, Source,
+    Snapshot,
 };
 
 pub fn attitude(value: Attitude, angular: AngularVelocity) -> MavMessage {
@@ -116,49 +116,7 @@ pub fn estimator_status(value: EstimatorStatus) -> MavMessage {
     })
 }
 
-pub fn odometry(value: Odometry) -> MavMessage {
-    let mut pose_covariance = [f32::NAN; 21];
-    for (index, variance) in [0, 6, 11].into_iter().zip(value.position_variance) {
-        pose_covariance[index] = variance;
-    }
-    for (index, variance) in [15, 18, 20].into_iter().zip(value.orientation_variance) {
-        pose_covariance[index] = variance;
-    }
-    let mut velocity_covariance = [f32::NAN; 21];
-    for (index, variance) in [0, 6, 11].into_iter().zip(value.velocity_variance) {
-        velocity_covariance[index] = variance;
-    }
-    MavMessage::ODOMETRY(ODOMETRY_DATA {
-        time_usec: value.timestamp_sample,
-        frame_id: MavFrame::MAV_FRAME_LOCAL_NED,
-        child_frame_id: MavFrame::MAV_FRAME_LOCAL_NED,
-        x: value.position[0],
-        y: value.position[1],
-        z: value.position[2],
-        q: value.q,
-        vx: value.velocity[0],
-        vy: value.velocity[1],
-        vz: value.velocity[2],
-        rollspeed: value.angular_velocity[0],
-        pitchspeed: value.angular_velocity[1],
-        yawspeed: value.angular_velocity[2],
-        pose_covariance,
-        velocity_covariance,
-        reset_counter: value.reset_counter,
-        estimator_type: MavEstimatorType::MAV_ESTIMATOR_TYPE_AUTOPILOT,
-        quality: value.quality,
-    })
-}
-
 pub fn messages(snapshot: &Snapshot, home_altitude_m: Option<f32>) -> [Option<MavMessage>; 4] {
-    if snapshot.source == Source::NoGnss {
-        return [
-            snapshot.odometry.map(odometry),
-            Some(estimator_status(snapshot.status)),
-            None,
-            None,
-        ];
-    }
     [
         snapshot
             .attitude
@@ -187,21 +145,10 @@ pub fn encode(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::estimator::{
-        imu_ekf::{baro_mag::BaroMagParams, range::RangeParams, ImuEkfParams},
-        no_gnss::NoGnssEkf,
-    };
 
     #[test]
     fn global_units_home_altitude_and_invalid_local_suppression_match_px4() {
-        let mut filter = NoGnssEkf::new(
-            ImuEkfParams::default(),
-            BaroMagParams::default(),
-            RangeParams::default(),
-            0,
-        )
-        .unwrap();
-        let mut local = filter.standard_output(0).local_position;
+        let mut local = LocalPosition::default();
         assert!(local_position(local).is_none());
         local.xy_valid = true;
         local.v_xy_valid = true;
@@ -256,39 +203,5 @@ mod tests {
             ..local
         })
         .is_none());
-    }
-
-    #[test]
-    fn odometry_keeps_unknown_cross_terms_and_exact_diagonal_slots() {
-        let MavMessage::ODOMETRY(message) = odometry(Odometry {
-            timestamp_sample: 1_234_567,
-            position: [1.0, -2.0, -3.0],
-            q: [1.0, 0.0, 0.0, 0.0],
-            velocity: [0.5, -0.5, 0.1],
-            angular_velocity: [0.0, 0.0, 0.2],
-            position_variance: [f32::INFINITY, f32::INFINITY, 9.0],
-            velocity_variance: [f32::INFINITY, f32::INFINITY, 4.0],
-            orientation_variance: [0.1, 0.2, 0.3],
-            reset_counter: 255,
-            quality: 0,
-        }) else {
-            panic!("wrong message");
-        };
-        assert_eq!(message.time_usec, 1_234_567);
-        assert_eq!(message.frame_id, MavFrame::MAV_FRAME_LOCAL_NED);
-        assert_eq!(message.child_frame_id, MavFrame::MAV_FRAME_LOCAL_NED);
-        for index in [0, 6] {
-            assert_eq!(message.pose_covariance[index], f32::INFINITY);
-            assert_eq!(message.velocity_covariance[index], f32::INFINITY);
-        }
-        assert_eq!(message.pose_covariance[11], 9.0);
-        assert_eq!(message.velocity_covariance[11], 4.0);
-        for (index, value) in [15, 18, 20].into_iter().zip([0.1, 0.2, 0.3]) {
-            assert_eq!(message.pose_covariance[index], value);
-        }
-        assert!(message.pose_covariance[1].is_nan());
-        assert!(message.velocity_covariance[20].is_nan());
-        assert_eq!(message.reset_counter, 255);
-        assert_eq!(message.quality, 0);
     }
 }

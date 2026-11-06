@@ -59,12 +59,9 @@ pub fn build(kind: Kind, now: u64, gps_no_fix_due: &mut u64, on_demand: bool) ->
                 Kind::LocalPosition => EstimatorMessage::LocalPosition,
                 Kind::GlobalPosition => EstimatorMessage::GlobalPosition,
                 Kind::EstimatorStatus => EstimatorMessage::Status,
-                Kind::IndependentOdometry => EstimatorMessage::IndependentOdometry,
-                Kind::IndependentStatus => EstimatorMessage::IndependentStatus,
                 _ => unreachable!(),
             };
-            return mavlink_core::estimator_message(kind)
-                .map(|(component, message)| Outgoing { component, message });
+            mavlink_core::estimator_message(kind)
         }
     }?;
     Some(Outgoing {

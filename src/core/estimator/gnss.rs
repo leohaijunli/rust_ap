@@ -305,12 +305,7 @@ impl GnssEkf {
             quality_failures: self.quality_failure_bits()
                 & ((self.profile.map_or(0, |p| p.params.checks.mask) << 1) | 1),
         };
-        super::standard_output::Snapshot::from_core(
-            &mut self.core,
-            now,
-            super::standard_output::Source::Gnss,
-            Some(diagnostics),
-        )
+        super::standard_output::Snapshot::from_core(&mut self.core, now, Some(diagnostics))
     }
 
     pub fn update(

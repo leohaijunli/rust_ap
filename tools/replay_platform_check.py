@@ -25,6 +25,9 @@ CFGR = 0x58024410
 USBSEL = 0x58024454
 SDMMCSEL = 0x5802444C
 FLASH_ACR = 0x52002000
+TIM8_PSC = 0x40010428
+TIM8_ARR = 0x4001042C
+# Historical P1 ELFs, including --legacy-scuen, still access TIM2.
 TIM2_PSC = 0x40000028
 TIM2_ARR = 0x4000002C
 
@@ -49,7 +52,9 @@ def p1_registers(cr3):
         CSR1: 0x0000E000,         # ACTVOSRDY
         PWRCR: 0x00000081,        # ODEN
         FLASH_ACR: 0x00000024,    # LATENCY=4, WRHIGHFREQ=2
-        TIM2_PSC: 239,            # 240 MHz /240 = 1 MHz
+        TIM8_PSC: 239,           # APB2 timer: 240 MHz /240 = 1 MHz
+        TIM8_ARR: 65535,
+        TIM2_PSC: 239,
         TIM2_ARR: 65535,
     }
 
@@ -128,8 +133,8 @@ def main():
         ('wrong_usb_clock', base | {USBSEL: 1 << 20}, False),
         ('wrong_sdmmc_clock', base | {SDMMCSEL: 1 << 16}, False),
         ('insufficient_flash_latency', base | {FLASH_ACR: 0x22}, False),
-        ('wrong_tick_prescaler', base | {TIM2_PSC: 63}, False),
-        ('wrong_timer_period', base | {TIM2_ARR: 0xFFFFFFFF}, False),
+        ('wrong_tick_prescaler', base | {TIM8_PSC: 63, TIM2_PSC: 63}, False),
+        ('wrong_timer_period', base | {TIM8_ARR: 65534, TIM2_ARR: 65534}, False),
     ]
     print(f"Unicorn {unicorn.__version__} Cortex-M7; source={report['source_id']} entry=0x{matches[0] & ~1:08x}")
     print('Modeled P1 clocks + physical Dump CR3; no HAL/board execution')

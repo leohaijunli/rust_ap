@@ -1,7 +1,5 @@
 //! Single-owner, algorithm-independent ingestion, supervision and attitude output.
 
-use crate::icm42688;
-
 use super::{
     mahony::Mahony,
     math,
@@ -110,69 +108,12 @@ impl AttitudeEstimate {
     }
 }
 
-#[derive(Default)]
-pub struct ImuBridge {
-    last_sequence: Option<u32>,
-    last_timestamp: u64,
-}
-
-impl ImuBridge {
-    pub const fn new() -> Self {
-        Self {
-            last_sequence: None,
-            last_timestamp: 0,
-        }
-    }
-
-    pub fn convert(&mut self, sample: icm42688::Sample, now: u64) -> Result<ImuDelta, Fault> {
-        if now < sample.sample_timestamp_us || now - sample.sample_timestamp_us > FRESH_US {
-            return Err(Fault::Stale);
-        }
-        if self
-            .last_sequence
-            .is_some_and(|last| sample.sequence != last.wrapping_add(1))
-        {
-            return Err(Fault::Sequence);
-        }
-        if self.last_sequence.is_some() && sample.sample_timestamp_us <= self.last_timestamp {
-            return Err(Fault::Timestamp);
-        }
-        // TMST_CONFIG=0x1d: sensor delta timestamp, 16-us ticks. TIM2 sample
-        // time and sensor integration duration remain separately observable.
-        let duration_us = u32::from(sample.sensor_timestamp) * 16;
-        if !(64..=256).contains(&duration_us) {
-            return Err(Fault::Timestamp);
-        }
-        let gyro = sample.gyro_frd();
-        let accel = sample.accel_frd();
-        if gyro.iter().chain(&accel).any(|v| !v.is_finite())
-            || gyro
-                .iter()
-                .any(|v| v.abs() >= 0.999 * 2_000_f32.to_radians())
-        {
-            return Err(Fault::Input);
-        }
-        let dt = duration_us as f32 * 1e-6;
-        self.last_sequence = Some(sample.sequence);
-        self.last_timestamp = sample.sample_timestamp_us;
-        Ok(ImuDelta {
-            timestamp: sample.sample_timestamp_us,
-            delta_angle_rad: gyro.map(|v| v * dt),
-            delta_velocity_m_s: accel.map(|v| v * dt),
-            delta_angle_dt_s: dt,
-            delta_velocity_dt_s: dt,
-            delta_velocity_clipping: accel.map(|v| v.abs() >= 0.999 * 16.0 * 9.80665),
-        })
-    }
-}
-
 pub struct Runtime<F: NavFilter> {
     filter: F,
     initialize: fn(&mut F, &F::Params, u64) -> Result<(), FilterFault>,
     params: Option<F::Params>,
     fallback: Mahony,
     fallback_valid: bool,
-    bridge: ImuBridge,
     enabled: bool,
     prefer_filter: bool,
     status: Status,
@@ -202,7 +143,6 @@ impl<F: NavFilter> Runtime<F> {
             params: None,
             fallback: Mahony::new(),
             fallback_valid: false,
-            bridge: ImuBridge::new(),
             enabled: false,
             prefer_filter: true,
             status: Status::EMPTY,
@@ -243,7 +183,6 @@ impl<F: NavFilter> Runtime<F> {
         self.prefer_filter = prefer_filter;
         self.fallback = Mahony::new();
         self.fallback_valid = false;
-        self.bridge = ImuBridge::new();
         self.pending.fill(None);
         self.last_measurement = [0; 4];
         self.deadline_streak = 0;
@@ -427,7 +366,6 @@ impl<F: NavFilter> Runtime<F> {
     }
 
     pub fn invalidate(&mut self, fault: Fault) {
-        self.bridge = ImuBridge::new();
         self.fallback = Mahony::new();
         self.fallback_valid = false;
         self.pending.fill(None);
@@ -575,48 +513,6 @@ impl<F: NavFilter> Runtime<F> {
     }
     pub(super) fn filter_mut(&mut self) -> &mut F {
         &mut self.filter
-    }
-
-    /// Legacy raw-sample adapter for replay callers. Product ingestion shares
-    /// one bridge/downsampler before calling both runtimes' ingest_imu methods.
-    pub fn update(
-        &mut self,
-        sample: icm42688::Sample,
-        now: u64,
-        baro: Option<super::imu_ekf::baro_mag::BaroAltitude>,
-        gnss: Option<super::gnss::GnssObservation>,
-        range: Option<super::range_sensor::RangeObservation>,
-    ) {
-        let delta = match self.bridge.convert(sample, now) {
-            Ok(delta) => delta,
-            Err(fault) => {
-                self.invalidate(fault);
-                return;
-            }
-        };
-        if self.ingest_imu(delta, now).is_err() {
-            return;
-        }
-        for measurement in [
-            baro.map(Measurement::Baro),
-            gnss.map(Measurement::Gnss),
-            range.map(|v| {
-                let [min_distance_m, max_distance_m] = v.limits.unwrap_or([0.1, 30.0]);
-                Measurement::Range(super::RangeSample {
-                    timestamp: v.timestamp,
-                    distance_m: v.distance_m,
-                    min_distance_m,
-                    max_distance_m,
-                    quality: v.quality_percent,
-                })
-            }),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            let _ = self.apply_measurement(measurement, now);
-        }
-        self.maintain(now);
     }
 }
 

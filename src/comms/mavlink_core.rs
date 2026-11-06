@@ -411,10 +411,6 @@ pub fn scaled_pressure() -> Option<MavMessage> {
     }))
 }
 
-/// MAVLink component id of the independent no-GNSS estimator instance; the
-/// main instance reports as [`COMPONENT_ID`].
-pub const INDEPENDENT_COMPONENT: u8 = v6x_rust_led::telemetry::INDEPENDENT_COMPONENT;
-
 /// Which estimator message to build; see [`estimator_message`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EstimatorMessage {
@@ -423,59 +419,33 @@ pub enum EstimatorMessage {
     LocalPosition,
     GlobalPosition,
     Status,
-    IndependentOdometry,
-    IndependentStatus,
 }
 
-/// Build one estimator stream message with the component id that owns it.
+/// Build one main-estimator stream message.
 /// Messages whose data is invalid or stale are suppressed, never reported
 /// with fabricated fields.
-pub fn estimator_message(kind: EstimatorMessage) -> Option<(u8, MavMessage)> {
+pub fn estimator_message(kind: EstimatorMessage) -> Option<MavMessage> {
     let output = crate::estimator::latest()?;
-    let message = match kind {
-        EstimatorMessage::AttitudeEuler => output.euler[0]
-            .zip(output.snapshots[0].angular_velocity)
+    let snapshot = output.snapshot;
+    match kind {
+        EstimatorMessage::AttitudeEuler => output
+            .euler
+            .zip(snapshot.angular_velocity)
             .map(|(angles, gyro)| v6x_rust_led::mavlink_estimator::attitude_euler(angles, gyro)),
-        EstimatorMessage::AttitudeQuaternion => output.snapshots[0]
+        EstimatorMessage::AttitudeQuaternion => snapshot
             .attitude
-            .zip(output.snapshots[0].angular_velocity)
+            .zip(snapshot.angular_velocity)
             .map(|(attitude, gyro)| v6x_rust_led::mavlink_estimator::attitude(attitude, gyro)),
         EstimatorMessage::LocalPosition => {
-            v6x_rust_led::mavlink_estimator::local_position(output.snapshots[0].local_position)
+            v6x_rust_led::mavlink_estimator::local_position(snapshot.local_position)
         }
-        EstimatorMessage::GlobalPosition => {
-            output.snapshots[0].global_position.and_then(|global| {
-                v6x_rust_led::mavlink_estimator::global_position(
-                    global,
-                    output.snapshots[0].local_position,
-                    None,
-                )
-            })
-        }
-        EstimatorMessage::Status => Some(v6x_rust_led::mavlink_estimator::estimator_status(
-            output.snapshots[0].status,
-        )),
-        EstimatorMessage::IndependentOdometry => output.snapshots[1].odometry.map(|value| {
-            let mut message = v6x_rust_led::mavlink_estimator::odometry(value);
-            if let MavMessage::ODOMETRY(data) = &mut message {
-                if output.snapshots[1].status.control_mode_flags & (1 << 1) == 0 {
-                    data.frame_id = MavFrame::MAV_FRAME_LOCAL_FRD;
-                    data.child_frame_id = MavFrame::MAV_FRAME_LOCAL_FRD;
-                }
-            }
-            message
+        EstimatorMessage::GlobalPosition => snapshot.global_position.and_then(|global| {
+            v6x_rust_led::mavlink_estimator::global_position(global, snapshot.local_position, None)
         }),
-        EstimatorMessage::IndependentStatus => Some(
-            v6x_rust_led::mavlink_estimator::estimator_status(output.snapshots[1].status),
-        ),
-    }?;
-    let component = match kind {
-        EstimatorMessage::IndependentOdometry | EstimatorMessage::IndependentStatus => {
-            INDEPENDENT_COMPONENT
-        }
-        _ => COMPONENT_ID,
-    };
-    Some((component, message))
+        EstimatorMessage::Status => Some(v6x_rust_led::mavlink_estimator::estimator_status(
+            snapshot.status,
+        )),
+    }
 }
 
 /// BATTERY_STATUS mirrors the INA219 power monitor: voltage, current and power

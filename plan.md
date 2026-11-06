@@ -1,12 +1,12 @@
 # Pixhawk 6X Rust 飞控实施计划
 
-更新：2026-11-04。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
+更新：2026-11-06。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
 状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)。
 
 ## 1. 当前进度与执行原则
 
 - P0、P1、P3a、RTC-01/TIME-01 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-a/P4/PL-b 正常路径有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。MAVCAN（CAN2）已收口；参数自动保存与 QGC 分组元数据已实现并板载校验；P4b-g 软件已实现并刷入板载，`NO_GPS` 断链帧已验。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b、P4b-g GPS 实物与 TIME-02 仍待 H-02/03/04、H-10、QGC GUI 与工程师操作，M1 未开始。
-- P1 ??? QGC ??? 21:28 UTC ?????????**???????? `34ef7adba931a677`?2026-11-04???????????? 50328 B?EKF ??? 42056 B?? ?32 KiB ???BMP388 ????858 KiB ?????????????? EKF reconfigure ??????????????? 230/290 ????EKF2 ?????Mahony ??????????? `enable_gnss` ?????[E7 ???](docs/acceptance/ekf2/20261104-e7-bringup.md)??? `c6fe90f898b68f8f` ? PX4IO Timeout/??????????????????????**
+- 最近板载普通包为 `f5756b75d6ed78bf`：主 EKF2 Running，但共享栈 32560 B、原始 IMU/TIM2 诊断 −92887 ppm 等问题仍阻塞 E7。当前按工程师要求移除第二实例，切换 TIM8 批间隔积分及 PX4 时间戳换算；软件与板载结果分别记录，见 [TODO.md](TODO.md)。
 - 标准消息软件 source=`c2f3128aecc8a70b` 已通过必要检查/普通打包，见[记录](docs/acceptance/messages/README.md)；新 ULog schema 的实物核对并入下一次 P4 必验记录（当前 P4b-g 固件已含标准 `sensor_accel` / `sensor_gyro`，但尚未完成 60 s 实物日志）。
 - 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - 本计划的精简验收取代早期操作单中的重复次数、长时压测和截图齐套要求。历史测试结果及缺失记录仍按实保存。
@@ -14,7 +14,7 @@
 - 已安装项目技能：编写时用 `clean-code`，收尾时用 `code-simplifier` 做一次局部审视；[适配说明](docs/ai-coding-skills.md)。
 - 每个问题修复后只运行相关检查；已有检查通过且没有相关代码变化时直接继续交付。文档修改只检查内容、链接及差异。
 - **E 系列拆门（工程师确认）**：E1-H～E5-H 已通过（E5 CI 正确性由工程师确认）；E6-H 独立无 GPS 与标准输出/编码/独立解析本地通过，见[记录](docs/acceptance/ekf2/20261104-e6-host.md)，新增 CI 待执行。随后经工程师授权回装普通合并包，但未接入/启用板载 EKF；实物/E7 仍依赖 M1、P6a、P4b-g、P2、PL-b，不虚构硬件资格。
-- **E7 软件接入（2026-11-04 工程师新授权）**：真实 IMU/独立 baro/GNSS 输入桥、双实例任务、参数、失效/回退与标准输出/日志代码已接入，`EST_EN` 默认关闭。当前板载首次启动的栈余量未通过，**尚未启动或验收 EKF2**；先减少大对象临时栈，再验证启停、周期/栈、真实数据与独立日志解析。缺失 mag/range 不填零，导航保持未资格化；完整 E7 原实物依赖仍在，PX4IO Timeout 不绕过。
+- **E7 当前范围（2026-11-06 工程师确认）**：保留一个主 EKF2/Mahony 产品运行时，删除独立无 GNSS 实例及 component 197 输出。IMU 按固定 PX4 的 FIFO 均值与 MCU 批次时间积分，单调时钟切换 TIM8，FIFO 时间戳使用 `16 × 32/30` 换算；[实现与时基调查](docs/imu-timebase.md)。`EST_EN` 默认关闭，真实 IMU/baro/GNSS 输入、标准输出/日志和回退已接入；新版本实物周期/栈及真实日志待验，缺失 mag/range 不填零，导航保持未资格化。
 
 ## 2. 固定工程边界
 
@@ -174,7 +174,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 1. **P3 软件/工具就绪**：P3a 已实现统一参数注册表、合法性校验、原子保存和掉电读回；P2 共享 MAVLink 核心已提供 `PARAM_REQUEST_LIST/READ/SET/VALUE` 与存储命令。`tools/check_mavlink.py`、`tools/p3a_parameters.py` 已覆盖全表、名称/索引、合法/非法设值及保存读回，不重复实现协议。
 2. **P3 实物待验**：P2 闭合且 H-03 接线后，一条链路设值、另一条链路读回同一当前值，再复用既有保存/掉电读回路径；通过后关闭 PARAM-01/02。
 3. **P4 软件门通过**：`src/core/icm42688.rs` 与 `src/core/config.rs` 提供寄存器策略、8 kHz 高分辨率 FIFO 解码、SI 单位、YAW270/FLU→FRD、陈旧判断与配置 API；`src/drivers/imu.rs` 接 SPI2 DMA1_CH2/3、PF4/PH5、PA10 EXTI、复位/回读/FIFO 恢复和周期寄存器核对。
-4. **P4 fan-out**：AHRS 使用按需启用的 16 槽有界队列，满时丢弃积压并从最新样本重同步；ULog 按 `LOG_IMU_HZ`（默认 200 Hz，每 40 样本各记录一个，按样本时间戳抽取，不受 FIFO 批次抖动影响）记录标准 `sensor_accel` / `sensor_gyro`（FRD/SI、`samples=1`，不是 8 样本平均）；USB/TELEM1 各 20 Hz `HIGHRES_IMU`，慢消费者不反压采样。标准消息软件检查见[记录](docs/acceptance/messages/README.md)，新 schema 随下一次 P4 必验记录核对实物。
+4. **P4 fan-out**：AHRS 使用按需启用的 2 批 FIFO 队列（共 16 个原始样本），整批汇总后按 TIM8 批间隔积分；满时丢弃积压并重新建立基准。ULog 按 `LOG_IMU_HZ`（默认 200 Hz，每 40 样本各记录一个，按样本时间戳抽取）记录标准 `sensor_accel` / `sensor_gyro`（FRD/SI、`samples=1`）；USB/TELEM1 各 20 Hz `HIGHRES_IMU`，慢消费者不反压采样。当前实现与验证见[时基说明](docs/imu-timebase.md)，实物核对并入下一次 P4 必验记录。
 5. **P4 有限 HIL**：普通包已由原 bootloader 上传/校验；WHO_AM_I=`0x47`、SPI=24 MHz、短时约 8.08 kHz、错误计数 0，USB `HIGHRES_IMU` 合理。旧 `imu_icm42688` 有 2686 条/2.652 s、约 1012.5 Hz、无 corruption；该历史结果保留。200 Hz 标准 topic 抽取修正已包含在当前 `588ab77941985319` 固件中；仍待 DRDY 仪器测量、60 s 日志、六面 YAW270、校准与故障恢复，不关闭 SENS-01～04。详情见 [P4 记录](docs/acceptance/p4/README.md)。
 
 ### EKF2 后续移植约束
@@ -182,7 +182,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 2026-11-05 工程师追加授权：按 A1 实施泛型 `Runtime<F: NavFilter>`、1 kHz 姿态、事件量测与共享预处理/恢复，以新代码重测；四阶段内容见 [EKF 运行时重构计划](docs/ekf2-runtime-refactor.md)。已有黄金数据、必要验证与 E7 实物依赖保留，当前代码实施不预记为阶段通过。
 
 1. **范围**：M1 仍用 Mahony 建立可运行姿态基线。新增 `P6a-e / EKF-01～03` 作为 M1 后续阶段，移植 PX4 v1.17.0 中 EKF 的 state、predict、covariance、aiding、innovation gate 与 health/reset 逻辑；不移植 uORB 和模块调度层。
-2. **Rust 接口**：在 `src/core/estimator/` 定义固件唯一依赖的 `NavFilter`（`new/push_imu/push_measurement/step/output/health`）、内部 `AidSource`，以及 `ImuDelta` / `Measurement` / `NavOutput` DTO；接口与分层见 [EKF2 移植方案](docs/ekf2-port.md)。IMU 通过现有 16 槽有界队列输入；GNSS/后续传感器用带时间与有效性的快照；输出通过 `Watch` 独立给控制、ULog 和 MAVLink。
+2. **Rust 接口**：在 `src/core/estimator/` 定义固件唯一依赖的 `NavFilter`（`new/push_imu/push_measurement/step/output/health`）、内部 `AidSource`，以及 `ImuDelta` / `Measurement` / `NavOutput` DTO。IMU 经 2 批有界 FIFO 队列与共享前端生成 `ImuDelta`；Runtime 只接积分与量测事件，输出通过 `Watch` 给控制、ULog 和 MAVLink。
 3. **首个融合子集**：E1-H 先做无外部 aid 的 IMU 核心，保留固定 PX4 的降采样、延迟缓冲、预测、约束及内部伪观测；yaw 为相对值，位置/高度不可视为有效导航。E2-H～E6-H 可用明确标注的合成观测开发，不冒充实物；真实传感器接入与硬件资格仍按原依赖验收。
 4. **配置/切换**：`v6x_rust_led::config::Algorithm` 后续扩展 `Ekf2`；参数映射必须有范围校验和显式 reset/apply。EKF 无效、NaN、协方差异常、输入陈旧或 deadline miss 时撤销有效性并回退到已验证 Mahony，不无缝伪造连续状态。
 5. **数值验证**：用同一固定输入分别运行 PX4 v1.17.0 参考核心和 Rust 版本，按状态、创新、方差及拒绝/复位事件对拍；容差在测试前固定。未通过 replay、边界失败路径和实际 GNSS HIL 前，不称为“等价 EKF2”。
@@ -190,7 +190,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 7. **E0 / E1-H（2026-11-04）**：E0 CI `7d0c486` 通过；E1-H Rust IMU 延迟核心、生成协方差、参数快照与失效锁定已实现。两组 10 s 各 1001 更新的完整状态/协方差对拍通过，本地 f32 位差为 0，黄金数据已入库；仅此范围，不称完整 EKF2 或板载资格通过。下一步 E2-H。[结果与命令](docs/acceptance/ekf2/20261104-e1-host.md)。
 8. **标准 MAVLink 输出（工程师新增）**：主 EKF2 必须发送三组结果——姿态（`ATTITUDE_QUATERNION`，四元数 FRD→NED 与角速度）、局部位置（`LOCAL_POSITION_NED`，NED 位置/速度）、全球位置（`GLOBAL_POSITION_INT`，仅当真实全球原点与对应解算有效时发布）；估计健康按 `ESTIMATOR_STATUS` 标准字段映射。USB/TELEM1 复用现有共享消息构建核心与最新输出快照，不直接访问估计器内部或另建状态真源。单位、NED/FRD、时间戳、未知值及有效性按固定消息定义逐字段核对，不能仅改消息名称或将无效量填零当作有效输出。
 9. **标准 PX4 ULog（工程师新增）**：同样三项必须写入日志——姿态 `vehicle_attitude`、局部位置 `vehicle_local_position`、全球位置 `vehicle_global_position`（仅有效时），另加 `estimator_status` / `estimator_states` / `estimator_aid_src_*` 诊断，全部按固定 PX4 v1.17.0 `.msg` 精确生成/编码。完整匹配字段、数组索引、采样/发布时间、单位、状态/有效位、协方差和复位计数；复用现有 ULog/logger、限速/开关与唯一参数注册表，慢 SD 不反压估计任务。标准消息不能承载的独立扩展诊断才使用明确的 `rust_*` 元数据。
-10. **交付门**：E6-H 的独立无 GPS 实例、消息适配/编码及 pyulog/pymavlink 解析本地通过；两种合成模式各 65 s / 26000 输入，完整核对 9 份固定消息定义的 165 个字段。独立实例只走 `ODOMETRY` / `ESTIMATOR_STATUS`，水平无有效外部约束时方差为 `+INFINITY`，不把伪位置条件化 P 当有限导航精度；标准局部日志仍保留 PX4 P 与无效位。实际 EKF2 的 USB/TELEM1、SD 与联合负载仍在 E7 接入真实传感器后验收；现有 11-topic / 168 KiB 日志队列未扩大或启用 estimator 注册表。[证据与限制](docs/acceptance/ekf2/20261104-e6-host.md)。
+10. **交付门**：历史 E6-H 两种合成模式各 65 s / 26000 输入、165 个固定消息字段的结果保留在[旧记录](docs/acceptance/ekf2/20261104-e6-host.md)。当前只交付主实例，标准输出 fixture、ULog `multi_id=0` 与 MAVLink component 1 用 pyulog/pymavlink 核对；独立无 GPS/ODOMETRY 不再属于功能或验收范围。[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。实际 USB/TELEM1、SD、周期和资源仍在 E7 实物门验收。
 
 ### 板载气压计与数据发布（2026-11-04 工程师新增）
 
@@ -211,7 +211,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 ### 时间基准与 GNSS 授时
 
-1. **范围**：RTC 只服务日志 UTC、QGC 命名和 `SYSTEM_TIME` 遥测；控制与估计仍用 TIM2 单调时间，不依赖墙上时钟。
+1. **范围**：RTC 只服务日志 UTC、QGC 命名和 `SYSTEM_TIME` 遥测；控制与估计用 TIM8 单调时间，IMU 积分也取相邻 FIFO 批次的 TIM8 样本时间差，[时基契约](docs/imu-timebase.md)。
    RTC-01/TIME-01 已在 `81d6c1221048f08a` 通过 LSE 走时、写后回读、遥测/日志 UTC；TIME-02 GNSS 授时仍待 P4b-g，见[实测记录](docs/time-sync.md#2026-11-02-实测结论)。
 2. **驱动约束**：PAC 直写 RTC/BDCR，不置 `BDRST`、不覆盖已是可信日期的日历；清 `RSF` 前解锁 WPR，日历快照固定为 `SSR → TR → DR`；同时验证 SSR 边沿与日历秒递增。必要时 `LSEDRV=HIGH` 重启 LSE，最后回退 LSI 并关闭失效的 LSE，避免下次启动等待 `LSERDY`。
 3. **精度**：LSE 晶振约 ±20 ppm；LSI 约 ±5%，只作后备，必须由 GNSS 周期校准（偏差 ≥1 s 或每 60 s）。
@@ -293,7 +293,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 - 注册表沿用 `src/core/parameters.rs` 的宏，自动生成 Id、typed getter 与名字 hash；EKF 的值/范围仍只来自固定目录。QGC JSON 只读编译后的注册表，生成器 `--check` 与核心元数据用例检查 stale；FRAM 布局由槽大小/条目长度计算。v2 忽略未知键，新项用默认值；v1 仅接受匹配的完整前缀，并在下次保存迁移。
 - 单 Router 拥有 RX 解析、命令、流调度与会话；USB/UART7 只传字节。每链路独立计时、参数游标和 FTP，慢 TX 不挡 RX/另一链路。已接受的 bootloader 请求给 ACK 100 ms 发送机会，不因主机关闭 CDC 而取消恢复。
-- `SET_MESSAGE_INTERVAL(511)` 的参数 1 为消息 ID、参数 2 为微秒间隔；`-1` 禁发、`0` 恢复注册表速率、正数最小 20000 µs，非法/非有限值拒绝。覆盖仅作用于请求链路，按目标组件区分主实例 1 与独立实例 197；USB 会话重置清除覆盖，UART7 无流控，不宣称能检测物理拔线，覆盖由 `0` 或重启恢复。`GET_MESSAGE_INTERVAL(510)` 返回有效间隔。REQUEST_MESSAGE 对已支持但无新鲜数据的消息返回 TEMPORARILY_REJECTED，未知消息返回 UNSUPPORTED。
+- `SET_MESSAGE_INTERVAL(511)` 的参数 1 为消息 ID、参数 2 为微秒间隔；`-1` 禁发、`0` 恢复注册表速率、正数最小 20000 µs，非法/非有限值拒绝。覆盖仅作用于请求链路，接受主组件 1 或广播 0；USB 会话重置清除覆盖，UART7 无流控，不宣称能检测物理拔线，覆盖由 `0` 或重启恢复。`GET_MESSAGE_INTERVAL(510)` 返回有效间隔。REQUEST_MESSAGE 对已支持但无新鲜数据的消息返回 TEMPORARILY_REJECTED，未知消息返回 UNSUPPORTED。
 - `MAV_RATE_*` 为 Hz，`0` 禁发，对两链路的默认速率生效；511 为会话覆盖。参数名不超过 MAVLink 的 16 字节限制：
 
 | 参数 | 默认 Hz | 流 |
@@ -301,7 +301,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | `MAV_RATE_HB` | 1 | HEARTBEAT、SYS_STATUS、SYSTEM_TIME |
 | `MAV_RATE_STATUS` | 0.2 | STATUSTEXT；估计器状态变化另走 publish |
 | `MAV_RATE_SENSORS` | 20 | HIGHRES_IMU、SCALED_PRESSURE |
-| `MAV_RATE_EST` | 10 | 姿态、有效位置、双实例诊断/独立 ODOMETRY |
+| `MAV_RATE_EST` | 10 | 主实例姿态、有效位置、ESTIMATOR_STATUS |
 | `MAV_RATE_GPS` | 5 | GPS_RAW_INT；无数据时最多 1 Hz NO_GPS |
 | `MAV_RATE_POWER` | 10 | INA219 DEBUG_VECT、BATTERY_STATUS |
 
