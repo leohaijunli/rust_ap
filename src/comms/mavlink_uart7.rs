@@ -46,17 +46,24 @@ async fn transmit(
     // PX4 streams GPS_RAW_INT at the GNSS update rate; 5 Hz covers H-RTK.
     const GPS_PERIOD: Duration = Duration::from_millis(200);
     const GPS_NO_FIX_PERIOD: Duration = Duration::from_secs(1);
+    // QGC reads the estimator state from STATUSTEXT; keep both links in step.
+    const STATUS_PERIOD: Duration = Duration::from_secs(5);
     let mut sequence = 0u8;
     let mut independent_sequence = 0u8;
     let mut estimator_tick = 0u8;
     let mut frame = [0u8; mavlink::MAX_FRAME_SIZE];
     let mut next_heartbeat = Instant::now() + Duration::from_secs(1);
+    let mut next_status = Instant::now() + STATUS_PERIOD;
     let mut next_imu = Instant::now() + IMU_PERIOD;
     let mut next_power = Instant::now() + POWER_PERIOD;
     let mut next_gps = Instant::now() + GPS_PERIOD;
     let mut next_gps_no_fix = Instant::now() + GPS_NO_FIX_PERIOD;
     loop {
-        let next_wakeup = next_imu.min(next_heartbeat).min(next_power).min(next_gps);
+        let next_wakeup = next_imu
+            .min(next_heartbeat)
+            .min(next_power)
+            .min(next_gps)
+            .min(next_status);
         let result = match select(Timer::at(next_wakeup), replies.receive()).await {
             Either::First(()) => {
                 let now = Instant::now();
@@ -125,6 +132,11 @@ async fn transmit(
                         .await
                         && send(tx, &mut sequence, &mavlink_core::system_time(), &mut frame).await;
                     next_heartbeat = now + Duration::from_secs(1);
+                }
+                if success && now >= next_status {
+                    success =
+                        send(tx, &mut sequence, &mavlink_core::status_text(), &mut frame).await;
+                    next_status = now + STATUS_PERIOD;
                 }
                 success
             }

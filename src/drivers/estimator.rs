@@ -154,6 +154,41 @@ pub fn submit_measurement(measurement: Measurement, device_id: u32) {
     }
 }
 
+/// Actual estimator state for ground-station reporting. `requested` is what
+/// the parameters ask for, `active` is whether the worker accepted and is
+/// consuming IMU, and `selection` is the algorithm that really feeds attitude.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Report {
+    pub requested: bool,
+    pub active: bool,
+    pub selection: Selection,
+}
+
+impl Report {
+    /// One-line wording for `STATUSTEXT`, plus whether an operator should
+    /// notice it: a silent fallback or a missing attitude matters, an idle
+    /// estimator does not.
+    pub fn label(self) -> (&'static str, bool) {
+        match (self.active, self.requested, self.selection) {
+            (false, false, _) => ("EST off", false),
+            (false, true, _) => ("EST starting", false),
+            (true, _, Selection::Filter) => ("EST EKF2 active", false),
+            (true, _, Selection::Mahony) => ("EST Mahony fallback", true),
+            (true, _, Selection::Invalid) => ("EST no attitude", true),
+        }
+    }
+}
+
+pub fn report() -> Report {
+    Report {
+        requested: CONTROL.try_get().is_some_and(|value| value.params.enabled),
+        active: ACTIVE_EPOCH.load(Ordering::Acquire) != 0,
+        selection: OUTPUT
+            .try_get()
+            .map_or(Selection::Invalid, |output| output.status.selection),
+    }
+}
+
 pub fn latest() -> Option<Output> {
     let control = CONTROL.try_get()?;
     if !control.params.enabled {

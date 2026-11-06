@@ -245,6 +245,9 @@ async fn application(p: Peripherals, spawner: Spawner) {
     // PHY startup has already exceeded the FRAM power-up access delay.
     // Load failures remain visible in !params while USB recovery stays available.
     let _ = parameters.load().await;
+    spawner
+        .spawn(parameter_manager::save_task(parameters))
+        .unwrap();
     assert!(sd_logger::initialize());
     spawner.spawn(sd_logger::health_task()).unwrap();
     fast_spawner

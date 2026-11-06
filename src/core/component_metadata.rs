@@ -119,13 +119,8 @@ mod tests {
                     entry.name
                 );
             }
-            if entry.name.starts_with("LOG_") {
-                assert!(
-                    line.contains("\"group\": \"SDLog\""),
-                    "{} must be grouped as SDLog",
-                    entry.name
-                );
-            }
+            let group = format!("\"group\": \"{}\"", entry.group.name());
+            assert!(line.contains(&group), "{} group differs", entry.name);
         }
     }
 

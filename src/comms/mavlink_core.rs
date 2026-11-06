@@ -162,17 +162,17 @@ pub async fn handle(
                 };
                 reply.push(parameter(parameters, id));
                 match outcome {
-                    // Ground stations expect a changed value to survive a power
-                    // cycle, so persist it right away when storage allows. Only
-                    // disarmed vehicles with outputs closed may write FRAM.
                     Ok(true) => {
-                        // No "unused" warning here: PX4 accepts and persists any
-                        // registered EKF2 parameter. The estimator reconfigures
-                        // through parameter_manager::set when the value maps.
-                        if parameters.save(crate::OUTPUT_STATE).await.is_err() {
+                        // PX4 accepts and persists any registered EKF2
+                        // parameter. Defer the commit so a batch of sets costs
+                        // one FRAM write instead of one per value; only
+                        // disarmed vehicles with outputs closed may write.
+                        if crate::OUTPUT_STATE.armed || crate::OUTPUT_STATE.outputs_enabled {
                             reply.push(parameter_warning(
                                 "PARAM_SET: RAM only; save blocked while outputs active",
                             ));
+                        } else {
+                            parameters.defer_save();
                         }
                     }
                     Ok(false) => {}
@@ -327,15 +327,24 @@ pub fn heartbeat() -> MavMessage {
     })
 }
 
+/// Periodic status line. It carries the estimator's actual state so a ground
+/// station can tell a live EKF2 from a Mahony fallback or an idle worker
+/// without a vendor-specific message. A fallback raises the severity.
 pub fn status_text() -> MavMessage {
+    let (state, degraded) = crate::estimator::report().label();
+    // A MAVLink STATUSTEXT is a 50-byte C string; this line stays far below it.
+    let prefix = concat!("FMUv6X v", env!("CARGO_PKG_VERSION"), " ");
+    assert!(prefix.len() + state.len() <= 50);
+    let mut line = [0u8; 50];
+    line[..prefix.len()].copy_from_slice(prefix.as_bytes());
+    line[prefix.len()..prefix.len() + state.len()].copy_from_slice(state.as_bytes());
     MavMessage::STATUSTEXT(STATUSTEXT_DATA {
-        severity: MavSeverity::MAV_SEVERITY_INFO,
-        text: concat!(
-            "Rust FMUv6X v",
-            env!("CARGO_PKG_VERSION"),
-            " running; MAVLink OK"
-        )
-        .into(),
+        severity: if degraded {
+            MavSeverity::MAV_SEVERITY_WARNING
+        } else {
+            MavSeverity::MAV_SEVERITY_INFO
+        },
+        text: line.into(),
         ..Default::default()
     })
 }

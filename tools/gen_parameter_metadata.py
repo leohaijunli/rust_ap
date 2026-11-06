@@ -16,10 +16,9 @@ DIRECTORY = ROOT / "src/core/metadata"
 def generated(executable):
     rows = csv.reader(io.StringIO(subprocess.check_output([str(executable)], text=True)))
     entries = []
-    for name, kind, default, minimum, maximum in rows:
-        entry = {"name": name, "type": kind,
-                 "group": "SDLog" if name.startswith("LOG_") else "EKF2" if name.startswith("EKF2_") else "Estimator" if name.startswith("EST_") else "System" if name == "MAV_SYS_ID" else "Status",
-                 "shortDesc": f"{name} (unmapped EKF options are reported as unused)" if name.startswith("EKF2_") else name,
+    for name, group, kind, default, minimum, maximum in rows:
+        entry = {"name": name, "type": kind, "group": group,
+                 "shortDesc": f"{name} (unmapped EKF options are reported as unused)" if group == "EKF2" else name,
                  "min": float(minimum), "max": float(maximum), "default": float(default)}
         # Integer values stay JSON integers; scientific Float limits retain their
         # full f32 range rather than being saturated to i32 by formatting.

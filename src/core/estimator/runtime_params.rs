@@ -184,3 +184,23 @@ impl Params {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parameters::REGISTRY;
+
+    #[test]
+    fn every_reconfigured_parameter_is_estimator_owned() {
+        let params = Params::from_parameters(Snapshot::default()).expect("defaults are valid");
+        for entry in REGISTRY {
+            if params.maps(entry.id) {
+                assert!(
+                    crate::parameters::is_estimator_parameter(entry.id),
+                    "{} reconfigures the estimator but is not declared as estimator-owned",
+                    entry.name
+                );
+            }
+        }
+    }
+}

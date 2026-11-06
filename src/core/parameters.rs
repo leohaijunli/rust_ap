@@ -12,10 +12,35 @@ pub enum Access {
     NextCycle,
 }
 
+/// QGC parameter-tree grouping. It lives with the definition so the generated
+/// metadata reads this one table instead of re-deriving groups from name
+/// prefixes, which would drift as soon as a parameter is renamed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Group {
+    System,
+    Status,
+    SdLog,
+    Estimator,
+    Ekf2,
+}
+
+impl Group {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Status => "Status",
+            Self::SdLog => "SDLog",
+            Self::Estimator => "Estimator",
+            Self::Ekf2 => "EKF2",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Definition {
     pub id: Id,
     pub name: &'static str,
+    pub group: Group,
     pub kind: Kind,
     pub default: f32,
     pub min: f32,
@@ -25,16 +50,16 @@ pub struct Definition {
 
 // Generate typed keys and the wire-order table together: one entry per parameter.
 macro_rules! parameter_table {
-    (base { $($id:ident { name: $name:literal, kind: $kind:ident, default: $default:expr,
-        min: $min:expr, max: $max:expr, access: $access:ident }),+ $(,)? }
+    (base { $($id:ident { name: $name:literal, group: $group:ident, kind: $kind:ident,
+        default: $default:expr, min: $min:expr, max: $max:expr, access: $access:ident }),+ $(,)? }
         ekf { $($ekf_id:ident: $index:literal),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(usize)]
         pub enum Id { $($id),+, $($ekf_id),+ }
 
         pub const REGISTRY: &[Definition] = &[
-            $(Definition { id: Id::$id, name: $name, kind: Kind::$kind, default: $default,
-                min: $min, max: $max, access: Access::$access }),+,
+            $(Definition { id: Id::$id, name: $name, group: Group::$group, kind: Kind::$kind,
+                default: $default, min: $min, max: $max, access: Access::$access }),+,
             $(ekf_definition(Id::$ekf_id, $index)),+
         ];
     };
@@ -44,73 +69,83 @@ include!("estimator/runtime_parameter_table.rs");
 
 with_ekf2_parameters! {
     MavSysId {
-        name: "MAV_SYS_ID", kind: Integer, default: 1.0,
+        name: "MAV_SYS_ID", group: System, kind: Integer, default: 1.0,
         min: 1.0, max: 255.0, access: ReadOnly
     },
     LinkLedHz {
-        name: "LINK_LED_HZ", kind: Real, default: 1.0,
+        name: "LINK_LED_HZ", group: Status, kind: Real, default: 1.0,
         min: 0.1, max: 10.0, access: NextCycle
     },
     LogEnImu {
-        name: "LOG_EN_IMU", kind: Integer, default: 1.0,
+        name: "LOG_EN_IMU", group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogImuHz {
-        name: "LOG_IMU_HZ", kind: Real, default: 200.0,
+        name: "LOG_IMU_HZ", group: SdLog, kind: Real, default: 200.0,
         min: 1.0, max: 1000.0, access: NextCycle
     },
     LogEnIna {
-        name: "LOG_EN_INA", kind: Integer, default: 1.0,
+        name: "LOG_EN_INA", group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogInaHz {
-        name: "LOG_INA_HZ", kind: Real, default: 10.0,
+        name: "LOG_INA_HZ", group: SdLog, kind: Real, default: 10.0,
         min: 1.0, max: 100.0, access: NextCycle
     },
     LogEnCan {
-        name: "LOG_EN_CAN", kind: Integer, default: 1.0,
+        name: "LOG_EN_CAN", group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogCanHz {
-        name: "LOG_CAN_HZ", kind: Real, default: 400.0,
+        name: "LOG_CAN_HZ", group: SdLog, kind: Real, default: 400.0,
         min: 1.0, max: 1000.0, access: NextCycle
     },
     LogEnHealth {
-        name: "LOG_EN_HEALTH", kind: Integer, default: 1.0,
+        name: "LOG_EN_HEALTH", group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogHealthHz {
-        name: "LOG_HEALTH_HZ", kind: Real, default: 10.0,
+        name: "LOG_HEALTH_HZ", group: SdLog, kind: Real, default: 10.0,
         min: 1.0, max: 100.0, access: NextCycle
     },
     LogEnEvent {
-        name: "LOG_EN_EVENT", kind: Integer, default: 1.0,
+        name: "LOG_EN_EVENT", group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     EstEnable {
-        name: "EST_EN", kind: Integer, default: 0.0,
+        name: "EST_EN", group: Estimator, kind: Integer, default: 0.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     EstAlgorithm {
-        name: "EST_ALGO", kind: Integer, default: 1.0,
+        name: "EST_ALGO", group: Estimator, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogEnEst {
-        name: "LOG_EN_EST", kind: Integer, default: 1.0,
+        name: "LOG_EN_EST", group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogEstHz {
-        name: "LOG_EST_HZ", kind: Real, default: 5.0,
+        name: "LOG_EST_HZ", group: SdLog, kind: Real, default: 5.0,
         min: 1.0, max: 10.0, access: NextCycle
     },
     LogEnBaro {
-        name: "LOG_EN_BARO", kind: Integer, default: 1.0,
+        name: "LOG_EN_BARO", group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogBaroHz {
-        name: "LOG_BARO_HZ", kind: Real, default: 10.0,
+        name: "LOG_BARO_HZ", group: SdLog, kind: Real, default: 10.0,
         min: 1.0, max: 20.0, access: NextCycle
     },
+}
+
+/// Parameters whose change reprograms the estimator: the generated EKF2
+/// catalog plus the two selectors that choose and enable it. Every other
+/// parameter belongs to its own consumer, such as the logging policy or the
+/// link rate. The whole catalog is included, not only the entries this port
+/// consumes yet, because PX4 also re-applies its configuration for any
+/// `EKF2_*` change.
+pub const fn is_estimator_parameter(id: Id) -> bool {
+    matches!(id, Id::EstEnable | Id::EstAlgorithm) || is_ekf2_parameter(id)
 }
 
 const fn ekf_definition(id: Id, index: usize) -> Definition {
@@ -120,6 +155,7 @@ const fn ekf_definition(id: Id, index: usize) -> Definition {
     Definition {
         id,
         name: entry.name,
+        group: Group::Ekf2,
         kind: if integer { Kind::Integer } else { Kind::Real },
         default: match entry.default {
             ParamValue::Int(v) => v as f32,
@@ -158,6 +194,14 @@ impl Id {
     pub fn from_index(index: usize) -> Option<Self> {
         REGISTRY.get(index).map(|entry| entry.id)
     }
+
+    /// Inverse of [`name_hash`]; `None` for keys written by another build.
+    pub fn from_hash(hash: u16) -> Option<Self> {
+        REGISTRY
+            .iter()
+            .find(|entry| name_hash(entry.name) == hash)
+            .map(|entry| entry.id)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,7 +226,7 @@ impl Error {
 }
 
 impl Definition {
-    fn validate(&self, value: f32) -> Result<(), Error> {
+    pub(crate) fn validate(&self, value: f32) -> Result<(), Error> {
         if !value.is_finite() {
             return Err(Error::NonFinite);
         }
@@ -279,6 +323,14 @@ impl Parameters {
         self.saved = Some(snapshot);
     }
 
+    /// Adopt a snapshot that is not in the current storage format. The value is
+    /// valid RAM state, but nothing on FRAM matches it yet, so keep it dirty and
+    /// let the next save rewrite it in the current format.
+    pub fn adopt(&mut self, snapshot: Snapshot) {
+        self.current = snapshot;
+        self.saved = None;
+    }
+
     /// Mark the exact snapshot verified in storage, even if RAM changed meanwhile.
     pub fn mark_saved(&mut self, snapshot: Snapshot) {
         self.saved = Some(snapshot);
@@ -288,6 +340,31 @@ impl Parameters {
 /// An automatic schema tag catches registry/order/range changes without a version bump.
 pub fn schema_tag() -> u32 {
     schema_tag_for(REGISTRY)
+}
+
+/// Compact storage key: a record names its entries, so a registry that grew or
+/// was reordered still loads every value it can recognise. CRC-16/CCITT-FALSE
+/// is small enough for the 16-bit key field and cheap enough for a 1 KiB
+/// record on a Cortex-M7. `parameter_store` asserts that no two registry names
+/// collide.
+pub const fn name_hash(name: &str) -> u16 {
+    let bytes = name.as_bytes();
+    let mut crc = 0xffffu16;
+    let mut index = 0;
+    while index < bytes.len() {
+        crc ^= (bytes[index] as u16) << 8;
+        let mut bit = 0;
+        while bit < 8 {
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
+            bit += 1;
+        }
+        index += 1;
+    }
+    crc
 }
 
 /// The prior 11 parameters keep their order/ranges. Old valid FRAM records can

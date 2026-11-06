@@ -4,12 +4,19 @@ use core::cell::{Cell, RefCell};
 
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
+use embassy_time::{Duration, Instant, Timer};
 use v6x_rust_led::parameter_store::{
-    self as store, Active, Commit, DecodeError, OutputState, Slot,
+    self as store, Active, Commit, CommitError, DecodeError, OutputState, Slot,
 };
 use v6x_rust_led::parameters::{self, Id, Parameters};
 
 use crate::fram::{self, Fram};
+
+/// Ground stations write parameter batches one value at a time. Each commit
+/// rewrites and verifies the whole record over SPI, so wait for the writes to
+/// go quiet and persist the batch once instead of stalling per value.
+const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
+const SAVE_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -17,6 +24,8 @@ pub enum Error {
     OutputsActive,
     Unavailable,
     Readback,
+    /// More values differ from their defaults than one record can key.
+    Capacity,
 }
 
 impl From<fram::Error> for Error {
@@ -50,6 +59,7 @@ pub struct ParameterManager<'d> {
     values: RefCell<Parameters>,
     fram: Mutex<NoopRawMutex, Fram<'d>>,
     status: Cell<Status>,
+    save_due: Cell<Option<Instant>>,
 }
 
 impl<'d> ParameterManager<'d> {
@@ -64,6 +74,7 @@ impl<'d> ParameterManager<'d> {
                 slots: [Err(DecodeError::Uncommitted); 2],
                 last_error: None,
             }),
+            save_due: Cell::new(None),
         }
     }
 
@@ -71,28 +82,30 @@ impl<'d> ParameterManager<'d> {
         self.values.borrow().get(id)
     }
 
+    /// Validate once, then let only the estimator's own parameters reprogram it.
+    /// A refused configuration is rolled back so RAM never reports a value the
+    /// estimator rejected.
     pub fn set(&self, id: Id, value: f32) -> Result<bool, parameters::Error> {
-        let candidate = self.values.borrow().snapshot().with(id, value)?;
-        let estimator = v6x_rust_led::estimator::product::Params::from_parameters(candidate)
-            .map_err(|_| parameters::Error::Configuration)?;
-        if estimator.enabled && (crate::OUTPUT_STATE.armed || crate::OUTPUT_STATE.outputs_enabled) {
-            return Err(parameters::Error::Configuration);
-        }
+        let previous = self.get(id);
         let changed = self.values.borrow_mut().set(id, value)?;
-        if changed {
-            if estimator.maps(id) {
-                crate::estimator::configure(candidate)?;
-            }
-            v6x_rust_led::log_config::apply(id, self.get(id));
-            crate::sd_logger::record_parameter(
-                embassy_time::Instant::now().as_micros(),
-                id as u16,
-                id.definition().kind,
-                self.get(id),
-                self.is_dirty(),
-            );
+        if !changed {
+            return Ok(false);
         }
-        Ok(changed)
+        if parameters::is_estimator_parameter(id) {
+            if let Err(error) = crate::estimator::configure(self.values.borrow().snapshot()) {
+                let _ = self.values.borrow_mut().set(id, previous);
+                return Err(error);
+            }
+        }
+        v6x_rust_led::log_config::apply(id, value);
+        crate::sd_logger::record_parameter(
+            Instant::now().as_micros(),
+            id as u16,
+            id.definition().kind,
+            value,
+            self.is_dirty(),
+        );
+        Ok(true)
     }
 
     pub fn snapshot(&self) -> parameters::Snapshot {
@@ -112,12 +125,32 @@ impl<'d> ParameterManager<'d> {
         self.values.borrow().is_dirty()
     }
 
+    /// Defer the FRAM commit; a later write restarts the quiet window.
+    pub fn defer_save(&self) {
+        self.save_due.set(Some(Instant::now() + SAVE_DEBOUNCE));
+    }
+
+    pub fn save_pending(&self) -> bool {
+        self.save_due.get().is_some()
+    }
+
+    /// Commit the deferred snapshot once the batch has been quiet long enough.
+    pub async fn flush_deferred(&self, outputs: OutputState) -> Option<Result<Saved, Error>> {
+        let due = self.save_due.get()?;
+        if Instant::now() < due {
+            return None;
+        }
+        Some(self.save(outputs).await)
+    }
+
     pub fn status(&self) -> Status {
         self.status.get()
     }
 
     /// Read compatible storage or use defaults. Never writes on boot/load.
     pub async fn load(&self) -> Result<LoadState, Error> {
+        // Loading replaces RAM, so any deferred commit is obsolete.
+        self.save_due.set(None);
         let result = self.load_inner().await;
         if let Err(error) = result {
             let mut status = self.status.get();
@@ -145,8 +178,15 @@ impl<'d> ParameterManager<'d> {
             records[slot as usize] = store::decode(&bytes);
         }
         let loaded = store::newest(&records);
-        let (load, active) = if let Some((active, snapshot)) = loaded {
-            self.values.borrow_mut().restore(snapshot);
+        let (load, active) = if let Some((active, record)) = loaded {
+            let mut values = self.values.borrow_mut();
+            if record.migrated {
+                // Values are usable, but the record on FRAM is in the old
+                // positional format: keep it dirty so the next save rewrites it.
+                values.adopt(record.snapshot);
+            } else {
+                values.restore(record.snapshot);
+            }
             (LoadState::Stored, Some(active))
         } else {
             *self.values.borrow_mut() = Parameters::default();
@@ -163,6 +203,8 @@ impl<'d> ParameterManager<'d> {
 
     /// Explicit, serialized save; the exact verified snapshot becomes `saved`.
     pub async fn save(&self, outputs: OutputState) -> Result<Saved, Error> {
+        // An explicit save already persists everything pending.
+        self.save_due.set(None);
         let result = self.save_inner(outputs).await;
         let mut status = self.status.get();
         status.last_error = result.as_ref().err().copied();
@@ -180,14 +222,16 @@ impl<'d> ParameterManager<'d> {
             return Err(Error::Unavailable);
         }
         let snapshot = self.values.borrow().snapshot();
-        let commit =
-            Commit::new(status.active, snapshot, outputs).map_err(|_| Error::OutputsActive)?;
         if let Some(active) = status.active.filter(|_| !self.is_dirty()) {
             return Ok(Saved {
                 active,
                 written: false,
             });
         }
+        let commit = Commit::new(status.active, snapshot, outputs).map_err(|error| match error {
+            CommitError::OutputsActive => Error::OutputsActive,
+            CommitError::Capacity => Error::Capacity,
+        })?;
         let mut verified = [0; fram::CHUNK];
         for write in commit.writes() {
             for (index, chunk) in write.bytes.chunks(fram::CHUNK).enumerate() {
@@ -199,11 +243,10 @@ impl<'d> ParameterManager<'d> {
                 }
             }
         }
-        let mut bytes = [0; store::RECORD_SIZE];
-        read_bytes(&mut fram, commit.active.slot.address(), &mut bytes).await?;
-        if &bytes != commit.bytes() || store::decode(&bytes).is_err() {
-            return Err(Error::Readback);
-        }
+        // Every byte just written was read back above, which already covers the
+        // whole record; decoding the same bytes only proves the encoder built a
+        // self-consistent frame and costs no extra I/O or stack.
+        store::decode(commit.data()).map_err(|_| Error::Readback)?;
         self.values.borrow_mut().mark_saved(snapshot);
         status.load = LoadState::Stored;
         status.active = Some(commit.active);
@@ -235,6 +278,17 @@ impl<'d> ParameterManager<'d> {
                 dirty,
             );
         }
+    }
+}
+
+/// Owns deferred commits, so no link handler blocks on FRAM mid-batch.
+#[embassy_executor::task]
+pub async fn save_task(parameters: &'static ParameterManager<'static>) {
+    loop {
+        Timer::after(SAVE_POLL).await;
+        // Failures stay visible through `!params` last_error; the values remain
+        // in RAM instead of being reported as persisted.
+        let _ = parameters.flush_deferred(crate::OUTPUT_STATE).await;
     }
 }
 

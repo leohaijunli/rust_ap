@@ -7,7 +7,7 @@ use crate::fram;
 use crate::parameter_manager::ParameterManager;
 use embassy_stm32::gpio::Output;
 use v6x_rust_led::parameter_store::{self, OutputState};
-use v6x_rust_led::parameters::{schema_tag, REGISTRY};
+use v6x_rust_led::parameters::{schema_tag, Group, REGISTRY};
 
 pub(crate) fn status(phy: &RefCell<Lan8742<'_>>, eth_power: &Output<'_>) -> Response {
     let mut response = Response::new();
@@ -226,15 +226,15 @@ pub(crate) async fn parameter_report(
     match command {
         Command::Parameters => {
             let status = parameters.status();
-            let _ = writeln!(response, "PARAMS schema=1 storage={:?} valid={} dirty={} slot={} generation={} format={} registry={:08x} slot_a={:?} slot_b={:?} last_error={:?}",
-                status.load, status.active.is_some(), parameters.is_dirty(),
+            let _ = writeln!(response, "PARAMS schema=1 storage={:?} valid={} dirty={} pending_save={} slot={} generation={} format={} registry={:08x} slot_a={:?} slot_b={:?} last_error={:?}",
+                status.load, status.active.is_some(), parameters.is_dirty(), parameters.save_pending(),
                 status.active.map_or(-1, |active| active.slot as i32),
                 status.active.map_or(0, |active| active.generation),
                 parameter_store::FORMAT_VERSION, schema_tag(), status.slots[0], status.slots[1], status.last_error);
             let _ = write!(response, "PARAM_VALUES");
             for entry in REGISTRY
                 .iter()
-                .filter(|entry| !entry.name.starts_with("EKF2_"))
+                .filter(|entry| entry.group != Group::Ekf2)
             {
                 let _ = write!(response, " {}={}", entry.name, parameters.get(entry.id));
             }
