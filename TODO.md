@@ -25,7 +25,8 @@
 - [x] **普通包/布局**：`tools/build_firmware.ps1` 通过；source=`f5756b75d6ed78bf`，raw/padded=`1105864/1105888 B`，static RAM=`276656 B`，最大入口栈帧=`11560 B`（0 超限，不是完整调用链/板载水位证明）；board ID 53、入口 `0x08020000` 保持。包：`target/thumbv7em-none-eabihf/release/v6x-rust-led.px4`；SHA-256=`096638626b96e0b097fdb04189fcdf12592e5947d1fa0d3b25330ec6e2622b21`。
 - [x] **本地提交**：实现与验证记录已提交 `3a1bc08`。
 - [ ] **推送阻塞**：首次 `git push` 120 s 超时；非交互重试因 Git Credential Manager 无可用凭据失败（`unable to get password from user`）。已确认远端仍为 `c12d03b`；工程师完成 GitHub 凭据授权后执行 `git push`。
-- [ ] **板载门**：未刷写本轮版本。依 `plan.md` §4，工程师在 H-03 条件具备后同次验证双链路/一次重连、165 项全量/按名/索引读取、合法/非法设值、延迟保存与一次重启读回；同时验证改单链路间隔不串线、状态上报及 QGC 恢复。旧 P0 板载结果不代替本轮验收，不放行 M1/E7 依赖门。
+- [x] **2026-11-06 刷写/USB 最小核对**：工程师授权后经原 board 53/protocol v5 bootloader（COM3）上传/CRC 校验成功，25 s；回到 COM4，普通版 source=`f5756b75d6ed78bf`、disarmed、VTOR=`08020000`，一次读表收齐 165 项/0 补拉。`LINK_LED_HZ=4` 与 `EST_EN/EST_ALGO/EKF2_EN=1/1/1` 保留，主实例实际 `Filter/Running`。两槽仍是 v1（11 项/gen 3、159 项/gen 4），RAM 已兼容载入，dirty=true/pending=false；未保存、未清故障、未另行启用估计器。证据：`target/flash-verify/20261106T143035.356888Z/`。
+- [ ] **板载门未过**：共享栈余量 `32560 B <32768 B`（guard=true）；独立实例 `Mahony/Fatal`、`Filter(Numerics)`；IMU/TIM2 诊断偏差 `-92887 ppm`，根因未定。旧 source=`f509ec6b85b6a4fa` 的 panic 记录保留。先收口这些 E7/资源问题；H-03 具备后补双链路/重连、按名/索引、合法/非法设值、延迟保存及重启读回、间隔不串线与 QGC 恢复。不放行 M1/E7。
 
 边界（工程师确认）：ARM/DISARM 与 DO_SET_MODE 只应答不动作（归 P5a）；RC/SERVO 无硬件不发。
 
@@ -33,7 +34,7 @@
 
 四阶段内容与验收：[EKF 运行时重构计划](docs/ekf2-runtime-refactor.md)。
 
-**当前：阶段 3 软件收尾，准备板载复测。新普通包 `335f484ffd467691` 已构建/打包；板载 1 kHz、CPU/栈及时基尚未验收，阶段 4 未开始。** [本轮证据](docs/acceptance/ekf2/20261105-runtime-refactor.md)
+**当前：阶段 3 板载门未过，阶段 4 未开始。本轮协议合并普通包 `f5756b75d6ed78bf` 已刷入；主实例 Running/config_errors=0，但独立实例 Numerics/Fatal、共享栈不足 32 KiB、IMU/TIM2 时间一致性异常仍待收口。`335f484ffd467691` 是此前未回装的软件产物，不以本轮读数补写其验收。** [此前证据](docs/acceptance/ekf2/20261105-runtime-refactor.md)
 
 - [ ] **阶段 0 / M0：护栏**：参数、延迟配置、单次超时继续运行的软件用例通过；DWT 分路径 max/p99 已接，实测数字待新固件采集。
 - [x] **阶段 1 / M1：泛型 Runtime 本地软件门**：A1 双实例、三种 `NavFilter`、产品别名、原地初始化及旧入口适配完成；Mahony 产品配置 H753 编译通过，主产品 release 通过。
@@ -48,14 +49,14 @@
 - [x] GNSS / no-GPS 标准输出各 26000 输入、1300 发布、165 字段，经 pyulog/pymavlink 检查通过。
 - [x] ULog 注册表长度修复后 7 项相关用例通过；host/H753 Clippy 与构建工具检查通过。
 - [x] 新 H753 包：raw/padded=901928/901952 B，static RAM=285568 B；入口/分区/打包通过，最大入口栈帧 11208 B。完整共享栈水位须上板确认。
-- [ ] 完成最终调用链/FPU 核对、证据归档与提交推送。已检测到 COM26（V6X-RUST-001），新包尚未回装。
+- [ ] 完成最终调用链/FPU、板载资源与时基核对。`f5756b75d6ed78bf` 已回装至 COM4；本次只读诊断不代替 1 kHz/CPU/栈完整验收，Git 推送仍受凭据阻塞。
 
 MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门具备后验证 GPS 实物数据。
 
-**当前板载：`34ef7adba931a677`（诊断包）。E6-H/PX4IO 合并已推送 `1c34dcd`；栈整改包 `f9d3004c0cf4691e` 实测启动余量 44524 B（门通过），但 EKF 更新 1117 µs 超 1 ms 期限后自动回退 Mahony。性能整改后（TIM5 独立执行器 + opt-level=3）发现 reconfigure 窗口内存损坏：参数被写为 230/290 等垃圾值，EKF2 无法激活；损坏定位到 `enable_gnss` 窗口，软件越界写（非硬件），EKF `update()` 路径 14 万样本无损坏。**[分析链](docs/acceptance/ekf2/20261104-e7-bringup.md)。日志/欧拉角输出已验证（858 KiB 完整下载，pyulog 无损坏）。PX4IO Timeout/实体按键禁用仍未解决，不称 E7 完成。
+**2026-11-04 历史板载：`34ef7adba931a677`（诊断包）。E6-H/PX4IO 合并已推送 `1c34dcd`；栈整改包 `f9d3004c0cf4691e` 实测启动余量 44524 B（门通过），但 EKF 更新 1117 µs 超 1 ms 期限后自动回退 Mahony。性能整改后（TIM5 独立执行器 + opt-level=3）发现 reconfigure 窗口内存损坏：参数被写为 230/290 等垃圾值，EKF2 无法激活；损坏定位到 `enable_gnss` 窗口，软件越界写（非硬件），EKF `update()` 路径 14 万样本无损坏。**[分析链](docs/acceptance/ekf2/20261104-e7-bringup.md)。日志/欧拉角输出已验证（858 KiB 完整下载，pyulog 无损坏）。PX4IO Timeout/实体按键禁用仍未解决，不称 E7 完成。
 
 - [x] **E6-H 标准输出/日志 host 门**：独立无 GPS 输入类型、状态隔离、标准姿态/角速度/局部/全球/诊断 schema、MAVLink 编码与 pyulog/pymavlink 独立解析通过；无 GPS 只发独立 `ODOMETRY` / 健康状态，水平无界协方差明确，全球位置禁发。未启用固件 estimator 日志注册表或输出任务。[证据](docs/acceptance/ekf2/20261104-e6-host.md)。
-- [ ] **E7 真实输出/日志**：软件已包含任务、159 项统一参数（142 个 EKF2）、`!ekf2 start/stop`、独立气压输入、回退和双链路/日志分发。受 **共享栈余量不足**阻塞，尚未实际启动；静态对象/分成员初始化整改未验证。下一步先恢复 ≥32 KiB 余量，再验真实 IMU/气压下的启停、期限、输出和日志；完整资格仍依赖 M1、P6a、P4b-g、P2、PL-b。
+- [ ] **E7 真实输出/日志**：当前 165 项统一参数（142 个 EKF2）、`!ekf2 start/stop`、气压输入、回退与双链路/日志分发已接入，`f5756b75d6ed78bf` 主实例板载 Running。独立实例 Numerics/Fatal、共享栈不足 32 KiB、IMU/TIM2 不一致阻塞完整门；先定位这些问题，再验启停、期限、真实输出和日志。此前未稳定激活的失败保留在历史记录；完整资格仍依赖 M1、P6a、P4b-g、P2、PL-b。
 
 ### MAVCAN（已完成）
 

@@ -287,6 +287,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 - **P0 历史板载验证**：一次 `PARAM_REQUEST_LIST` 收齐 159 参数、0 补拉（`single_list_stall_retries=0`）。初版共享游标被 USB/UART7 争抢致丢参，已改为每链路独立游标。source=`b623b18f05e5f694`。
 - **2026-11-06 P1–P3 软件/普通包通过**：180 项 host 用例及普通/注入/dump/host Clippy 通过；标准构建/打包/布局与入口栈帧检查通过，source=`f5756b75d6ed78bf`。实物门与交付记录见 `TODO.md`，不将软件结果当作新版本板载验收。
+- **2026-11-06 刷写/USB 子项**：该普通包经原 bootloader 上传及 CRC 验证，USB 新 source/disarmed/165 项完整列表/存档兼容载入通过；未保存参数或清故障。主 EKF2 Running，但独立实例 Numerics/Fatal、共享栈 `32560 B` 未达 32 KiB、IMU/TIM2 偏差 `-92887 ppm`，不放行 M1/E7。双链路与保存/重启等完整协议门仍待 H-03 及工程师操作，详见 `TODO.md`。
 
 ### 已实现的使用约定
 
