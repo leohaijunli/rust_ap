@@ -6,7 +6,7 @@
 
 | 领域 | 状态 |
 | --- | --- |
-| 估计器 | 单实例 EKF2/Mahony + TIM8 批次积分：host 180 项通过；板载 `Filter/Running`、fault=0、`max_update_us≈560`（预算 2000）、1 kHz 发布 `missed=0`、`integration_error_ppm=0`。source=`8d1ae82d5f5d13b3` 起含 dropout 第 1 层改动 |
+| 估计器 | 单实例 EKF2/Mahony + TIM8 批次积分：host 180 项通过；板载 `Filter/Running`、fault=0、`max_update_us≈560`（预算 2000）、1 kHz 发布 `missed=0`、`integration_error_ppm=0`。**与 PX4 v1.17.0 同板实测对比完成**：EKF 单次更新 max 560 vs PX4 565 µs（同级），栈 33.4 KB 单栈 vs PX4 ~45 KB 分散栈，详见[记录](acceptance/ekf2/20261106-single-estimator-timebase.md)。source=`ad99705b817a8c7f`（PX4 对比后已恢复） |
 | 标准输出 | host fixture 165 字段 + pyulog/pymavlink 解析通过；SD 日志 17 主题无损坏；USB MAVLink 流核对待做 |
 | 日志/dropout | 第 1 层完成：`dronecan_raw_command` 移除，产生 37.6→24.3 kB/s，dropout 41→4 次；剩余 3 次 ≥65.5 ms（u16 饱和，实际更长）为卡级停顿。第 2 层核查完毕：固定 `embedded-fatfs` 无预分配接口，写入器已 32 KiB 攒批，软件侧到顶 |
 | 已修复并板验 | `record_can_stats` 误用 `Group::Health` 限流器（历史 bug）导致 `rust_runtime_health` 被 10 Hz can_stats 饿死；改回 `Group::Can` 后板验：health 与 can_stats 并存（≈10 Hz），12 s 会话 dropout=0。source=`ad99705b817a8c7f` |
