@@ -21,7 +21,7 @@
 - [x] 完成 TIM8/时间戳换算的受影响项复验、Clippy、标准输出 fixture 和普通固件打包/布局：fmt/Clippy（4 组特性 + host 示例）通过，标准输出 7 项通过，打包 source=`eb0d589438e0a6dc`、最大入口栈帧 11496 B。[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
 - [x] 板载烧录与 65 s 采集（工程师授权）：TIM8 运行、主 EKF2 选 Filter 且 fault=None、`max_update_us=556`、`deadline_misses=0`、1 kHz 发布 `missed=0`、`integration_error_ppm=0`；PX4 换算后传感器时间残差 `-32270 ppm`（不进入积分）。共享栈最低观测 32144 B，按工程师指示仅记录不作门。旧 panic 记录保留，`!ekf2 stop` 已收尾。
 - [ ] 提交并推送本轮改动（此前推送曾受 GitHub 凭据阻塞）。
-- [ ] 后续可选：共享栈如需收口 32 KiB 门，以 32144 B 观测为起点；传感器 −3.23% 时间残差归因需保留 FIFO tick 分布证据；TIM2 原生 32 位时间驱动需自写 embassy time driver（TIM8 已满足当前需求，未排期）。
+- [ ] 后续可选：共享栈如需收口 32 KiB 门，以 32144 B 观测为起点；传感器 −3.23% 时间残差归因需保留 FIFO tick 分布证据；TIM2 原生 32 位时间驱动（评估见 [时基说明](docs/imu-timebase.md#tim2-原生-32-位驱动评估已记录暂不执行)，精度/性能无可测收益，暂不执行）。
 
 ### MAVLink 协议补齐与参数/存储重构（2026-11-05 工程师授权，软件完成/板载待验）
 
