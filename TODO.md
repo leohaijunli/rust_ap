@@ -23,6 +23,8 @@
 - [x] **P3 实现/核心检查**：唯一 Router 任务；双链路独立游标/FTP/流间隔与会话；流表、511/510、统一 REQUEST_MESSAGE 和非阻塞 `telemetry::publish`。补 BATTERY_STATUS 与有效姿态/位置；ARM/模式仅拒绝应答。状态文本区分 off、EKF2、主动 Mahony、Mahony 回退和无新鲜姿态。
 - [x] **本轮软件检查**：host **180 passed**；普通/fault-injection/fault-dump 与 host Clippy（`-D warnings`）通过；EKF 生成器与 QGC 元数据 `--check` 通过；已做一次局部 `code-simplifier` 审视。
 - [x] **普通包/布局**：`tools/build_firmware.ps1` 通过；source=`f5756b75d6ed78bf`，raw/padded=`1105864/1105888 B`，static RAM=`276656 B`，最大入口栈帧=`11560 B`（0 超限，不是完整调用链/板载水位证明）；board ID 53、入口 `0x08020000` 保持。包：`target/thumbv7em-none-eabihf/release/v6x-rust-led.px4`；SHA-256=`096638626b96e0b097fdb04189fcdf12592e5947d1fa0d3b25330ec6e2622b21`。
+- [x] **本地提交**：实现与验证记录已提交 `3a1bc08`。
+- [ ] **推送阻塞**：首次 `git push` 120 s 超时；非交互重试因 Git Credential Manager 无可用凭据失败（`unable to get password from user`）。已确认远端仍为 `c12d03b`；工程师完成 GitHub 凭据授权后执行 `git push`。
 - [ ] **板载门**：未刷写本轮版本。依 `plan.md` §4，工程师在 H-03 条件具备后同次验证双链路/一次重连、165 项全量/按名/索引读取、合法/非法设值、延迟保存与一次重启读回；同时验证改单链路间隔不串线、状态上报及 QGC 恢复。旧 P0 板载结果不代替本轮验收，不放行 M1/E7 依赖门。
 
 边界（工程师确认）：ARM/DISARM 与 DO_SET_MODE 只应答不动作（归 P5a）；RC/SERVO 无硬件不发。
