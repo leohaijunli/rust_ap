@@ -891,7 +891,6 @@ async fn io_transmit_loop(mut tx: CanTx<'_>) -> ! {
 }
 
 fn periodic_raw_command(transfer_id: u8, now: Instant) -> Outgoing {
-    crate::sd_logger::record_motor_command(now.as_micros());
     let mut payload = Payload::new();
     let len =
         dsdl::encode_zero_raw_command(payload.capacity_mut()).expect("four zero commands fit");

@@ -8,7 +8,7 @@ use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorBaro, SensorGps, Sen
 
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 800;
-pub const TOPIC_COUNT: usize = 14;
+pub const TOPIC_COUNT: usize = 13;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -18,15 +18,17 @@ const FORMAT_VERSION: u8 = 1;
 pub enum TopicId {
     SensorAccel = 0,
     SensorGyro = 1,
-    DronecanRawCommand = 2,
-    ActuatorArmed = 3,
-    DronecanEscStatus = 4,
-    DronecanNodeStatus = 5,
-    CanStats = 6,
-    RuntimeHealth = 7,
-    ParameterChange = 8,
-    CurrentSensor = 9,
-    SensorGps = 10,
+    ActuatorArmed = 2,
+    DronecanEscStatus = 3,
+    DronecanNodeStatus = 4,
+    CanStats = 5,
+    RuntimeHealth = 6,
+    ParameterChange = 7,
+    CurrentSensor = 8,
+    SensorGps = 9,
+    // dronecan_raw_command (previously ID 2) was removed from logging
+    // 2026-11-06; the IDs stay contiguous and logs are matched by topic
+    // name, not numeric id.
     // 11..22 are reserved for the standard estimator topic registry.
     SensorBaro = 35,
     EstimatorRuntime = 36,
@@ -52,12 +54,6 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
         name: "sensor_gyro",
         format: "sensor_gyro:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float x;float y;float z;float temperature;uint32_t error_count;uint8_t[3] clip_counter;uint8_t samples;",
         payload_len: 44,
-    },
-    Topic {
-        id: TopicId::DronecanRawCommand,
-        name: "dronecan_raw_command",
-        format: "dronecan_raw_command:uint64_t timestamp;uint32_t sequence;uint8_t valid;uint8_t armed;uint8_t outputs_enabled;int16_t[4] command;uint32_t age_us;",
-        payload_len: 27,
     },
     Topic {
         id: TopicId::ActuatorArmed,
@@ -130,9 +126,9 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
 impl TopicId {
     pub const fn index(self) -> usize {
         match self {
-            Self::SensorBaro => 11,
-            Self::EstimatorRuntime => 12,
-            Self::AttitudeEuler => 13,
+            Self::SensorBaro => 10,
+            Self::EstimatorRuntime => 11,
+            Self::AttitudeEuler => 12,
             _ => self as usize,
         }
     }
@@ -740,7 +736,7 @@ mod tests {
         let topic = TopicId::ActuatorArmed;
         let fields = [0; 7];
         let record = encoder.encode(topic, 100, &fields).unwrap();
-        assert_eq!(&record.as_bytes()[..5], &[17, 0, b'D', 3, 0]);
+        assert_eq!(&record.as_bytes()[..5], &[17, 0, b'D', 2, 0]);
         assert_eq!(&record.as_bytes()[5..13], &100_u64.to_le_bytes());
         assert_eq!(
             encoder.encode(topic, 99, &fields),

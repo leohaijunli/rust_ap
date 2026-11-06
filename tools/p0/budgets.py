@@ -77,7 +77,6 @@ def main():
         topics = [
             ("sensor_accel", 44, 200), ("sensor_gyro", 44, 200),
             ("vehicle_attitude", 49, 250), ("vehicle_angular_velocity", 40, 250),
-            ("dronecan_raw_command", 24 + 4 * args.esc_slots, args.command_hz),
             ("actuator_armed", 15, args.arming_hz),
             ("esc_status", 352, args.status_hz),
             ("sensor_gps", 256, args.fix_hz), ("dronecan_gnss_auxiliary", 64, 1),

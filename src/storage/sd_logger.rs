@@ -76,7 +76,6 @@ static LOG_REQUESTS: Channel<CriticalSectionRawMutex, RoutedLogRequest, 4> = Cha
 static USB_LOG_RESPONSES: Channel<CriticalSectionRawMutex, LogResponse, 8> = Channel::new();
 static UART_LOG_RESPONSES: Channel<CriticalSectionRawMutex, LogResponse, 8> = Channel::new();
 static MANAGEMENT_LINK: AtomicU8 = AtomicU8::new(0);
-static MOTOR_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static ESC_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 
 #[repr(align(32))]
@@ -279,29 +278,6 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     )
 }
 
-pub fn record_motor_command(timestamp_us: u64) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, timestamp_us) {
-        return;
-    }
-    let mut payload = ulog::Payload::new();
-    payload
-        .push_u32(MOTOR_SEQUENCE.fetch_add(1, Ordering::Relaxed))
-        .unwrap();
-    payload.push_u8(1).unwrap();
-    payload.push_u8(0).unwrap();
-    payload.push_u8(0).unwrap();
-    for _ in 0..4 {
-        payload.push_i16(0).unwrap();
-    }
-    payload.push_u32(0).unwrap();
-    record(
-        TopicId::DronecanRawCommand,
-        Class::Normal,
-        timestamp_us,
-        &payload,
-    );
-}
-
 pub fn record_arming_status(timestamp_us: u64) {
     if !ready() || !v6x_rust_led::log_config::enabled(Group::Event) {
         return;
@@ -429,7 +405,7 @@ pub fn record_node_status(
 }
 
 pub fn record_can_stats(timestamp_us: u64, counters: [u32; 10]) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Health, timestamp_us) {
+    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, timestamp_us) {
         return;
     }
     let mut payload = ulog::Payload::new();

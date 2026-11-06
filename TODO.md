@@ -23,6 +23,15 @@
 - [ ] 提交并推送本轮改动（此前推送曾受 GitHub 凭据阻塞）。
 - [ ] 后续可选：共享栈如需收口 32 KiB 门，以 32144 B 观测为起点；传感器 −3.23% 时间残差归因需保留 FIFO tick 分布证据；TIM2 原生 32 位时间驱动（评估见 [时基说明](docs/imu-timebase.md#tim2-原生-32-位驱动评估已记录暂不执行)，精度/性能无可测收益，暂不执行）。
 
+### 2026-11-06 dropout 缓解（工程师授权，按 1–3 层执行）
+
+- [x] 缓解选项成文：[dropout 缓解与极端优化备选](docs/logging-dropout-options.md)；第 4 层（双优先级队列、裸块环形日志）明确"仅 1–3 层与 H-04 之后仍超标才评估"。
+- [x] 第 1 层：`dronecan_raw_command` 主题从 ULog 注册表与 SD 写入移除（`TOPIC_COUNT 14→13`、ID 重排连续、按名匹配保持旧日志可解析）；DroneCAN 总线零命令发送不变。host 180 项、H753 Clippy、打包 source=`8d1ae82d5f5d13b3`（static RAM 254224 B、最大入口栈帧 11496 B）通过。
+- [x] 第 2 层核查：固定 `embedded-fatfs 518528c` 无 `set_len`/预分配接口，写入器已是 32 KiB 攒批 + 512 对齐整块写；软件侧到顶，剩余停顿归第 3 层卡选型。不改代码，不引入 fork。
+- [ ] 第 3 层：H-04 卡选型判据（A1/A2 或工业 pSLC + 写延迟分布实测）仍待工程师输入。
+- [x] 重刷验证：source=`ad99705b817a8c7f`，12 s 采集 `rust_runtime_health`（≈10 Hz）与 `rust_can_stats` 并存、dropout=0、无损坏；EKF2 正常。结果补录到[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
+- [x] 顺带修复历史 bug：`record_can_stats` 误用 `Group::Health` 限流器，`rust_runtime_health` 被 10 Hz can_stats 饿死（run1 2 Hz / run2 0 / run3 仅前 0.9 s 的三轮数据全部吻合）；改回 `Group::Can` 后板验通过。
+
 ### MAVLink 协议补齐与参数/存储重构（2026-11-05 工程师授权，软件完成/板载待验）
 
 需求与计划见 [plan.md §8b](plan.md#8b-mavlink-协议补齐与参数存储重构2026-11-05-整合需求)。

@@ -12,7 +12,6 @@ from pyulog import ULog
 TOPICS = {
     "sensor_accel",
     "sensor_gyro",
-    "dronecan_raw_command",
     "actuator_armed",
     "dronecan_esc_status",
     "dronecan_node_status",
