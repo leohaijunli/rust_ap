@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import struct
 from pathlib import Path
 import time
 
@@ -45,7 +46,14 @@ def main():
                 continue
             count = message.param_count
             indices.add(message.param_index)
-            params[message.param_id] = message.param_value
+            # MAVLink carries INT32 parameters as the raw bit pattern; restore
+            # the integer value so the dump reads like the registry does.
+            if message.param_type == mavutil.mavlink.MAV_PARAM_TYPE_INT32:
+                params[message.param_id] = (
+                    struct.unpack("<i", struct.pack("<f", message.param_value))[0]
+                )
+            else:
+                params[message.param_id] = message.param_value
         if count is None or len(params) != count:
             raise ValueError(f"received {len(params)} of {count} parameters")
     finally:

@@ -26,7 +26,7 @@ use v6x_rust_led::{
     },
     log_config::{self, Group},
     log_queue::{Class, PushError},
-    parameters::{self, Id},
+    parameters,
     ulog,
 };
 
@@ -136,10 +136,6 @@ pub fn configure(values: parameters::Snapshot) -> Result<(), parameters::Error> 
     let epoch = EPOCH.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
     CONTROL.sender().send(Control { epoch, params });
     Ok(())
-}
-
-pub fn maps(id: Id) -> bool {
-    CONTROL.try_get().is_some_and(|c| c.params.maps(id))
 }
 
 /// Sensor publishers call this exactly once per real sample. Future mag/range
