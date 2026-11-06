@@ -16,7 +16,7 @@
 
 ### P1 — E7 输出门（本板可完成，无硬件依赖）
 
-1. **USB MAVLink 流核对**：估计器运行时 15 s 采样 ATTITUDE_QUATERNION/ESTIMATOR_STATUS 等速率（脚本已备）。完成后与 SD 侧凑齐 E7「USB+SD」成对证据。
+1. ~~USB MAVLink 流核对~~ ✅ 已完成（2026-11-06）：各流速率符合 `MAV_RATE_*` 参数；LOCAL/GLOBAL_POSITION 按"无效不发"抑制（导航未资格化），SD 侧诊断快照照记。E7「USB+SD」成对证据齐备，[记录](acceptance/ekf2/20261106-single-estimator-timebase.md)。
 2. ~~can_stats 限流修复的板载验证~~ ✅ 已完成（2026-11-06）：health 与 can_stats 并存 ≈10 Hz，12 s 会话 dropout=0。
 3. **共享栈**：最低观测 32144 B < 32768 B 参考门（工程师指示本轮不作门）。M1 联合负载前需决策：收口（优化）或修订判据，见 §5 决策点。
 

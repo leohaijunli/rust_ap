@@ -31,6 +31,7 @@
 - [ ] 第 3 层：H-04 卡选型判据（A1/A2 或工业 pSLC + 写延迟分布实测）仍待工程师输入。
 - [x] 重刷验证：source=`ad99705b817a8c7f`，12 s 采集 `rust_runtime_health`（≈10 Hz）与 `rust_can_stats` 并存、dropout=0、无损坏；EKF2 正常。结果补录到[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
 - [x] 顺带修复历史 bug：`record_can_stats` 误用 `Group::Health` 限流器，`rust_runtime_health` 被 10 Hz can_stats 饿死（run1 2 Hz / run2 0 / run3 仅前 0.9 s 的三轮数据全部吻合）；改回 `Group::Can` 后板验通过。
+- [x] E7 USB 流核对：各流速率符合参数，LOCAL/GLOBAL_POSITION 按"无效不发"抑制；USB+SD 成对证据齐备。E7 软件门（不含实物依赖）收口，见[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)与[下一步计划](docs/next-steps.md)。
 
 ### MAVLink 协议补齐与参数/存储重构（2026-11-05 工程师授权，软件完成/板载待验）
 

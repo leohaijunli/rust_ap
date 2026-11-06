@@ -32,6 +32,8 @@
 - **共享栈（工程师明确本轮不作门）**：基线 36688 B untouched，Filter 稳态观测最低 32144 B；仅记录。采集工具的栈门提前中止，估计器随后以 `!ekf2 stop` 停止。
 - `!fault`：旧 `f509ec6b85b6a4fa` panic 记录原样保留，未被清除或改写。
 
+- **USB 流核对（2026-11-06）**：15 s 采样，HIGHRES_IMU/SCALED_PRESSURE ≈22 Hz（参数 20 + 调度）、ATTITUDE/ATTITUDE_QUATERNION/ESTIMATOR_STATUS ≈9.67 Hz（参数 10）、心跳组 ≈1.13 Hz、GPS_RAW_INT 1.13 Hz 为 NO_GPS 兜底帧；`LOCAL_POSITION_NED`/`GLOBAL_POSITION_INT` 未发系导航未资格化按"无效不发"抑制（SD 侧仍记完整诊断快照），链路语义分工正确。USB 与 SD 成对证据齐备。
+
 ## 结论与依赖
 
 - 单实例 EKF2 + TIM8 批积分在板上运行健康：0 期限超时、1 kHz 发布 0 丢失、积分 0 ppm；计算余量较旧包约 3.6×。
