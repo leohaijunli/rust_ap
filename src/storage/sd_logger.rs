@@ -231,11 +231,12 @@ fn clear_log_responses(link: Link) {
     }
 }
 
-pub async fn next_log_response(link: Link) -> LogResponse {
+pub fn try_next_log_response(link: Link) -> Option<LogResponse> {
     match link {
-        Link::Usb => USB_LOG_RESPONSES.receive().await,
-        Link::Uart => UART_LOG_RESPONSES.receive().await,
+        Link::Usb => USB_LOG_RESPONSES.try_receive(),
+        Link::Uart => UART_LOG_RESPONSES.try_receive(),
     }
+    .ok()
 }
 
 async fn send_log_response(link: Link, response: LogResponse) -> Result<(), ()> {

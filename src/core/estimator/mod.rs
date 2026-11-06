@@ -24,6 +24,7 @@ pub mod product;
 pub mod publication_reset;
 pub mod range_math;
 pub mod range_sensor;
+pub mod report;
 pub mod reset_status;
 pub mod runtime;
 pub mod runtime_params;

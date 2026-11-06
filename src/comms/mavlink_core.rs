@@ -1,72 +1,29 @@
 //! Transport-agnostic MAVLink message logic shared by the USB CDC and TELEM1 links.
 
-use core::cell::RefCell;
-use core::sync::atomic::{AtomicU16, Ordering};
-
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::blocking_mutex::Mutex;
 use mavlink::common::*;
-use mavlink::{MAVLinkV1MessageRaw, MAVLinkV2MessageRaw, MavHeader, MavlinkVersion, Message};
+use mavlink::MavHeader;
 
 use v6x_rust_led::mavftp;
 use v6x_rust_led::parameters::{Id, Kind, COUNT};
 use v6x_rust_led::px4_messages::SensorGps;
 
 use crate::parameter_manager::ParameterManager;
+use crate::telemetry;
 use v6x_rust_led::logger::{LogError, LogRequest, LogResponse};
+use v6x_rust_led::{
+    mavlink_protocol::addressed_to_vehicle,
+    telemetry::{message_id, requested_kind, IntervalError, Scheduler},
+};
 
 pub const SYSTEM_ID: u8 = Id::MavSysId.definition().default as u8;
-pub const COMPONENT_ID: u8 = 1;
-
-/// Ground stations only hold one FTP session; both links share it.
-static FTP: Mutex<CriticalSectionRawMutex, RefCell<mavftp::Server>> =
-    Mutex::new(RefCell::new(mavftp::Server::new()));
-
-/// Next parameter index pending a full-list transmission; `COUNT` means idle.
-/// A full registry cannot fit in one `Reply`, so a `PARAM_REQUEST_LIST` arms
-/// the calling link's cursor and that link's transmit loop drains one
-/// `PARAM_VALUE` per tick. The cursor is per-link so USB and UART7 never
-/// race each other for the same parameter slot.
-pub type ParamCursor = AtomicU16;
-
-/// A cursor is armed by a `PARAM_REQUEST_LIST` and drains the registry once.
-pub fn begin_param_stream(cursor: &ParamCursor) {
-    cursor.store(0, Ordering::Relaxed);
-}
-
-/// The next `PARAM_VALUE` of a pending full-list download, or `None` when done.
-pub fn next_param_value(
-    parameters: &ParameterManager<'_>,
-    cursor: &ParamCursor,
-) -> Option<MavMessage> {
-    loop {
-        let next = cursor.load(Ordering::Relaxed) as usize;
-        if next >= COUNT {
-            return None;
-        }
-        match cursor.compare_exchange(
-            next as u16,
-            (next + 1) as u16,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => return Some(parameter(parameters, Id::from_index(next).unwrap())),
-            Err(_) => continue,
-        }
-    }
-}
-
-/// Decoded inbound frame plus the header it arrived with.
-pub struct Decoded {
-    pub header: MavHeader,
-    pub message: MavMessage,
-}
+pub const COMPONENT_ID: u8 = v6x_rust_led::telemetry::MAIN_COMPONENT;
 
 /// Replies produced for one inbound request, plus whether a reboot is pending
 /// or a full parameter download was requested.
 pub struct Reply {
-    messages: [Option<MavMessage>; Self::CAPACITY],
+    messages: [Option<telemetry::Outgoing>; Self::CAPACITY],
     count: usize,
+    next: usize,
     pub reboot: bool,
     pub param_stream: bool,
 }
@@ -78,23 +35,32 @@ impl Reply {
     pub const EMPTY: Self = Self {
         messages: [const { None }; Self::CAPACITY],
         count: 0,
+        next: 0,
         reboot: false,
         param_stream: false,
     };
 
     pub fn push(&mut self, message: MavMessage) {
-        if self.count < self.messages.len() {
-            self.messages[self.count] = Some(message);
-            self.count += 1;
-        }
+        self.push_from(COMPONENT_ID, message);
     }
 
-    /// Drain the produced replies, advancing `count`.
-    #[allow(dead_code)]
-    pub fn drain(&mut self) -> impl Iterator<Item = MavMessage> + '_ {
-        self.messages[..self.count]
-            .iter_mut()
-            .filter_map(Option::take)
+    pub fn push_from(&mut self, component: u8, message: MavMessage) {
+        assert!(self.count < Self::CAPACITY, "reply exceeds bounded burst");
+        self.messages[self.count] = Some(telemetry::Outgoing { component, message });
+        self.count += 1;
+    }
+
+    pub fn pending(&self) -> bool {
+        self.next < self.count
+    }
+
+    pub fn pop(&mut self) -> Option<telemetry::Outgoing> {
+        if !self.pending() {
+            return None;
+        }
+        let outgoing = self.messages[self.next].take();
+        self.next += 1;
+        outgoing
     }
 }
 
@@ -107,15 +73,11 @@ pub async fn handle(
     header: MavHeader,
     message: MavMessage,
     parameters: &ParameterManager<'_>,
+    scheduler: &mut Scheduler,
+    ftp: &mut mavftp::Server,
     reply: &mut Reply,
 ) {
-    if message
-        .target_system_id()
-        .is_some_and(|id| id != 0 && id != SYSTEM_ID)
-        || message
-            .target_component_id()
-            .is_some_and(|id| id != 0 && id != COMPONENT_ID)
-    {
+    if !addressed_to_vehicle(&message, SYSTEM_ID) {
         return;
     }
 
@@ -123,7 +85,7 @@ pub async fn handle(
         MavMessage::FILE_TRANSFER_PROTOCOL(data) => {
             if data.target_network == 0 {
                 let mut responses = mavftp::Responses::new();
-                FTP.lock(|ftp| ftp.borrow_mut().handle(&data.payload, &mut responses));
+                ftp.handle(&data.payload, &mut responses);
                 for frame in responses.frames() {
                     reply.push(file_transfer(header, frame));
                 }
@@ -168,9 +130,7 @@ pub async fn handle(
                         // one FRAM write instead of one per value; only
                         // disarmed vehicles with outputs closed may write.
                         if crate::OUTPUT_STATE.armed || crate::OUTPUT_STATE.outputs_enabled {
-                            reply.push(parameter_warning(
-                                "PARAM_SET: RAM only; save blocked while outputs active",
-                            ));
+                            reply.push(parameter_warning("PARAM_SET: RAM only; outputs active"));
                         } else {
                             parameters.defer_save();
                         }
@@ -237,49 +197,79 @@ pub async fn handle(
                 logger_result(crate::sd_logger::request_stop()),
             ));
         }
-        MavMessage::COMMAND_LONG(data)
-            if data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE && data.param1 == 252.0 =>
-        {
-            let result = if let Some(message) = ina219_status() {
-                reply.push(message);
-                MavResult::MAV_RESULT_ACCEPTED
-            } else {
-                MavResult::MAV_RESULT_TEMPORARILY_REJECTED
+        MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE => {
+            let result = match message_id(data.param1) {
+                None => MavResult::MAV_RESULT_DENIED,
+                Some(id) => match requested_kind(id, data.target_component) {
+                    None => MavResult::MAV_RESULT_UNSUPPORTED,
+                    Some(kind) => {
+                        let mut no_fix_due = 0;
+                        match telemetry::build(
+                            kind,
+                            embassy_time::Instant::now().as_micros(),
+                            &mut no_fix_due,
+                            true,
+                        ) {
+                            Some(outgoing) => {
+                                reply.push_from(outgoing.component, outgoing.message);
+                                MavResult::MAV_RESULT_ACCEPTED
+                            }
+                            None => MavResult::MAV_RESULT_TEMPORARILY_REJECTED,
+                        }
+                    }
+                },
             };
             reply.push(command_ack(&header, data.command, result));
+        }
+        MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_SET_MESSAGE_INTERVAL => {
+            let result = match message_id(data.param1)
+                .ok_or(IntervalError::Invalid)
+                .and_then(|id| {
+                    scheduler.set_interval(
+                        id,
+                        data.target_component,
+                        data.param2,
+                        &parameters.snapshot(),
+                        embassy_time::Instant::now().as_micros(),
+                    )
+                }) {
+                Ok(()) => MavResult::MAV_RESULT_ACCEPTED,
+                Err(IntervalError::Invalid) => MavResult::MAV_RESULT_DENIED,
+                Err(IntervalError::Unsupported) => MavResult::MAV_RESULT_UNSUPPORTED,
+            };
+            reply.push(command_ack(&header, data.command, result));
+        }
+        MavMessage::COMMAND_LONG(data) if data.command == MavCmd::MAV_CMD_GET_MESSAGE_INTERVAL => {
+            let result = match message_id(data.param1) {
+                None => MavResult::MAV_RESULT_DENIED,
+                Some(id) => match scheduler.interval(id, data.target_component) {
+                    Some(interval) => {
+                        reply.push(message_interval(id as u16, interval));
+                        MavResult::MAV_RESULT_ACCEPTED
+                    }
+                    None => MavResult::MAV_RESULT_UNSUPPORTED,
+                },
+            };
+            reply.push(command_ack(&header, data.command, result));
+        }
+        MavMessage::COMMAND_INT(data)
+            if matches!(
+                data.command,
+                MavCmd::MAV_CMD_COMPONENT_ARM_DISARM | MavCmd::MAV_CMD_DO_SET_MODE
+            ) =>
+        {
+            reply.push(command_ack(
+                &header,
+                data.command,
+                MavResult::MAV_RESULT_UNSUPPORTED,
+            ));
         }
         MavMessage::COMMAND_LONG(data) => {
             let mut reboot = false;
             let response = match data.command {
-                MavCmd::MAV_CMD_REQUEST_MESSAGE => match data.param1 as u32 {
-                    0 => Some(heartbeat()),
-                    1 => Some(system_status()),
-                    2 => Some(system_time()),
-                    105 => highres_imu(),
-                    29 => scaled_pressure(),
-                    30 => crate::estimator::latest().and_then(|out| {
-                        out.euler[0]
-                            .zip(out.snapshots[0].angular_velocity)
-                            .map(|(angles, gyro)| {
-                                v6x_rust_led::mavlink_estimator::attitude_euler(angles, gyro)
-                            })
-                    }),
-                    31 => crate::estimator::latest()
-                        .and_then(|out| {
-                            out.snapshots[0]
-                                .attitude
-                                .zip(out.snapshots[0].angular_velocity)
-                        })
-                        .map(|(att, gyro)| v6x_rust_led::mavlink_estimator::attitude(att, gyro)),
-                    230 => crate::estimator::latest().map(|out| {
-                        v6x_rust_led::mavlink_estimator::estimator_status(out.snapshots[0].status)
-                    }),
-                    148 => Some(autopilot_version()),
-                    253 => Some(status_text()),
-                    // QGC asks for this before it can show parameter groups.
-                    397 => Some(component_metadata()),
-                    _ => None,
-                },
+                // Arming and mode changes are flight-control commands; they
+                // stay refused until the P5a control stages exist (plan §8b).
+                MavCmd::MAV_CMD_COMPONENT_ARM_DISARM | MavCmd::MAV_CMD_DO_SET_MODE => None,
                 MavCmd::MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES => Some(autopilot_version()),
                 MavCmd::MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN if data.param1 == 3.0 => {
                     reboot = true;
@@ -310,7 +300,8 @@ pub async fn handle(
 
 pub fn heartbeat() -> MavMessage {
     MavMessage::HEARTBEAT(HEARTBEAT_DATA {
-        custom_mode: 0,
+        // PX4 main_mode MANUAL=1, sub_mode=0; compatibility only, no mode action.
+        custom_mode: 1 << 16,
         mavtype: MavType::MAV_TYPE_GENERIC,
         // QGC only saves onboard logs as `.ulg` when the autopilot is PX4;
         // every other identity is stored as `.bin`. We keep the original PX4
@@ -318,9 +309,9 @@ pub fn heartbeat() -> MavMessage {
         // LOG_* download path is still used.
         autopilot: MavAutopilot::MAV_AUTOPILOT_PX4,
         base_mode: if crate::OUTPUT_STATE.armed {
-            MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED
+            MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED
         } else {
-            MavModeFlag::empty()
+            MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
         },
         system_status: MavState::MAV_STATE_STANDBY,
         mavlink_version: 3,
@@ -420,41 +411,82 @@ pub fn scaled_pressure() -> Option<MavMessage> {
     }))
 }
 
-pub fn estimator_messages() -> [Option<(u8, MavMessage)>; 7] {
-    let mut result = [const { None }; 7];
-    let Some(output) = crate::estimator::latest() else {
-        return result;
-    };
-    for (index, message) in v6x_rust_led::mavlink_estimator::messages(&output.snapshots[0], None)
-        .into_iter()
-        .enumerate()
-    {
-        result[index] = message.map(|message| (COMPONENT_ID, message));
-    }
-    for (index, message) in v6x_rust_led::mavlink_estimator::messages(&output.snapshots[1], None)
-        .into_iter()
-        .take(2)
-        .enumerate()
-    {
-        result[4 + index] = message.map(|mut message| {
-            if output.snapshots[1].status.control_mode_flags & (1 << 1) == 0 {
-                if let MavMessage::ODOMETRY(data) = &mut message {
+/// MAVLink component id of the independent no-GNSS estimator instance; the
+/// main instance reports as [`COMPONENT_ID`].
+pub const INDEPENDENT_COMPONENT: u8 = v6x_rust_led::telemetry::INDEPENDENT_COMPONENT;
+
+/// Which estimator message to build; see [`estimator_message`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EstimatorMessage {
+    AttitudeEuler,
+    AttitudeQuaternion,
+    LocalPosition,
+    GlobalPosition,
+    Status,
+    IndependentOdometry,
+    IndependentStatus,
+}
+
+/// Build one estimator stream message with the component id that owns it.
+/// Messages whose data is invalid or stale are suppressed, never reported
+/// with fabricated fields.
+pub fn estimator_message(kind: EstimatorMessage) -> Option<(u8, MavMessage)> {
+    let output = crate::estimator::latest()?;
+    let message = match kind {
+        EstimatorMessage::AttitudeEuler => output.euler[0]
+            .zip(output.snapshots[0].angular_velocity)
+            .map(|(angles, gyro)| v6x_rust_led::mavlink_estimator::attitude_euler(angles, gyro)),
+        EstimatorMessage::AttitudeQuaternion => output.snapshots[0]
+            .attitude
+            .zip(output.snapshots[0].angular_velocity)
+            .map(|(attitude, gyro)| v6x_rust_led::mavlink_estimator::attitude(attitude, gyro)),
+        EstimatorMessage::LocalPosition => {
+            v6x_rust_led::mavlink_estimator::local_position(output.snapshots[0].local_position)
+        }
+        EstimatorMessage::GlobalPosition => {
+            output.snapshots[0].global_position.and_then(|global| {
+                v6x_rust_led::mavlink_estimator::global_position(
+                    global,
+                    output.snapshots[0].local_position,
+                    None,
+                )
+            })
+        }
+        EstimatorMessage::Status => Some(v6x_rust_led::mavlink_estimator::estimator_status(
+            output.snapshots[0].status,
+        )),
+        EstimatorMessage::IndependentOdometry => output.snapshots[1].odometry.map(|value| {
+            let mut message = v6x_rust_led::mavlink_estimator::odometry(value);
+            if let MavMessage::ODOMETRY(data) = &mut message {
+                if output.snapshots[1].status.control_mode_flags & (1 << 1) == 0 {
                     data.frame_id = MavFrame::MAV_FRAME_LOCAL_FRD;
                     data.child_frame_id = MavFrame::MAV_FRAME_LOCAL_FRD;
                 }
             }
-            (197, message)
-        });
-    }
-    result[6] = output.euler[0]
-        .zip(output.snapshots[0].angular_velocity)
-        .map(|(angles, gyro)| {
-            (
-                COMPONENT_ID,
-                v6x_rust_led::mavlink_estimator::attitude_euler(angles, gyro),
-            )
-        });
-    result
+            message
+        }),
+        EstimatorMessage::IndependentStatus => Some(
+            v6x_rust_led::mavlink_estimator::estimator_status(output.snapshots[1].status),
+        ),
+    }?;
+    let component = match kind {
+        EstimatorMessage::IndependentOdometry | EstimatorMessage::IndependentStatus => {
+            INDEPENDENT_COMPONENT
+        }
+        _ => COMPONENT_ID,
+    };
+    Some((component, message))
+}
+
+/// BATTERY_STATUS mirrors the INA219 power monitor: voltage, current and power
+/// are measured, but there is no coulomb counter, so consumption and remaining
+/// capacity stay unknown instead of being fabricated.
+pub fn battery_status() -> Option<MavMessage> {
+    let measurement = crate::ina219::latest()?;
+    v6x_rust_led::mavlink_power::battery_status(
+        measurement,
+        embassy_time::Instant::now().as_micros(),
+    )
 }
 
 pub fn autopilot_version() -> MavMessage {
@@ -463,7 +495,7 @@ pub fn autopilot_version() -> MavMessage {
     uid2[..uid.len()].copy_from_slice(&uid);
     MavMessage::AUTOPILOT_VERSION(AUTOPILOT_VERSION_DATA {
         capabilities: MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
-            | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_C_CAST,
+            | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_BYTEWISE,
         flight_sw_version: v6x_rust_led::build_info::FLIGHT_SW_VERSION,
         flight_custom_version: v6x_rust_led::build_info::SOURCE_ID.to_le_bytes(),
         vendor_id: 0x1209,
@@ -629,6 +661,15 @@ pub fn parameter_warning(text: &'static str) -> MavMessage {
     })
 }
 
+/// Echo of a successful `MAV_CMD_SET_MESSAGE_INTERVAL`, so the ground station
+/// can read back the interval it just configured.
+pub fn message_interval(message_id: u16, interval_us: i32) -> MavMessage {
+    MavMessage::MESSAGE_INTERVAL(MESSAGE_INTERVAL_DATA {
+        interval_us,
+        message_id,
+    })
+}
+
 /// One FTP frame addressed back to the requesting ground station.
 pub fn file_transfer(header: MavHeader, frame: &mavftp::Frame) -> MavMessage {
     let mut payload = [0u8; mavftp::PAYLOAD_LEN];
@@ -766,15 +807,6 @@ fn log_error_text(error: LogError) -> &'static str {
     }
 }
 
-/// Encode a message into a complete MAVLink v2 frame, advancing the sequence.
-pub fn encode(
-    sequence: &mut u8,
-    message: &MavMessage,
-    out: &mut [u8; mavlink::MAX_FRAME_SIZE],
-) -> usize {
-    encode_from(sequence, COMPONENT_ID, message, out)
-}
-
 pub fn encode_from(
     sequence: &mut u8,
     component_id: u8,
@@ -788,89 +820,4 @@ pub fn encode_from(
     };
     *sequence = sequence.wrapping_add(1);
     v6x_rust_led::mavlink_estimator::encode(header, message, out)
-}
-
-/// Bounded packet assembly; transport boundaries do not delimit MAVLink frames.
-pub struct FrameParser {
-    bytes: [u8; mavlink::MAX_FRAME_SIZE],
-    len: usize,
-    expected: usize,
-}
-
-impl FrameParser {
-    pub fn new() -> Self {
-        Self {
-            bytes: [0; mavlink::MAX_FRAME_SIZE],
-            len: 0,
-            expected: 0,
-        }
-    }
-
-    pub fn receiving(&self) -> bool {
-        self.len != 0
-    }
-
-    pub fn push(&mut self, byte: u8) -> Option<Decoded> {
-        if self.len == 0 && !matches!(byte, 0xfe | 0xfd) {
-            return None;
-        }
-        self.bytes[self.len] = byte;
-        self.len += 1;
-        if self.len == 2 {
-            self.expected = usize::from(byte) + if self.bytes[0] == 0xfe { 8 } else { 12 };
-        }
-        if self.len == 3 && self.bytes[0] == 0xfd && byte & 1 != 0 {
-            self.expected += 13;
-        }
-        if self.expected == 0 || self.len < self.expected {
-            return None;
-        }
-
-        let result = self.parse();
-        self.len = 0;
-        self.expected = 0;
-        result
-    }
-
-    fn parse(&self) -> Option<Decoded> {
-        if self.bytes[0] == 0xfe {
-            let mut raw = MAVLinkV1MessageRaw::new();
-            raw.as_mut_slice()[..self.len].copy_from_slice(&self.bytes[..self.len]);
-            if !raw.has_valid_crc::<MavMessage>() {
-                return None;
-            }
-            let header = MavHeader {
-                sequence: raw.sequence(),
-                system_id: raw.system_id(),
-                component_id: raw.component_id(),
-            };
-            MavMessage::parse(
-                MavlinkVersion::V1,
-                u32::from(raw.message_id()),
-                raw.payload(),
-            )
-            .ok()
-            .map(|message| Decoded { header, message })
-        } else {
-            let mut raw = MAVLinkV2MessageRaw::new();
-            raw.as_mut_slice()[..self.len].copy_from_slice(&self.bytes[..self.len]);
-            if raw.incompatibility_flags() != 0 || !raw.has_valid_crc::<MavMessage>() {
-                return None;
-            }
-            let header = MavHeader {
-                sequence: raw.sequence(),
-                system_id: raw.system_id(),
-                component_id: raw.component_id(),
-            };
-            MavMessage::parse(MavlinkVersion::V2, raw.message_id(), raw.payload())
-                .ok()
-                .map(|message| Decoded { header, message })
-        }
-    }
-}
-
-impl Default for FrameParser {
-    fn default() -> Self {
-        Self::new()
-    }
 }

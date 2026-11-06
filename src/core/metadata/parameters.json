@@ -159,6 +159,12 @@
     {"name": "EKF2_TERR_GRAD", "type": "Float", "group": "EKF2", "shortDesc": "EKF2_TERR_GRAD (unmapped EKF options are reported as unused)", "min": 0, "max": 3.4028235e+38, "default": 0.5},
     {"name": "EKF2_MIN_RNG", "type": "Float", "group": "EKF2", "shortDesc": "EKF2_MIN_RNG (unmapped EKF options are reported as unused)", "min": 0.01, "max": 3.4028235e+38, "default": 0.01},
     {"name": "EKF2_MAG_DECL", "type": "Float", "group": "EKF2", "shortDesc": "EKF2_MAG_DECL (unmapped EKF options are reported as unused)", "min": -3.4028235e+38, "max": 3.4028235e+38, "default": 0},
-    {"name": "EKF2_WIND_NSD", "type": "Float", "group": "EKF2", "shortDesc": "EKF2_WIND_NSD (unmapped EKF options are reported as unused)", "min": 0, "max": 1, "default": 0.05}
+    {"name": "EKF2_WIND_NSD", "type": "Float", "group": "EKF2", "shortDesc": "EKF2_WIND_NSD (unmapped EKF options are reported as unused)", "min": 0, "max": 1, "default": 0.05},
+    {"name": "MAV_RATE_HB", "type": "Float", "group": "Link", "shortDesc": "MAV_RATE_HB", "min": 0, "max": 10, "default": 1},
+    {"name": "MAV_RATE_STATUS", "type": "Float", "group": "Link", "shortDesc": "MAV_RATE_STATUS", "min": 0, "max": 2, "default": 0.2},
+    {"name": "MAV_RATE_SENSORS", "type": "Float", "group": "Link", "shortDesc": "MAV_RATE_SENSORS", "min": 0, "max": 50, "default": 20},
+    {"name": "MAV_RATE_EST", "type": "Float", "group": "Link", "shortDesc": "MAV_RATE_EST", "min": 0, "max": 50, "default": 10},
+    {"name": "MAV_RATE_GPS", "type": "Float", "group": "Link", "shortDesc": "MAV_RATE_GPS", "min": 0, "max": 10, "default": 5},
+    {"name": "MAV_RATE_POWER", "type": "Float", "group": "Link", "shortDesc": "MAV_RATE_POWER", "min": 0, "max": 20, "default": 10}
   ]
 }

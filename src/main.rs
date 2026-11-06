@@ -56,11 +56,17 @@ mod platform;
 #[path = "drivers/px4io.rs"]
 mod px4io;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "comms/router.rs"]
+mod router;
+#[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/rtc.rs"]
 mod rtc;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "storage/sd_logger.rs"]
 mod sd_logger;
+#[cfg(not(feature = "fault-dump"))]
+#[path = "comms/telemetry.rs"]
+mod telemetry;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "comms/usb_console.rs"]
 mod usb_console;
@@ -300,9 +306,7 @@ async fn application(p: Peripherals, spawner: Spawner) {
         uart7_config,
     )
     .expect("UART7 configuration");
-    spawner
-        .spawn(mavlink_uart7::run(uart7, parameters, dronecan))
-        .unwrap();
+    spawner.spawn(mavlink_uart7::run(uart7)).unwrap();
 
     // FMUv6X IO link is USART6 (TX PC6/RX PC7), not the TELEM1 UART.
     let mut px4io_config = embassy_stm32::usart::Config::default();
@@ -384,10 +388,9 @@ async fn application(p: Peripherals, spawner: Spawner) {
     spawner
         .spawn(mavlink_usb::device_task(builder.build()))
         .unwrap();
+    spawner.spawn(mavlink_usb::run(class, session)).unwrap();
     spawner
-        .spawn(mavlink_usb::run(
-            class, phy, eth_power, session, parameters, dronecan,
-        ))
+        .spawn(router::run(parameters, dronecan, phy, eth_power))
         .unwrap();
 
     // Slow services are sibling tasks: their poll frames are no longer retained

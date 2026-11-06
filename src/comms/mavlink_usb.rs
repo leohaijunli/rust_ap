@@ -1,47 +1,18 @@
-//! MAVLink telemetry over USB CDC, with a small diagnostic line console.
+//! USB CDC byte transport; protocol and telemetry state belong to the Router.
 
-use core::cell::RefCell;
+use embassy_futures::{join::join, select::select};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, watch::Watch};
+use embassy_time::{with_timeout, Duration, Timer};
+use embassy_usb::{
+    class::cdc_acm::{CdcAcmClass, Receiver, Sender},
+    driver::{Driver, EndpointError},
+};
+use v6x_rust_led::logger::Link;
 
-use embassy_futures::join::join;
-use embassy_futures::select::{select, select3, Either3};
-use embassy_stm32::gpio::Output;
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_sync::channel::Channel;
-use embassy_sync::watch::Watch;
-use embassy_time::{with_timeout, Duration, Instant, Timer};
-use embassy_usb::class::cdc_acm::{CdcAcmClass, Receiver, Sender};
-use embassy_usb::driver::{Driver, EndpointError};
-use mavlink::common::*;
-
-use crate::dronecan_can;
-use crate::eth_led::Lan8742;
-use crate::mavlink_core::{self, FrameParser};
-use crate::parameter_manager::ParameterManager;
-use crate::usb_console::{self, Command, CommandLine, Response};
-
-// Fixed-size buffers are intentional: this no_std firmware has no allocator.
-#[allow(clippy::large_enum_variant)]
-enum Outbound {
-    Message(MavMessage),
-    Console(Response),
-    Bootloader {
-        console_ack: bool,
-    },
-    #[cfg(feature = "fault-injection")]
-    InjectFault {
-        hard: bool,
-    },
-}
-
-type Replies = Channel<NoopRawMutex, Outbound, 4>;
-
-/// Per-link parameter-list download cursor; see `mavlink_core::begin_param_stream`.
-static PARAM_CURSOR: mavlink_core::ParamCursor =
-    mavlink_core::ParamCursor::new(v6x_rust_led::parameters::COUNT as u16);
+use crate::router::{self, Packet};
 
 pub type UsbSession = Watch<NoopRawMutex, u32, 2>;
 
-/// Start a fresh transport session whenever the host resets or reconfigures USB.
 pub struct UsbSessionEvents<'a> {
     session: &'a UsbSession,
     generation: u32,
@@ -58,6 +29,7 @@ impl<'a> UsbSessionEvents<'a> {
     fn restart(&mut self) {
         crate::mavcan::stop();
         self.generation = self.generation.wrapping_add(1);
+        router::reset_usb();
         self.session.sender().send(self.generation);
     }
 }
@@ -66,11 +38,9 @@ impl embassy_usb::Handler for UsbSessionEvents<'_> {
     fn reset(&mut self) {
         self.restart();
     }
-
     fn configured(&mut self, _configured: bool) {
         self.restart();
     }
-
     fn enabled(&mut self, enabled: bool) {
         if !enabled {
             self.restart();
@@ -86,16 +56,8 @@ pub async fn device_task(mut usb: embassy_usb::UsbDevice<'static, BoardUsbDriver
 }
 
 #[embassy_executor::task]
-pub async fn run(
-    class: CdcAcmClass<'static, BoardUsbDriver>,
-    phy: &'static RefCell<Lan8742<'static>>,
-    eth_power: &'static Output<'static>,
-    session: &'static UsbSession,
-    parameters: &'static ParameterManager<'static>,
-    dronecan: &'static dronecan_can::State,
-) -> ! {
+pub async fn run(class: CdcAcmClass<'static, BoardUsbDriver>, session: &'static UsbSession) -> ! {
     let (mut sender, mut receiver) = class.split();
-    let replies = Replies::new();
     let mut tx_reset = session.receiver().unwrap();
     let mut rx_reset = session.receiver().unwrap();
     tx_reset.get().await;
@@ -103,26 +65,15 @@ pub async fn run(
     join(
         async {
             loop {
-                // Poll reset first: never begin a fresh write for an old session.
-                select(tx_reset.changed(), transmit(&mut sender, &replies, parameters)).await;
+                // Cancel old endpoint writes before using a reconfigured USB session.
+                select(tx_reset.changed(), transmit(&mut sender)).await;
+                router::connected(Link::Usb, false);
                 crate::mavcan::stop();
-                replies.clear();
             }
         },
         async {
             loop {
-                select(
-                    rx_reset.changed(),
-                    receive(
-                        &mut receiver,
-                        &replies,
-                        phy,
-                        eth_power,
-                        parameters,
-                        dronecan,
-                    ),
-                )
-                .await;
+                select(rx_reset.changed(), receive(&mut receiver)).await;
             }
         },
     )
@@ -130,410 +81,66 @@ pub async fn run(
     unreachable!()
 }
 
-async fn transmit<'d, D: Driver<'d>>(
-    sender: &mut Sender<'d, D>,
-    replies: &Replies,
-    parameters: &ParameterManager<'static>,
-) -> ! {
-    const IMU_PERIOD: Duration = Duration::from_millis(50);
-    const POWER_PERIOD: Duration = Duration::from_micros(v6x_rust_led::ina219::SAMPLE_PERIOD_US);
-    // PX4 streams GPS_RAW_INT at the GNSS update rate; 5 Hz covers H-RTK.
-    const GPS_PERIOD: Duration = Duration::from_millis(200);
-    const GPS_NO_FIX_PERIOD: Duration = Duration::from_secs(1);
-    let mut sequence = 0u8;
-    let mut independent_sequence = 0u8;
-    let mut estimator_tick = 0u8;
-    'connection: loop {
+async fn transmit<'d, D: Driver<'d>>(sender: &mut Sender<'d, D>) -> ! {
+    loop {
         sender.wait_connection().await;
-        let mut ticks = 0u32;
-        for message in [
-            mavlink_core::heartbeat(),
-            mavlink_core::status_text(),
-            mavlink_core::autopilot_version(),
-        ] {
-            if send_message(sender, &mut sequence, &message).await.is_err() {
-                crate::mavcan::stop();
-                continue 'connection;
-            }
-        }
-        let mut next_heartbeat = Instant::now() + Duration::from_secs(1);
-        let mut next_imu = Instant::now() + IMU_PERIOD;
-        let mut next_power = Instant::now() + POWER_PERIOD;
-        let mut next_gps = Instant::now() + GPS_PERIOD;
-        let mut next_gps_no_fix = Instant::now() + GPS_NO_FIX_PERIOD;
-
+        router::connected(Link::Usb, true);
         loop {
-            let next_wakeup = next_imu.min(next_heartbeat).min(next_power).min(next_gps);
-            // Timers and command replies precede CAN traffic, so a busy bridge
-            // cannot starve heartbeats or fill the command-reply queue.
-            let result = match select3(
-                Timer::at(next_wakeup),
-                replies.receive(),
-                crate::mavcan::OUTBOUND.receive(),
-            )
-            .await
-            {
-                Either3::First(()) => {
-                    let now = Instant::now();
-                    let mut result = Ok(());
-                    if now >= next_imu {
-                        if let Some(message) = mavlink_core::highres_imu() {
-                            result = send_message(sender, &mut sequence, &message).await;
-                        }
-                        if result.is_ok() {
-                            if let Some(message) = mavlink_core::scaled_pressure() {
-                                result = send_message(sender, &mut sequence, &message).await;
-                            }
-                        }
-                        next_imu = now + IMU_PERIOD;
-                        estimator_tick = estimator_tick.wrapping_add(1);
-                        if result.is_ok() && estimator_tick.is_multiple_of(2) {
-                            for (component, message) in
-                                mavlink_core::estimator_messages().into_iter().flatten()
-                            {
-                                let sequence = if component == mavlink_core::COMPONENT_ID {
-                                    &mut sequence
-                                } else {
-                                    &mut independent_sequence
-                                };
-                                result =
-                                    send_message_from(sender, sequence, component, &message).await;
-                                if result.is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    if result.is_ok() && now >= next_power {
-                        if let Some(message) = mavlink_core::ina219_status() {
-                            result = send_message(sender, &mut sequence, &message).await;
-                        }
-                        next_power = now + POWER_PERIOD;
-                    }
-                    if result.is_ok() && now >= next_gps {
-                        if let Some(message) = mavlink_core::gps_raw_int() {
-                            result = send_message(sender, &mut sequence, &message).await;
-                            next_gps_no_fix = now + GPS_NO_FIX_PERIOD;
-                        } else if now >= next_gps_no_fix {
-                            // PX4: one NO_GPS frame per second after data stops.
-                            result = send_message(
-                                sender,
-                                &mut sequence,
-                                &mavlink_core::gps_raw_int_no_fix(),
-                            )
-                            .await;
-                            next_gps_no_fix = now + GPS_NO_FIX_PERIOD;
-                        }
-                        next_gps = now + GPS_PERIOD;
-                    }
-                    if result.is_ok() && now >= next_heartbeat {
-                        ticks = ticks.wrapping_add(1);
-                        result =
-                            send_message(sender, &mut sequence, &mavlink_core::heartbeat()).await;
-                        if result.is_ok() {
-                            result =
-                                send_message(sender, &mut sequence, &mavlink_core::system_status())
-                                    .await;
-                        }
-                        if result.is_ok() {
-                            // Generate boot time after earlier USB writes complete.
-                            result =
-                                send_message(sender, &mut sequence, &mavlink_core::system_time())
-                                    .await;
-                        }
-                        if result.is_ok() && ticks.is_multiple_of(5) {
-                            result =
-                                send_message(sender, &mut sequence, &mavlink_core::status_text())
-                                    .await;
-                        }
-                        next_heartbeat = now + Duration::from_secs(1);
-                    }
-                    result
-                }
-                Either3::Second(Outbound::Message(message)) => {
-                    send_message(sender, &mut sequence, &message).await
-                }
-                Either3::Second(Outbound::Console(response)) => {
-                    write_transfer(sender, response.as_bytes()).await
-                }
-                Either3::Second(Outbound::Bootloader { console_ack }) => {
-                    if console_ack {
-                        let _ = with_timeout(
-                            Duration::from_millis(100),
-                            write_transfer(sender, b"OK bootloader\n"),
-                        )
-                        .await;
-                    }
-                    Timer::after_millis(100).await;
-                    crate::fault::reboot_to_bootloader();
-                }
-                #[cfg(feature = "fault-injection")]
-                Either3::Second(Outbound::InjectFault { hard }) => {
-                    let _ = with_timeout(
+            let transfer = router::USB_TX.receive().await;
+            if transfer.generation != router::usb_generation() {
+                continue;
+            }
+            let sent = transfer.len == 0
+                || matches!(
+                    with_timeout(
                         Duration::from_millis(100),
-                        write_transfer(sender, b"OK fault-injection\n"),
+                        write_transfer(sender, &transfer.bytes[..transfer.len])
                     )
-                    .await;
-                    Timer::after_millis(100).await;
-                    if hard {
-                        cortex_m::asm::udf();
-                    }
-                    panic!("P1 panic injection");
-                }
-                Either3::Third(queued) => {
-                    if let Some(message) = crate::mavcan::outbound_message(queued) {
-                        let result = send_message(sender, &mut sequence, &message).await;
-                        if result.is_ok() {
-                            crate::mavcan::record_usb_send();
-                        }
-                        result
-                    } else {
-                        Ok(())
-                    }
-                }
-            };
-            if result.is_err() {
-                crate::mavcan::stop();
+                    .await,
+                    Ok(Ok(()))
+                );
+            if !sent {
+                router::record_tx_error(Link::Usb);
                 break;
             }
-            // Drain a pending full-parameter download, one value per loop, so a
-            // large registry never blocks the heartbeat/stream pacing.
-            if let Some(message) = mavlink_core::next_param_value(parameters, &PARAM_CURSOR) {
-                if send_message(sender, &mut sequence, &message).await.is_err() {
-                    crate::mavcan::stop();
-                    break;
-                }
+            if transfer.mavcan {
+                crate::mavcan::record_usb_send();
             }
         }
+        router::reset_usb();
+        crate::mavcan::stop();
+        // Let the Router observe disconnect before retrying an endpoint still configured by a stalled host.
+        Timer::after_millis(20).await;
     }
-}
-
-async fn send_message<'d, D: Driver<'d>>(
-    sender: &mut Sender<'d, D>,
-    sequence: &mut u8,
-    message: &MavMessage,
-) -> Result<(), EndpointError> {
-    send_message_from(sender, sequence, mavlink_core::COMPONENT_ID, message).await
-}
-
-async fn send_message_from<'d, D: Driver<'d>>(
-    sender: &mut Sender<'d, D>,
-    sequence: &mut u8,
-    component: u8,
-    message: &MavMessage,
-) -> Result<(), EndpointError> {
-    let mut frame = [0u8; mavlink::MAX_FRAME_SIZE];
-    let len = mavlink_core::encode_from(sequence, component, message, &mut frame);
-    write_transfer(sender, &frame[..len]).await
 }
 
 async fn write_transfer<'d, D: Driver<'d>>(
     sender: &mut Sender<'d, D>,
-    data: &[u8],
+    bytes: &[u8],
 ) -> Result<(), EndpointError> {
-    let max_packet_size = usize::from(sender.max_packet_size());
-    for packet in data.chunks(max_packet_size) {
+    let packet_size = usize::from(sender.max_packet_size());
+    for packet in bytes.chunks(packet_size) {
         sender.write_packet(packet).await?;
     }
-    if data.len().is_multiple_of(max_packet_size) {
+    if bytes.len().is_multiple_of(packet_size) {
         sender.write_packet(&[]).await?;
     }
     Ok(())
 }
 
-async fn receive<'d, D: Driver<'d>>(
-    receiver: &mut Receiver<'d, D>,
-    replies: &Replies,
-    phy: &RefCell<Lan8742<'_>>,
-    eth_power: &Output<'_>,
-    parameters: &ParameterManager<'_>,
-    dronecan: &dronecan_can::State,
-) -> ! {
-    let mut packet = [0u8; 64];
+async fn receive<'d, D: Driver<'d>>(receiver: &mut Receiver<'d, D>) -> ! {
+    let mut bytes = [0; 64];
     loop {
         receiver.wait_connection().await;
-        let mut parser = FrameParser::new();
-        let mut command_line = CommandLine::new();
-        let mut mavlink_command_line = CommandLine::new();
-        let mut last_byte = Instant::now();
-        while let Ok(n) = receiver.read_packet(&mut packet).await {
-            let now = Instant::now();
-            if parser.receiving() && (now - last_byte).as_millis() > 1000 {
-                // A host that closed mid-frame must not block later requests.
-                parser = FrameParser::new();
-                command_line = CommandLine::new();
-            }
-            last_byte = now;
-            for &byte in &packet[..n] {
-                if parser.receiving() || matches!(byte, 0xfe | 0xfd) {
-                    command_line = CommandLine::new();
-                    if let Some(decoded) = parser.push(byte) {
-                        handle_message(
-                            decoded,
-                            replies,
-                            parameters,
-                            dronecan,
-                            &mut mavlink_command_line,
-                        )
-                        .await;
-                    }
-                } else {
-                    match command_line.push(byte) {
-                        Some(Command::Status) => {
-                            replies
-                                .send(Outbound::Console(usb_console::status(phy, eth_power)))
-                                .await;
-                        }
-                        Some(Command::Bootloader) => {
-                            replies
-                                .send(Outbound::Bootloader { console_ack: true })
-                                .await;
-                        }
-                        Some(command @ (Command::Fram | Command::FramRead(_))) => {
-                            let response = usb_console::fram_report(command, parameters).await;
-                            replies.send(Outbound::Console(response)).await;
-                        }
-                        Some(
-                            command @ (Command::Parameters
-                            | Command::ParamSave
-                            | Command::ParamLoad),
-                        ) => {
-                            let response = usb_console::parameter_report(
-                                command,
-                                parameters,
-                                crate::OUTPUT_STATE,
-                            )
-                            .await;
-                            replies.send(Outbound::Console(response)).await;
-                        }
-                        #[cfg(feature = "fault-injection")]
-                        Some(Command::Panic) => {
-                            replies.send(Outbound::InjectFault { hard: false }).await
-                        }
-                        #[cfg(feature = "fault-injection")]
-                        Some(Command::HardFault) => {
-                            replies.send(Outbound::InjectFault { hard: true }).await
-                        }
-                        Some(command @ (Command::EstimatorStart | Command::EstimatorStop)) => {
-                            let response = usb_console::estimator_report(command, parameters);
-                            replies.send(Outbound::Console(response)).await;
-                        }
-                        Some(command) => {
-                            replies
-                                .send(Outbound::Console(usb_console::report(command, dronecan)))
-                                .await
-                        }
-                        None => {}
-                    }
-                }
-            }
-        }
-        crate::mavcan::stop();
-    }
-}
-
-// Keep PING and command 520 for ground stations using the older discovery flow.
-#[allow(deprecated)]
-async fn handle_message(
-    decoded: mavlink_core::Decoded,
-    replies: &Replies,
-    parameters: &ParameterManager<'_>,
-    dronecan: &dronecan_can::State,
-    command_line: &mut CommandLine,
-) {
-    if let Some(request) = mavlink_core::log_request(&decoded.message) {
-        handle_log_request(request, replies).await;
-        return;
-    }
-    match crate::mavcan::handle_message(decoded.header, &decoded.message) {
-        crate::mavcan::Outcome::ForwardAck(result) => {
-            replies
-                .send(Outbound::Message(mavlink_core::command_ack(
-                    &decoded.header,
-                    MavCmd::MAV_CMD_CAN_FORWARD,
-                    result,
-                )))
-                .await;
-            return;
-        }
-        crate::mavcan::Outcome::Handled => return,
-        crate::mavcan::Outcome::Unhandled => {}
-    }
-    match decoded.message {
-        MavMessage::SERIAL_CONTROL(data) => {
-            if data.device == SerialControlDev::SERIAL_CONTROL_DEV_SHELL
-                && matches!(data.target_system, 0 | mavlink_core::SYSTEM_ID)
-                && matches!(data.target_component, 0 | mavlink_core::COMPONENT_ID)
-            {
-                for &byte in &data.data[..usize::from(data.count.min(70))] {
-                    if let Some(command) = command_line.push(byte) {
-                        let response =
-                            usb_console::mavlink_report(command, parameters, dronecan).await;
-                        let chunks = response.as_bytes().chunks(70);
-                        let count = chunks.len();
-                        for (index, chunk) in chunks.enumerate() {
-                            replies
-                                .send(Outbound::Message(mavlink_core::serial_control_reply(
-                                    decoded.header,
-                                    chunk,
-                                    index + 1 < count,
-                                )))
-                                .await;
-                        }
-                    }
-                }
-            }
-        }
-        message => {
-            let mut reply = mavlink_core::Reply::EMPTY;
-            mavlink_core::handle(decoded.header, message, parameters, &mut reply).await;
-            for message in reply.drain() {
-                replies.send(Outbound::Message(message)).await;
-            }
-            if reply.reboot {
-                replies
-                    .send(Outbound::Bootloader { console_ack: false })
+        while let Ok(len) = receiver.read_packet(&mut bytes).await {
+            if len != 0 {
+                router::USB_RX
+                    .send(Packet::new(router::usb_generation(), &bytes[..len]))
                     .await;
             }
-            if reply.param_stream {
-                mavlink_core::begin_param_stream(&PARAM_CURSOR);
-            }
         }
-    }
-}
-
-async fn handle_log_request(request: v6x_rust_led::logger::LogRequest, replies: &Replies) {
-    use v6x_rust_led::logger::{Link, LogError, LogRequest, LogResponse};
-
-    if crate::sd_logger::request_logs(Link::Usb, request).is_err() {
-        if matches!(request, LogRequest::List { .. }) {
-            let empty = LogResponse::Entry {
-                id: 0,
-                num_logs: 0,
-                last_log_num: 0,
-                size: 0,
-                time_utc: 0,
-            };
-            replies
-                .send(Outbound::Message(
-                    mavlink_core::log_response(empty).unwrap(),
-                ))
-                .await;
-        }
-        replies
-            .send(Outbound::Message(
-                mavlink_core::log_response(LogResponse::Error(LogError::Busy)).unwrap(),
-            ))
-            .await;
-        return;
-    }
-    loop {
-        let response = crate::sd_logger::next_log_response(Link::Usb).await;
-        if response == LogResponse::Done {
-            break;
-        }
-        if let Some(message) = mavlink_core::log_response(response) {
-            replies.send(Outbound::Message(message)).await;
-        }
+        router::reset_usb();
+        crate::mavcan::stop();
+        router::record_rx_error(Link::Usb);
     }
 }

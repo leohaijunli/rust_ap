@@ -6,7 +6,7 @@
 //! that differ from the default are stored, which keeps a record far below the
 //! slot size even though every parameter is writable.
 
-use crate::parameters::{self, Access, Snapshot, COUNT, REGISTRY};
+use crate::parameters::{self, Access, Snapshot, REGISTRY};
 
 pub const FORMAT_VERSION: u16 = 2;
 pub const START: u16 = 0x7800;
@@ -127,11 +127,16 @@ fn decode_entries(bytes: &[u8], count: usize, payload_len: usize) -> Result<Snap
 }
 
 /// Positional records from the schema-tagged format predate name keys.
-fn decode_positional(bytes: &[u8], count: usize, payload_len: usize) -> Result<Snapshot, DecodeError> {
+fn decode_positional(
+    bytes: &[u8],
+    count: usize,
+    payload_len: usize,
+) -> Result<Snapshot, DecodeError> {
     let schema = word(bytes, 8);
-    let current = schema == parameters::schema_tag() && count == COUNT;
-    let legacy = schema == parameters::legacy_schema_tag() && count == 11;
-    if (!current && !legacy) || payload_len != count * 4 {
+    if count == 0
+        || parameters::prefix_schema_tag(count) != Some(schema)
+        || payload_len != count * 4
+    {
         return Err(DecodeError::Schema);
     }
     let mut values = *Snapshot::default().values();
@@ -229,17 +234,13 @@ impl Commit {
             if value == entry.default {
                 continue;
             }
-            bytes[offset..offset + 2].copy_from_slice(&parameters::name_hash(entry.name).to_le_bytes());
+            bytes[offset..offset + 2].copy_from_slice(&entry.hash.to_le_bytes());
             bytes[offset + 2..offset + 6].copy_from_slice(&value.to_bits().to_le_bytes());
             offset += ENTRY_SIZE;
         }
         let crc = checksum(&bytes[1..HEADER_SIZE + payload_len]);
         bytes[HEADER_SIZE + payload_len..len].copy_from_slice(&crc.to_le_bytes());
-        Ok(Self {
-            active,
-            bytes,
-            len,
-        })
+        Ok(Self { active, bytes, len })
     }
 
     /// Exactly the bytes that belong to this record, without the slot tail.
@@ -317,7 +318,8 @@ mod tests {
             assert_eq!(
                 REGISTRY[..index]
                     .iter()
-                    .filter(|other| parameters::name_hash(other.name) == parameters::name_hash(entry.name))
+                    .filter(|other| parameters::name_hash(other.name)
+                        == parameters::name_hash(entry.name))
                     .count(),
                 0
             );
@@ -328,7 +330,9 @@ mod tests {
     fn only_changed_values_are_stored_and_unknown_keys_are_ignored() {
         let commit = Commit::new(None, snapshot(2.0), OFF).unwrap();
         assert_eq!(
-            usize::from(u16::from_le_bytes(commit.data()[16..18].try_into().unwrap())),
+            usize::from(u16::from_le_bytes(
+                commit.data()[16..18].try_into().unwrap()
+            )),
             1
         );
         let record = decode(commit.data()).unwrap();
@@ -344,13 +348,12 @@ mod tests {
         let mut fixed = [0_u8; RECORD_SIZE];
         fixed[..len].copy_from_slice(&bytes);
         reseal(&mut fixed, len);
-        assert_eq!(
-            decode(&fixed[..len]).unwrap().snapshot,
-            Snapshot::default()
-        );
+        assert_eq!(decode(&fixed[..len]).unwrap().snapshot, Snapshot::default());
 
-        // An out-of-range stored value keeps the default instead of the record.
+        // A known, out-of-range stored value keeps its default.
         let mut bytes = fixed;
+        bytes[HEADER_SIZE..HEADER_SIZE + 2]
+            .copy_from_slice(&parameters::name_hash("LINK_LED_HZ").to_le_bytes());
         bytes[HEADER_SIZE + 2..HEADER_SIZE + 6].copy_from_slice(&42.0_f32.to_le_bytes());
         reseal(&mut bytes, len);
         assert_eq!(decode(&bytes[..len]).unwrap().snapshot, Snapshot::default());
@@ -362,7 +365,7 @@ mod tests {
         bytes[0] = COMMITTED;
         bytes[1..5].copy_from_slice(MAGIC);
         bytes[6..8].copy_from_slice(&1_u16.to_le_bytes());
-        bytes[8..12].copy_from_slice(&parameters::legacy_schema_tag().to_le_bytes());
+        bytes[8..12].copy_from_slice(&parameters::prefix_schema_tag(11).unwrap().to_le_bytes());
         bytes[12..16].copy_from_slice(&7_u32.to_le_bytes());
         bytes[16..18].copy_from_slice(&11_u16.to_le_bytes());
         bytes[18..20].copy_from_slice(&44_u16.to_le_bytes());
@@ -380,6 +383,38 @@ mod tests {
         assert_eq!(record.snapshot.get(parameters::Id::EstEnable), 0.0);
         assert_eq!(record.snapshot.get(parameters::Id::Ekf2PredictUs), 10_000.0);
         assert!(record.migrated);
+    }
+
+    #[test]
+    fn shipped_159_parameter_record_migrates_and_new_rates_keep_defaults() {
+        assert_eq!(Id::Ekf2En as usize, 17);
+        assert_eq!(Id::MavRateHeartbeat as usize, 159);
+        let mut parameters = Parameters::default();
+        parameters.set(Id::LinkLedHz, 2.0).unwrap();
+        parameters.set(Id::Ekf2PredictUs, 20_000.0).unwrap();
+        let snapshot = parameters.snapshot();
+        let count = 159;
+        let len = HEADER_SIZE + count * 4 + 4;
+        let mut bytes = [0; SLOT_SIZE];
+        bytes[0] = COMMITTED;
+        bytes[1..5].copy_from_slice(MAGIC);
+        bytes[6..8].copy_from_slice(&1_u16.to_le_bytes());
+        bytes[8..12].copy_from_slice(&parameters::prefix_schema_tag(count).unwrap().to_le_bytes());
+        bytes[16..18].copy_from_slice(&(count as u16).to_le_bytes());
+        bytes[18..20].copy_from_slice(&((count * 4) as u16).to_le_bytes());
+        for (index, value) in snapshot.values()[..count].iter().enumerate() {
+            bytes[HEADER_SIZE + index * 4..HEADER_SIZE + (index + 1) * 4]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        reseal(&mut bytes, len);
+        let record = decode(&bytes).unwrap();
+        assert!(record.migrated);
+        assert_eq!(record.snapshot, snapshot);
+        parameters.adopt(record.snapshot);
+        assert!(parameters.is_dirty());
+        let commit = Commit::new(None, parameters.snapshot(), OFF).unwrap();
+        assert_eq!(decode(commit.data()).unwrap().snapshot, snapshot);
+        assert!(!decode(commit.data()).unwrap().migrated);
     }
 
     #[test]
@@ -402,15 +437,13 @@ mod tests {
                 let decoded = decode(&corrupt[..next.data().len()]);
                 assert!(decoded.is_err());
                 assert_eq!(
-                    newest(&[decode(old.data()), decoded]).map(|(active, record)| (active, record.snapshot)),
+                    newest(&[decode(old.data()), decoded])
+                        .map(|(active, record)| (active, record.snapshot)),
                     Some((old.active, snapshot(1.0)))
                 );
             }
         }
-        for (offset, value, error) in [
-            (6, 3, DecodeError::Version),
-            (5, 1, DecodeError::Magic),
-        ] {
+        for (offset, value, error) in [(6, 3, DecodeError::Version), (5, 1, DecodeError::Magic)] {
             let mut bytes = [0_u8; RECORD_SIZE];
             let len = next.data().len();
             bytes[..len].copy_from_slice(next.data());
@@ -430,7 +463,10 @@ mod tests {
         bytes[HEADER_SIZE + 2..HEADER_SIZE + 6].copy_from_slice(&2.0_f32.to_le_bytes());
         reseal(&mut bytes, len);
         assert_eq!(decode(&bytes[..len]).unwrap().snapshot, expected);
-        assert_eq!(Snapshot::from_values(invalid), Err(parameters::Error::ReadOnly));
+        assert_eq!(
+            Snapshot::from_values(invalid),
+            Err(parameters::Error::ReadOnly)
+        );
     }
 
     #[test]

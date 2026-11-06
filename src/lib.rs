@@ -38,6 +38,10 @@ pub mod mavcan;
 pub mod mavftp;
 #[path = "core/mavlink_estimator.rs"]
 pub mod mavlink_estimator;
+#[path = "core/mavlink_power.rs"]
+pub mod mavlink_power;
+#[path = "core/mavlink_protocol.rs"]
+pub mod mavlink_protocol;
 #[path = "core/metrics.rs"]
 pub mod metrics;
 #[path = "core/parameter_store.rs"]
@@ -50,6 +54,8 @@ pub mod px4_messages;
 pub mod px4io;
 #[path = "core/slcan.rs"]
 pub mod slcan;
+#[path = "core/telemetry.rs"]
+pub mod telemetry;
 #[path = "core/ulog.rs"]
 pub mod ulog;
 #[path = "core/wall_clock.rs"]

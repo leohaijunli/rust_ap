@@ -100,6 +100,7 @@ static FRONTEND_PERF: Watch<CriticalSectionRawMutex, (TimingReport, ClockReport)
 static PUBLISH_PERF: Watch<CriticalSectionRawMutex, PublishStats, 0> = Watch::new();
 static EPOCH: AtomicU32 = AtomicU32::new(0);
 static ACTIVE_EPOCH: AtomicU32 = AtomicU32::new(0);
+static APPLIED_ALGORITHM: AtomicU32 = AtomicU32::new(0);
 static CONFIG_ERRORS: AtomicU32 = AtomicU32::new(0);
 static CONFIGURE_MAX_US: AtomicU32 = AtomicU32::new(0);
 static LAST_CONFIG_FAULT: AtomicU32 = AtomicU32::new(0);
@@ -154,37 +155,27 @@ pub fn submit_measurement(measurement: Measurement, device_id: u32) {
     }
 }
 
-/// Actual estimator state for ground-station reporting. `requested` is what
-/// the parameters ask for, `active` is whether the worker accepted and is
-/// consuming IMU, and `selection` is the algorithm that really feeds attitude.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Report {
-    pub requested: bool,
-    pub active: bool,
-    pub selection: Selection,
-}
-
-impl Report {
-    /// One-line wording for `STATUSTEXT`, plus whether an operator should
-    /// notice it: a silent fallback or a missing attitude matters, an idle
-    /// estimator does not.
-    pub fn label(self) -> (&'static str, bool) {
-        match (self.active, self.requested, self.selection) {
-            (false, false, _) => ("EST off", false),
-            (false, true, _) => ("EST starting", false),
-            (true, _, Selection::Filter) => ("EST EKF2 active", false),
-            (true, _, Selection::Mahony) => ("EST Mahony fallback", true),
-            (true, _, Selection::Invalid) => ("EST no attitude", true),
-        }
-    }
-}
+pub use v6x_rust_led::estimator::report::Report;
 
 pub fn report() -> Report {
+    let epoch = ACTIVE_EPOCH.load(Ordering::Acquire);
+    let now = Instant::now().as_micros();
     Report {
         requested: CONTROL.try_get().is_some_and(|value| value.params.enabled),
-        active: ACTIVE_EPOCH.load(Ordering::Acquire) != 0,
+        active: epoch != 0,
+        configured: if APPLIED_ALGORITHM.load(Ordering::Acquire) == 1 {
+            Algorithm::Ekf2
+        } else {
+            Algorithm::Mahony
+        },
         selection: OUTPUT
             .try_get()
+            .filter(|output| {
+                epoch != 0
+                    && output.epoch == epoch
+                    && now >= output.status.timestamp
+                    && now - output.status.timestamp <= runtime::FRESH_US
+            })
             .map_or(Selection::Invalid, |output| output.status.selection),
     }
 }
@@ -423,6 +414,10 @@ async fn task(
                         }
                         LAST_CONFIG_FAULT.store(0, Ordering::Relaxed);
                         enabled = true;
+                        APPLIED_ALGORITHM.store(
+                            u32::from(prefer_filter && !cfg!(feature = "estimator-mahony")),
+                            Ordering::Release,
+                        );
                         ACTIVE_EPOCH.store(epoch, Ordering::Release);
                         crate::imu::set_ahrs_active(true);
                     }

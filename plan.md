@@ -266,7 +266,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 ### 必需协议补齐（MAVLink v2 基础 + 差距）
 
 - 已实现：HEARTBEAT、SYS_STATUS、AUTOPILOT_VERSION、HIGHRES_IMU、STATUSTEXT、GPS_RAW_INT、PREFLIGHT_STORAGE、LOGGING_START/STOP、REQUEST_MESSAGE（部分）。
-- 待补流式：ATTITUDE、ATTITUDE_QUATERNION、LOCAL_POSITION_NED、GLOBAL_POSITION_INT（无定位发无效值）、BATTERY_STATUS（INA219）。
+- 必需流式：ATTITUDE、ATTITUDE_QUATERNION、LOCAL_POSITION_NED、GLOBAL_POSITION_INT、BATTERY_STATUS（INA219）；无效/陈旧姿态或定位不发，不用零值冒充有效解算。
 - 待补命令：SET_MESSAGE_INTERVAL(511)、完整 REQUEST_MESSAGE、`MAV_CMD_COMPONENT_ARM_DISARM`、`MAV_CMD_DO_SET_MODE`。
 - 模式上报：HEARTBEAT `base_mode` 置 `CUSTOM_MODE_ENABLED`，`custom_mode` 按 PX4 main_mode/sub_mode 编码。
 - RC_CHANNELS / SERVO_OUTPUT_RAW：无对应硬件，按“无数据则不发”处理（MAVLink 规范），不占位。
@@ -285,7 +285,27 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 ### 后续状态
 
-- **P0 已完成并板载验证**：一次 `PARAM_REQUEST_LIST` 收齐 159 参数、0 补拉（`single_list_stall_retries=0`）。初版共享游标被 USB/UART7 争抢致丢参，已改为每链路独立游标。source=`b623b18f05e5f694`。下一步 P1。
+- **P0 历史板载验证**：一次 `PARAM_REQUEST_LIST` 收齐 159 参数、0 补拉（`single_list_stall_retries=0`）。初版共享游标被 USB/UART7 争抢致丢参，已改为每链路独立游标。source=`b623b18f05e5f694`。
+- **2026-11-06 P1–P3 软件/普通包通过**：180 项 host 用例及普通/注入/dump/host Clippy 通过；标准构建/打包/布局与入口栈帧检查通过，source=`f5756b75d6ed78bf`。实物门与交付记录见 `TODO.md`，不将软件结果当作新版本板载验收。
+
+### 已实现的使用约定
+
+- 注册表沿用 `src/core/parameters.rs` 的宏，自动生成 Id、typed getter 与名字 hash；EKF 的值/范围仍只来自固定目录。QGC JSON 只读编译后的注册表，生成器 `--check` 与核心元数据用例检查 stale；FRAM 布局由槽大小/条目长度计算。v2 忽略未知键，新项用默认值；v1 仅接受匹配的完整前缀，并在下次保存迁移。
+- 单 Router 拥有 RX 解析、命令、流调度与会话；USB/UART7 只传字节。每链路独立计时、参数游标和 FTP，慢 TX 不挡 RX/另一链路。已接受的 bootloader 请求给 ACK 100 ms 发送机会，不因主机关闭 CDC 而取消恢复。
+- `SET_MESSAGE_INTERVAL(511)` 的参数 1 为消息 ID、参数 2 为微秒间隔；`-1` 禁发、`0` 恢复注册表速率、正数最小 20000 µs，非法/非有限值拒绝。覆盖仅作用于请求链路，按目标组件区分主实例 1 与独立实例 197；USB 会话重置清除覆盖，UART7 无流控，不宣称能检测物理拔线，覆盖由 `0` 或重启恢复。`GET_MESSAGE_INTERVAL(510)` 返回有效间隔。REQUEST_MESSAGE 对已支持但无新鲜数据的消息返回 TEMPORARILY_REJECTED，未知消息返回 UNSUPPORTED。
+- `MAV_RATE_*` 为 Hz，`0` 禁发，对两链路的默认速率生效；511 为会话覆盖。参数名不超过 MAVLink 的 16 字节限制：
+
+| 参数 | 默认 Hz | 流 |
+| --- | ---: | --- |
+| `MAV_RATE_HB` | 1 | HEARTBEAT、SYS_STATUS、SYSTEM_TIME |
+| `MAV_RATE_STATUS` | 0.2 | STATUSTEXT；估计器状态变化另走 publish |
+| `MAV_RATE_SENSORS` | 20 | HIGHRES_IMU、SCALED_PRESSURE |
+| `MAV_RATE_EST` | 10 | 姿态、有效位置、双实例诊断/独立 ODOMETRY |
+| `MAV_RATE_GPS` | 5 | GPS_RAW_INT；无数据时最多 1 Hz NO_GPS |
+| `MAV_RATE_POWER` | 10 | INA219 DEBUG_VECT、BATTERY_STATUS |
+
+- 估计器实际选择通过标准 STATUSTEXT 上报，不挪用 ESTIMATOR_STATUS 的保留位；主动选择 Mahony 不误报为回退，旧 epoch/陈旧输出不报健康。BATTERY_STATUS 仅映射独立支路实测电压/电流，电量、能量、温度未知值保留。
+- 心跳置 CUSTOM_MODE_ENABLED，PX4 main_mode=MANUAL/sub_mode=0 仅作兼容上报；ARM/DISARM/DO_SET_MODE 不动作。整数参数能力位与 bytewise 编码一致。解析 signed MAVLink2 的标准签名尾并检查 CRC，但不宣称已实现签名认证。
 
 ## 8. 待补硬件输入
 

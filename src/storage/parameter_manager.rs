@@ -15,7 +15,6 @@ use crate::fram::{self, Fram};
 /// Ground stations write parameter batches one value at a time. Each commit
 /// rewrites and verifies the whole record over SPI, so wait for the writes to
 /// go quiet and persist the batch once instead of stalling per value.
-const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 const SAVE_POLL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,7 +58,7 @@ pub struct ParameterManager<'d> {
     values: RefCell<Parameters>,
     fram: Mutex<NoopRawMutex, Fram<'d>>,
     status: Cell<Status>,
-    save_due: Cell<Option<Instant>>,
+    save_due: Cell<parameters::DeferredSave>,
 }
 
 impl<'d> ParameterManager<'d> {
@@ -74,7 +73,7 @@ impl<'d> ParameterManager<'d> {
                 slots: [Err(DecodeError::Uncommitted); 2],
                 last_error: None,
             }),
-            save_due: Cell::new(None),
+            save_due: Cell::new(parameters::DeferredSave::default()),
         }
     }
 
@@ -92,7 +91,9 @@ impl<'d> ParameterManager<'d> {
             return Ok(false);
         }
         if parameters::is_estimator_parameter(id) {
-            if let Err(error) = crate::estimator::configure(self.values.borrow().snapshot()) {
+            // Drop the read borrow before a rejected configuration rolls RAM back.
+            let snapshot = self.snapshot();
+            if let Err(error) = crate::estimator::configure(snapshot) {
                 let _ = self.values.borrow_mut().set(id, previous);
                 return Err(error);
             }
@@ -115,7 +116,7 @@ impl<'d> ParameterManager<'d> {
     /// Push every LOG_* parameter's current RAM value into the logging policy.
     fn apply_log_config(&self) {
         for definition in parameters::REGISTRY {
-            if definition.name.starts_with("LOG_") {
+            if definition.group == parameters::Group::SdLog {
                 v6x_rust_led::log_config::apply(definition.id, self.get(definition.id));
             }
         }
@@ -127,17 +128,18 @@ impl<'d> ParameterManager<'d> {
 
     /// Defer the FRAM commit; a later write restarts the quiet window.
     pub fn defer_save(&self) {
-        self.save_due.set(Some(Instant::now() + SAVE_DEBOUNCE));
+        let mut pending = self.save_due.get();
+        pending.defer(Instant::now().as_micros());
+        self.save_due.set(pending);
     }
 
     pub fn save_pending(&self) -> bool {
-        self.save_due.get().is_some()
+        self.save_due.get().pending()
     }
 
     /// Commit the deferred snapshot once the batch has been quiet long enough.
     pub async fn flush_deferred(&self, outputs: OutputState) -> Option<Result<Saved, Error>> {
-        let due = self.save_due.get()?;
-        if Instant::now() < due {
+        if !self.save_due.get().ready(Instant::now().as_micros()) {
             return None;
         }
         Some(self.save(outputs).await)
@@ -150,7 +152,7 @@ impl<'d> ParameterManager<'d> {
     /// Read compatible storage or use defaults. Never writes on boot/load.
     pub async fn load(&self) -> Result<LoadState, Error> {
         // Loading replaces RAM, so any deferred commit is obsolete.
-        self.save_due.set(None);
+        self.save_due.set(parameters::DeferredSave::default());
         let result = self.load_inner().await;
         if let Err(error) = result {
             let mut status = self.status.get();
@@ -204,7 +206,7 @@ impl<'d> ParameterManager<'d> {
     /// Explicit, serialized save; the exact verified snapshot becomes `saved`.
     pub async fn save(&self, outputs: OutputState) -> Result<Saved, Error> {
         // An explicit save already persists everything pending.
-        self.save_due.set(None);
+        self.save_due.set(parameters::DeferredSave::default());
         let result = self.save_inner(outputs).await;
         let mut status = self.status.get();
         status.last_error = result.as_ref().err().copied();
@@ -228,10 +230,11 @@ impl<'d> ParameterManager<'d> {
                 written: false,
             });
         }
-        let commit = Commit::new(status.active, snapshot, outputs).map_err(|error| match error {
-            CommitError::OutputsActive => Error::OutputsActive,
-            CommitError::Capacity => Error::Capacity,
-        })?;
+        let commit =
+            Commit::new(status.active, snapshot, outputs).map_err(|error| match error {
+                CommitError::OutputsActive => Error::OutputsActive,
+                CommitError::Capacity => Error::Capacity,
+            })?;
         let mut verified = [0; fram::CHUNK];
         for write in commit.writes() {
             for (index, chunk) in write.bytes.chunks(fram::CHUNK).enumerate() {

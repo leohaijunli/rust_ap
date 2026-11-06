@@ -22,6 +22,8 @@ pub enum Group {
     SdLog,
     Estimator,
     Ekf2,
+    /// MAVLink link rates and other transport-owned settings.
+    Link,
 }
 
 impl Group {
@@ -32,6 +34,7 @@ impl Group {
             Self::SdLog => "SDLog",
             Self::Estimator => "Estimator",
             Self::Ekf2 => "EKF2",
+            Self::Link => "Link",
         }
     }
 }
@@ -40,6 +43,7 @@ impl Group {
 pub struct Definition {
     pub id: Id,
     pub name: &'static str,
+    pub hash: u16,
     pub group: Group,
     pub kind: Kind,
     pub default: f32,
@@ -48,94 +52,158 @@ pub struct Definition {
     pub access: Access,
 }
 
-// Generate typed keys and the wire-order table together: one entry per parameter.
+macro_rules! parameter_type {
+    (Integer) => {
+        i32
+    };
+    (Real) => {
+        f32
+    };
+}
+
+macro_rules! parameter_value {
+    ($value:expr, Integer) => {
+        $value as i32
+    };
+    ($value:expr, Real) => {
+        $value
+    };
+}
+
+// Append new groups after the shipped IDs so v1 prefix records remain readable.
 macro_rules! parameter_table {
-    (base { $($id:ident { name: $name:literal, group: $group:ident, kind: $kind:ident,
+    (base { $($id:ident { name: $name:literal, getter: $getter:ident, group: $group:ident, kind: $kind:ident,
         default: $default:expr, min: $min:expr, max: $max:expr, access: $access:ident }),+ $(,)? }
-        ekf { $($ekf_id:ident: $index:literal),+ $(,)? }) => {
+        ekf { $($ekf_id:ident: $index:literal => $ekf_getter:ident: $ekf_kind:ident),+ $(,)? }
+        link { $($link_id:ident { name: $link_name:literal, getter: $link_getter:ident,
+            group: $link_group:ident, kind: $link_kind:ident, default: $link_default:expr,
+            min: $link_min:expr, max: $link_max:expr, access: $link_access:ident }),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         #[repr(usize)]
-        pub enum Id { $($id),+, $($ekf_id),+ }
+        pub enum Id { $($id),+, $($ekf_id),+, $($link_id),+ }
 
         pub const REGISTRY: &[Definition] = &[
-            $(Definition { id: Id::$id, name: $name, group: Group::$group, kind: Kind::$kind,
+            $(Definition { id: Id::$id, name: $name, hash: name_hash($name), group: Group::$group, kind: Kind::$kind,
                 default: $default, min: $min, max: $max, access: Access::$access }),+,
-            $(ekf_definition(Id::$ekf_id, $index)),+
+            $(ekf_definition(Id::$ekf_id, $index)),+,
+            $(Definition { id: Id::$link_id, name: $link_name, hash: name_hash($link_name), group: Group::$link_group,
+                kind: Kind::$link_kind, default: $link_default, min: $link_min,
+                max: $link_max, access: Access::$link_access }),+
         ];
+
+        impl Snapshot {
+            $(pub fn $getter(&self) -> parameter_type!($kind) {
+                parameter_value!(self.get(Id::$id), $kind)
+            })+
+            $(pub fn $ekf_getter(&self) -> parameter_type!($ekf_kind) {
+                parameter_value!(self.get(Id::$ekf_id), $ekf_kind)
+            })+
+            $(pub fn $link_getter(&self) -> parameter_type!($link_kind) {
+                parameter_value!(self.get(Id::$link_id), $link_kind)
+            })+
+        }
     };
 }
 
 include!("estimator/runtime_parameter_table.rs");
 
 with_ekf2_parameters! {
+    base {
     MavSysId {
-        name: "MAV_SYS_ID", group: System, kind: Integer, default: 1.0,
+        name: "MAV_SYS_ID", getter: mav_sys_id, group: System, kind: Integer, default: 1.0,
         min: 1.0, max: 255.0, access: ReadOnly
     },
     LinkLedHz {
-        name: "LINK_LED_HZ", group: Status, kind: Real, default: 1.0,
+        name: "LINK_LED_HZ", getter: link_led_hz, group: Status, kind: Real, default: 1.0,
         min: 0.1, max: 10.0, access: NextCycle
     },
     LogEnImu {
-        name: "LOG_EN_IMU", group: SdLog, kind: Integer, default: 1.0,
+        name: "LOG_EN_IMU", getter: log_en_imu, group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogImuHz {
-        name: "LOG_IMU_HZ", group: SdLog, kind: Real, default: 200.0,
+        name: "LOG_IMU_HZ", getter: log_imu_hz, group: SdLog, kind: Real, default: 200.0,
         min: 1.0, max: 1000.0, access: NextCycle
     },
     LogEnIna {
-        name: "LOG_EN_INA", group: SdLog, kind: Integer, default: 1.0,
+        name: "LOG_EN_INA", getter: log_en_ina, group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogInaHz {
-        name: "LOG_INA_HZ", group: SdLog, kind: Real, default: 10.0,
+        name: "LOG_INA_HZ", getter: log_ina_hz, group: SdLog, kind: Real, default: 10.0,
         min: 1.0, max: 100.0, access: NextCycle
     },
     LogEnCan {
-        name: "LOG_EN_CAN", group: SdLog, kind: Integer, default: 1.0,
+        name: "LOG_EN_CAN", getter: log_en_can, group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogCanHz {
-        name: "LOG_CAN_HZ", group: SdLog, kind: Real, default: 400.0,
+        name: "LOG_CAN_HZ", getter: log_can_hz, group: SdLog, kind: Real, default: 400.0,
         min: 1.0, max: 1000.0, access: NextCycle
     },
     LogEnHealth {
-        name: "LOG_EN_HEALTH", group: SdLog, kind: Integer, default: 1.0,
+        name: "LOG_EN_HEALTH", getter: log_en_health, group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogHealthHz {
-        name: "LOG_HEALTH_HZ", group: SdLog, kind: Real, default: 10.0,
+        name: "LOG_HEALTH_HZ", getter: log_health_hz, group: SdLog, kind: Real, default: 10.0,
         min: 1.0, max: 100.0, access: NextCycle
     },
     LogEnEvent {
-        name: "LOG_EN_EVENT", group: SdLog, kind: Integer, default: 1.0,
+        name: "LOG_EN_EVENT", getter: log_en_event, group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     EstEnable {
-        name: "EST_EN", group: Estimator, kind: Integer, default: 0.0,
+        name: "EST_EN", getter: est_en, group: Estimator, kind: Integer, default: 0.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     EstAlgorithm {
-        name: "EST_ALGO", group: Estimator, kind: Integer, default: 1.0,
+        name: "EST_ALGO", getter: est_algo, group: Estimator, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogEnEst {
-        name: "LOG_EN_EST", group: SdLog, kind: Integer, default: 1.0,
+        name: "LOG_EN_EST", getter: log_en_est, group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogEstHz {
-        name: "LOG_EST_HZ", group: SdLog, kind: Real, default: 5.0,
+        name: "LOG_EST_HZ", getter: log_est_hz, group: SdLog, kind: Real, default: 5.0,
         min: 1.0, max: 10.0, access: NextCycle
     },
     LogEnBaro {
-        name: "LOG_EN_BARO", group: SdLog, kind: Integer, default: 1.0,
+        name: "LOG_EN_BARO", getter: log_en_baro, group: SdLog, kind: Integer, default: 1.0,
         min: 0.0, max: 1.0, access: NextCycle
     },
     LogBaroHz {
-        name: "LOG_BARO_HZ", group: SdLog, kind: Real, default: 10.0,
+        name: "LOG_BARO_HZ", getter: log_baro_hz, group: SdLog, kind: Real, default: 10.0,
         min: 1.0, max: 20.0, access: NextCycle
     },
+    }
+    link {
+    MavRateHeartbeat {
+        name: "MAV_RATE_HB", getter: mav_rate_hb, group: Link, kind: Real, default: 1.0,
+        min: 0.0, max: 10.0, access: NextCycle
+    },
+    MavRateStatus {
+        name: "MAV_RATE_STATUS", getter: mav_rate_status, group: Link, kind: Real, default: 0.2,
+        min: 0.0, max: 2.0, access: NextCycle
+    },
+    MavRateSensors {
+        name: "MAV_RATE_SENSORS", getter: mav_rate_sensors, group: Link, kind: Real, default: 20.0,
+        min: 0.0, max: 50.0, access: NextCycle
+    },
+    MavRateEstimator {
+        name: "MAV_RATE_EST", getter: mav_rate_est, group: Link, kind: Real, default: 10.0,
+        min: 0.0, max: 50.0, access: NextCycle
+    },
+    MavRateGps {
+        name: "MAV_RATE_GPS", getter: mav_rate_gps, group: Link, kind: Real, default: 5.0,
+        min: 0.0, max: 10.0, access: NextCycle
+    },
+    MavRatePower {
+        name: "MAV_RATE_POWER", getter: mav_rate_power, group: Link, kind: Real, default: 10.0,
+        min: 0.0, max: 20.0, access: NextCycle
+    },
+    }
 }
 
 /// Parameters whose change reprograms the estimator: the generated EKF2
@@ -155,6 +223,7 @@ const fn ekf_definition(id: Id, index: usize) -> Definition {
     Definition {
         id,
         name: entry.name,
+        hash: name_hash(entry.name),
         group: Group::Ekf2,
         kind: if integer { Kind::Integer } else { Kind::Real },
         default: match entry.default {
@@ -179,6 +248,24 @@ const fn ekf_definition(id: Id, index: usize) -> Definition {
 
 pub const COUNT: usize = REGISTRY.len();
 
+const _: () = {
+    assert!(COUNT <= u16::MAX as usize);
+    let mut index = 0;
+    while index < COUNT {
+        let name = REGISTRY[index].name;
+        assert!(!name.is_empty() && name.len() <= 16 && name.is_ascii());
+        let mut other = 0;
+        while other < index {
+            assert!(
+                REGISTRY[index].hash != REGISTRY[other].hash,
+                "parameter name hash collision"
+            );
+            other += 1;
+        }
+        index += 1;
+    }
+};
+
 impl Id {
     pub const fn definition(self) -> &'static Definition {
         &REGISTRY[self as usize]
@@ -199,7 +286,7 @@ impl Id {
     pub fn from_hash(hash: u16) -> Option<Self> {
         REGISTRY
             .iter()
-            .find(|entry| name_hash(entry.name) == hash)
+            .find(|entry| entry.hash == hash)
             .map(|entry| entry.id)
     }
 }
@@ -292,6 +379,23 @@ pub struct Parameters {
     saved: Option<Snapshot>,
 }
 
+#[derive(Clone, Copy, Default)]
+pub struct DeferredSave {
+    due: Option<u64>,
+}
+
+impl DeferredSave {
+    pub fn defer(&mut self, now: u64) {
+        self.due = Some(now.saturating_add(500_000));
+    }
+    pub fn pending(self) -> bool {
+        self.due.is_some()
+    }
+    pub fn ready(self, now: u64) -> bool {
+        self.due.is_some_and(|due| now >= due)
+    }
+}
+
 impl Parameters {
     pub fn get(&self, id: Id) -> f32 {
         self.current.get(id)
@@ -367,10 +471,9 @@ pub const fn name_hash(name: &str) -> u16 {
     crc
 }
 
-/// The prior 11 parameters keep their order/ranges. Old valid FRAM records can
-/// be read without writing or discarding the engineer's logging settings.
-pub fn legacy_schema_tag() -> u32 {
-    schema_tag_for(&REGISTRY[..11])
+/// Old positional records are accepted only when their complete prefix matches.
+pub fn prefix_schema_tag(count: usize) -> Option<u32> {
+    REGISTRY.get(..count).map(schema_tag_for)
 }
 
 fn schema_tag_for(registry: &[Definition]) -> u32 {
@@ -456,5 +559,30 @@ mod tests {
         assert!(!parameters.is_dirty());
         parameters.restore(saving);
         assert_eq!(parameters.get(Id::LinkLedHz), 2.0);
+    }
+
+    #[test]
+    fn a_parameter_batch_restarts_the_quiet_window_and_only_commits_once() {
+        let mut pending = DeferredSave::default();
+        assert!(!pending.pending());
+        pending.defer(0);
+        pending.defer(400_000);
+        assert!(!pending.ready(500_000));
+        assert!(!pending.ready(899_999));
+        assert!(pending.ready(900_000));
+        let mut commits = 0;
+        for now in [900_000, 1_000_000] {
+            if pending.ready(now) {
+                commits += 1;
+                pending = DeferredSave::default();
+            }
+        }
+        assert_eq!(commits, 1);
+        assert!(!pending.ready(1_000_000));
+        let snapshot = Snapshot::default();
+        let _: i32 = snapshot.est_algo();
+        let _: i32 = snapshot.ekf2_en();
+        let _: f32 = snapshot.ekf2_gyr_noise();
+        assert_eq!(snapshot.mav_rate_hb(), 1.0);
     }
 }

@@ -37,7 +37,8 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
             "COMMANDS help status platform metrics fault fram params dronecan mavcan imu ina219 px4io logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
         ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
-        Command::Metrics => crate::diagnostics::write_diagnostics(&mut response),
+        Command::Metrics => crate::diagnostics::write_diagnostics(&mut response)
+            .and_then(|()| crate::router::write_diagnostics(&mut response)),
         Command::MetricsReset => {
             crate::diagnostics::request_reset();
             writeln!(response, "OK metrics-reset-requested")
@@ -232,10 +233,7 @@ pub(crate) async fn parameter_report(
                 status.active.map_or(0, |active| active.generation),
                 parameter_store::FORMAT_VERSION, schema_tag(), status.slots[0], status.slots[1], status.last_error);
             let _ = write!(response, "PARAM_VALUES");
-            for entry in REGISTRY
-                .iter()
-                .filter(|entry| entry.group != Group::Ekf2)
-            {
+            for entry in REGISTRY.iter().filter(|entry| entry.group != Group::Ekf2) {
                 let _ = write!(response, " {}={}", entry.name, parameters.get(entry.id));
             }
             let _ = writeln!(response);

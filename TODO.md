@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-05。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；H7 PX4IO 通信、日志短按/长按保留事件与蜂鸣软件通过，灯归属/IO 实物待 H-12；IO MCU Rust 重写已排 IO-R0～R5，尚未实施；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；MAVLink 参数重构 P0（PARAM_REQUEST_LIST 流式 + INT32 类型）完成并板载验证一次收齐 159（source=`b623b18f05e5f694`），P1–P3 待做；实物集中待 H-02/03/04、H-10/12/13、QGC GUI 目视与工程师操作，M1 未开始。**
+更新：2026-11-06。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；H7 PX4IO 通信、日志短按/长按保留事件与蜂鸣软件通过，灯归属/IO 实物待 H-12；IO MCU Rust 重写已排 IO-R0～R5，尚未实施；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；MAVLink 参数重构 P0 已板载收齐 159，P1–P3 软件与普通包通过（source=`f5756b75d6ed78bf`），本轮板载验证待验；实物集中待 H-02/03/04、H-10/12/13、QGC GUI 目视与工程师操作，M1 未开始。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -13,14 +13,17 @@
 
 ## 当前优先工作 — P4b-g / GNSS
 
-### MAVLink 协议补齐与参数/存储重构（2026-11-05 工程师授权，实施中）
+### MAVLink 协议补齐与参数/存储重构（2026-11-05 工程师授权，软件完成/板载待验）
 
 需求与计划见 [plan.md §8b](plan.md#8b-mavlink-协议补齐与参数存储重构2026-11-05-整合需求)。
 
 - [x] **P0：PARAM_REQUEST_LIST 流式 + INT32 类型**：全量参数改为游标逐发（`next_param_value`，两链路 transmit 每 tick 一个），回包按 `Kind` 发 `INT32`/`REAL32`，`PARAM_SET` 同时收两者。**板载已验证：一次 `PARAM_REQUEST_LIST` 收齐 159 个参数、0 次补拉（`single_list_stall_retries=0`），source=`b623b18f05e5f694`**。初版共享游标被 USB/UART7 两链路争抢致丢参，已改为每链路独立游标。host 167 测试全过。
-- [ ] **P1**：设参防抖/延迟保存；去 `Parameters::set` 双重校验。
-- [ ] **P2**：名字 hash 存储记录（加参数不丢用户设置）；注册表生成器（`param!` → Id/REGISTRY/getter + 自动元数据 + FRAM 布局）。
-- [ ] **P3**：流表 + 共享调度器（`MAV_RATE_<name>`）；单 Router；`SET_MESSAGE_INTERVAL`/`REQUEST_MESSAGE`；`telemetry::publish`。
+- [x] **P1 实现/核心检查**：500 ms 静默窗口、100 ms 保存轮询；单次校验，估计器拒绝后回滚；归属判据由 EKF 生成器产出。防抖窗口直接用例通过。
+- [x] **P2 实现/核心检查**：FRAM v2 按名字 CRC-16 存非默认值；旧 11/159 项 v1 前缀记录可迁移；注册表宏生成 Id/typed getter/hash，分组由编译产物生成 QGC JSON，长度/碰撞及 stale 校验通过。新增 6 项速率参数后共 **165 项**。
+- [x] **P3 实现/核心检查**：唯一 Router 任务；双链路独立游标/FTP/流间隔与会话；流表、511/510、统一 REQUEST_MESSAGE 和非阻塞 `telemetry::publish`。补 BATTERY_STATUS 与有效姿态/位置；ARM/模式仅拒绝应答。状态文本区分 off、EKF2、主动 Mahony、Mahony 回退和无新鲜姿态。
+- [x] **本轮软件检查**：host **180 passed**；普通/fault-injection/fault-dump 与 host Clippy（`-D warnings`）通过；EKF 生成器与 QGC 元数据 `--check` 通过；已做一次局部 `code-simplifier` 审视。
+- [x] **普通包/布局**：`tools/build_firmware.ps1` 通过；source=`f5756b75d6ed78bf`，raw/padded=`1105864/1105888 B`，static RAM=`276656 B`，最大入口栈帧=`11560 B`（0 超限，不是完整调用链/板载水位证明）；board ID 53、入口 `0x08020000` 保持。包：`target/thumbv7em-none-eabihf/release/v6x-rust-led.px4`；SHA-256=`096638626b96e0b097fdb04189fcdf12592e5947d1fa0d3b25330ec6e2622b21`。
+- [ ] **板载门**：未刷写本轮版本。依 `plan.md` §4，工程师在 H-03 条件具备后同次验证双链路/一次重连、165 项全量/按名/索引读取、合法/非法设值、延迟保存与一次重启读回；同时验证改单链路间隔不串线、状态上报及 QGC 恢复。旧 P0 板载结果不代替本轮验收，不放行 M1/E7 依赖门。
 
 边界（工程师确认）：ARM/DISARM 与 DO_SET_MODE 只应答不动作（归 P5a）；RC/SERVO 无硬件不发。
 
@@ -88,7 +91,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 ## M1 前置阶段
 
 - [x] **P3a / P3A-01～04**：FM25V02A 全量备份、统一参数 API、双槽原子持久化、一次保存/掉电读回通过；[证据](docs/acceptance/p3a/README.md)。2026-11-03 复测：设值→`!param-save`→重启两次（slot 0/gen 1、slot 1/gen 2）均从 FRAM 读回。旧存档因新增 `LOG_*` 参数的 schema 变更被拒绝并回退默认值（设计如此，不静默迁移）。
-- [x] **参数自动保存**：`PARAM_SET` 在 disarmed 且输出关闭时直接写 FRAM（`save` 失败回 RAM-only 警告）；实测一次设值即 `slot=0 generation=3 dirty=false`，`!param-save`/`PREFLIGHT_STORAGE` 仍可用。
+- [x] **参数自动保存历史验证**：原版 `PARAM_SET` 在 disarmed 且输出关闭时直接写 FRAM；实测一次设值即 `slot=0 generation=3 dirty=false`，`!param-save`/`PREFLIGHT_STORAGE` 可用。本轮已改为延迟提交，实物验证待上方 §8b 板载门。
 - [x] **参数分组元数据**：`MAV_CMD_REQUEST_MESSAGE`(397) → `COMPONENT_METADATA` + 只读 MAVFTP（`component_metadata/{general,parameters}.json`），9 个 `LOG_*` 归入 `SDLog`；板载下载与 CRC 校验通过（source=`c88f30f929842543`，raw/padded=`398000/398016 B`，static RAM=`236872 B`，栈未触达 36972 B）。[证据](docs/acceptance/p3a/README.md#参数分组元数据2026-11-03)。QGC 参数页 “SDLog” 分组呈列待工程师目视确认。
 - [x] **MSG-01 标准消息软件检查**：`sensor_accel` / `sensor_gyro`、`actuator_armed` 与固定 PX4 定义对齐；fmt/Clippy、4 项受影响核心用例、pyulog 与普通打包/布局通过，软件 source=`c2f3128aecc8a70b`。[记录](docs/acceptance/messages/README.md)；实物核对并入 P4 下一次必验记录。
 - [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
