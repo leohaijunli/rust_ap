@@ -20,7 +20,8 @@
 - [x] H-04 回装与 300 s 复测：原 bootloader 回装 `f1825489b4f35661`（VTOR/时钟/备份域/165 参数/历史故障保持）；300 s 分布 17 次 dropout 全部 ≤6 ms（合计 46 ms）、正常丢失 34 条（0.0239%）、事件 0，按 ≤10 ms/事件 0 窗口通过。[记录](docs/acceptance/pl-a/20261107-h04-300s-r2.md)。
 - [x] H-04 受控断电：写日志中断电后日志 id 24（17,832,448 B、712.85 s）完整可解析、`file_corruption=false`；VTOR/备份域/165 参数/历史故障保持。会话内出现 1 次 152 ms 停顿（48 次 ≤6 ms、事件 0），超出 ≤10 ms 窗口，待工程师裁决换卡或放宽。[记录](docs/acceptance/pl-a/20261107-h04-power-loss.md)。
 - [x] H-04 缺卡启动：无卡时 heartbeat 在线、`logger start` 进入 Error(stage=2) 不挂死、列表请求回 "Log SD mount failed"、无新 fault；插回卡后旧 25 条日志完好、`logger start/stop` 恢复正常（验证短会话 id 25 不计入统计）。卡面确认为 **A1 HC1**（此前"无 A1/A2 标注"记录修正；A1 保证随机读 IOPS 而非无长写停顿，152 ms 事件仍按窗口裁决）。[记录](docs/acceptance/pl-a/20261107-h04-nocard.md)。
-- [ ] H-04 收口：剩余写日志中拔卡（[实物步骤](docs/acceptance/pl-a/20261107-h04-physical-procedure.md)，物理操作由工程师执行）；152 ms 越界事件的窗口裁决并入收口。
+- [x] H-04 写日志中拔卡：写入中拔卡 ≥5 s → logger 进 Error(stage=12)、errors+1、无 panic/重启、`SYSTEM_TIME` 连续；断电恢复后 28 条旧日志完好（id 27 大小与计数器逐字节一致）、头部 2 MiB 解析无损坏、新日志可启停、参数/故障不变。首次 <1 s 拔插被完全吸收（0 写失败）。[记录](docs/acceptance/pl-a/20261107-h04-card-removal.md)。
+- [ ] H-04 收口（只剩工程师裁决）：①152 ms 长尾的窗口判定——换 SanDisk Extreme U3 级卡重测，或扩容队列（512→1024 槽，+120 KiB RAM，吸收 ≥2 s 停顿）后复测，或按低频离群接受；②是否实现写失败自动换文件（PX4 对齐）；已备好对照与依据（[PX4 logger 对照](docs/logging-dropout-options.md#px4-logger-对照2026-11-07px4-官方文档卡面-2026-11-07-确认为-a1-hc1)）。
 
 - [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
 - [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
