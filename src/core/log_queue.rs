@@ -6,11 +6,13 @@ use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 use crate::ulog::{self, Record};
 
-pub const QUEUE_BYTES: usize = 120 * 1024;
+pub const QUEUE_BYTES: usize = 240 * 1024;
 pub const EVENT_RESERVE_BYTES: usize = 8 * 1024;
-pub const QUEUE_SLOTS: usize = 512;
+// 1024 slots hold ~2.2 s at the ~470 records/s production rate, so card-level
+// stalls (152 ms observed on the A1 card) are absorbed instead of dropped.
+// +112 KiB static RAM approved by the engineer on 2026-11-07.
+pub const QUEUE_SLOTS: usize = 1024;
 // Complete estimator_states payload (213 B) plus the 5 B record header.
-// Reduce slots instead of expanding static RAM; drops remain explicit.
 pub const RUNTIME_RECORD_LEN: usize = 218;
 const EVENT_RESERVE_SLOTS: u32 = 64;
 const NORMAL_LIMIT: u32 = QUEUE_SLOTS as u32 - EVENT_RESERVE_SLOTS;

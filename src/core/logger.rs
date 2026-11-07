@@ -84,6 +84,17 @@ pub const fn accepts(status: Status, command: Command) -> bool {
     }
 }
 
+/// `run_session` failure stages. Data write (12) and fsync (13) restart into a
+/// fresh file, PX4-style; earlier stages (mount, scheme, definitions) keep the
+/// explicit Error state. Stage 14 is the console-visible restart window.
+pub const SESSION_STAGE_WRITE_ERROR: u8 = 12;
+pub const SESSION_STAGE_FSYNC_ERROR: u8 = 13;
+pub const SESSION_STAGE_RESTART: u8 = 14;
+
+pub const fn write_failure_restarts_session(stage: u8) -> bool {
+    matches!(stage, SESSION_STAGE_WRITE_ERROR | SESSION_STAGE_FSYNC_ERROR)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControlError {
     InvalidState,
@@ -244,5 +255,27 @@ mod tests {
         assert_eq!(download_count(100, 10, 20), Ok(20));
         assert_eq!(download_count(100, 90, u32::MAX), Ok(10));
         assert_eq!(download_count(100, 100, 1), Err(LogError::Range));
+    }
+
+    #[test]
+    fn only_data_write_and_fsync_failures_restart_into_a_fresh_file() {
+        assert!(write_failure_restarts_session(SESSION_STAGE_WRITE_ERROR));
+        assert!(write_failure_restarts_session(SESSION_STAGE_FSYNC_ERROR));
+        assert!(
+            !write_failure_restarts_session(2),
+            "mount failure keeps Error"
+        );
+        assert!(
+            !write_failure_restarts_session(4),
+            "unknown scheme keeps Error"
+        );
+        assert!(
+            !write_failure_restarts_session(10),
+            "definition write keeps Error"
+        );
+        assert!(
+            !write_failure_restarts_session(21),
+            "management failure keeps Error"
+        );
     }
 }

@@ -20,8 +20,9 @@ use embedded_partitions::mbr::Scheme;
 use v6x_rust_led::log_config::Group;
 use v6x_rust_led::log_queue::{Class, Logger};
 use v6x_rust_led::logger::{
-    accepts, download_count, is_ulog_name, list_bounds, Command, Config as LoggerConfig,
-    ControlError, Link, LogError, LogRequest, LogResponse, RoutedLogRequest, Snapshot, Status,
+    accepts, download_count, is_ulog_name, list_bounds, write_failure_restarts_session, Command,
+    Config as LoggerConfig, ControlError, Link, LogError, LogRequest, LogResponse,
+    RoutedLogRequest, Snapshot, Status, SESSION_STAGE_RESTART,
 };
 use v6x_rust_led::parameters::{Kind, REGISTRY};
 use v6x_rust_led::px4_messages::{
@@ -35,6 +36,8 @@ use crate::parameter_manager::ParameterManager;
 const STAGING_BYTES: usize = 32 * 1024;
 const CARD_HZ: Hertz = Hertz(25_000_000);
 const START_DEFER: Duration = Duration::from_millis(100);
+const WRITE_RESTART_ATTEMPTS: u32 = 3;
+const WRITE_RESTART_BACKOFF: Duration = Duration::from_millis(500);
 const INIT_TIMEOUT: Duration = Duration::from_secs(5);
 const MANAGEMENT_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -453,13 +456,18 @@ pub async fn run(
                 Timer::after(START_DEFER).await;
                 power.set_high();
                 Timer::after_millis(20).await;
-                let result = run_session(&mut sdmmc, parameters).await;
+                let outcome = run_session(&mut sdmmc, parameters).await;
                 power.set_low();
-                match result {
+                match outcome {
                     Ok(()) => STATE.set_status(Status::Disabled, 0),
                     Err(stage) => {
                         STATE.errors.fetch_add(1, Ordering::Relaxed);
-                        STATE.set_status(Status::Error, stage);
+                        if write_failure_restarts_session(stage) {
+                            restart_after_write_failure(&mut sdmmc, parameters, &mut power, stage)
+                                .await;
+                        } else {
+                            STATE.set_status(Status::Error, stage);
+                        }
                     }
                 }
             }
@@ -483,6 +491,50 @@ pub async fn run(
             }
         }
     }
+}
+
+/// PX4-style recovery: a failed data write or fsync reopens a fresh file so a
+/// transient stall or card reseat does not end the log. The queue backlog from
+/// before the failure is kept and written into the new file by `run_session`.
+async fn restart_after_write_failure(
+    sdmmc: &mut Sdmmc<'static>,
+    parameters: &ParameterManager<'_>,
+    power: &mut Output<'static>,
+    first_stage: u8,
+) {
+    let mut stage = first_stage;
+    for _ in 0..WRITE_RESTART_ATTEMPTS {
+        // A Stop issued while waiting ends the session instead of Error.
+        let mut stopped = false;
+        while let Ok(command) = CONTROL.try_receive() {
+            stopped |= matches!(command, Command::Stop);
+        }
+        if stopped {
+            STATE.set_status(Status::Disabled, 0);
+            return;
+        }
+        Timer::after(WRITE_RESTART_BACKOFF).await;
+        STATE.set_status(Status::Initializing, SESSION_STAGE_RESTART);
+        power.set_high();
+        Timer::after_millis(20).await;
+        let outcome = run_session(sdmmc, parameters).await;
+        power.set_low();
+        match outcome {
+            Ok(()) => {
+                STATE.set_status(Status::Disabled, 0);
+                return;
+            }
+            Err(retry_stage) => {
+                STATE.errors.fetch_add(1, Ordering::Relaxed);
+                if !write_failure_restarts_session(retry_stage) {
+                    STATE.set_status(Status::Error, retry_stage);
+                    return;
+                }
+                stage = retry_stage;
+            }
+        }
+    }
+    STATE.set_status(Status::Error, stage);
 }
 
 async fn run_session(
