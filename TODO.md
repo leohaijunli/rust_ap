@@ -15,7 +15,8 @@
 
 - [x] 工程师授权回装 `a17a2d35bab6f05a`：原 bootloader 上传/CRC 校验、Quadrotor/disarmed/平台与备份域通过；165 项值/类型/顺序及历史故障保持，未设参/保存/启动日志。[回装记录](docs/acceptance/p2/20261107-qgc-flash.md)。
 - [x] 元数据两文件只读下载/CRC/精确字节核对通过；工程师确认 QGC 5.0.3 类型、示例标签及设置说明正常。本轮显示子项收口，不等于完整 P2/P3/M1 验收。
-- [ ] 下一步 H-04：等待工程师提供 SD 卡型号/容量/等级（A1/A2 或工业 pSLC）、实测写延迟分布与允许丢失窗口；受控断电/拔卡由工程师执行，不自动操作、不启用输出。
+- [x] H-04 基线（32 GB 普通卡）：65 s 零输出日志 1,654,784 B、25.31 kB/s，3 次各 5 ms dropout、正常丢失 8 条（0.026%）、事件 0，pyulog 可解析。[基线记录](docs/acceptance/pl-a/20261107-h04-baseline.md)。
+- [ ] H-04 收口：工程师给出允许丢失窗口，并决定换 A1/A2/pSLC 卡，或用此普通卡继续 5 min 分布与受控断电/拔卡；不自动断电/拔卡、不启用输出。
 
 - [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
 - [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
@@ -48,7 +49,7 @@
 - [x] 缓解选项成文：[dropout 缓解与极端优化备选](docs/logging-dropout-options.md)；第 4 层（双优先级队列、裸块环形日志）明确"仅 1–3 层与 H-04 之后仍超标才评估"。
 - [x] 第 1 层：`dronecan_raw_command` 主题从 ULog 注册表与 SD 写入移除（`TOPIC_COUNT 14→13`、ID 重排连续、按名匹配保持旧日志可解析）；DroneCAN 总线零命令发送不变。host 180 项、H753 Clippy、打包 source=`8d1ae82d5f5d13b3`（static RAM 254224 B、最大入口栈帧 11496 B）通过。
 - [x] 第 2 层核查：固定 `embedded-fatfs 518528c` 无 `set_len`/预分配接口，写入器已是 32 KiB 攒批 + 512 对齐整块写；软件侧到顶，剩余停顿归第 3 层卡选型。不改代码，不引入 fork。
-- [ ] 第 3 层：H-04 卡选型判据（A1/A2 或工业 pSLC + 写延迟分布实测）仍待工程师输入。
+- [ ] 第 3 层：H-04 卡选型判据（A1/A2 或工业 pSLC + 写延迟分布实测）仍待工程师输入；当前 32 GB 普通卡不满足选型标注，65 s 基线已记录。
 - [x] 重刷验证：source=`ad99705b817a8c7f`，12 s 采集 `rust_runtime_health`（≈10 Hz）与 `rust_can_stats` 并存、dropout=0、无损坏；EKF2 正常。结果补录到[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
 - [x] 顺带修复历史 bug：`record_can_stats` 误用 `Group::Health` 限流器，`rust_runtime_health` 被 10 Hz can_stats 饿死（run1 2 Hz / run2 0 / run3 仅前 0.9 s 的三轮数据全部吻合）；改回 `Group::Can` 后板验通过。
 - [x] E7 USB 流核对：各流速率符合参数，LOCAL/GLOBAL_POSITION 按"无效不发"抑制；USB+SD 成对证据齐备。E7 软件门（不含实物依赖）收口，见[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)与[下一步计划](docs/next-steps.md)。
