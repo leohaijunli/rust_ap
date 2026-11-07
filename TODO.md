@@ -21,8 +21,8 @@
 - [x] H-04 受控断电：写日志中断电后日志 id 24（17,832,448 B、712.85 s）完整可解析、`file_corruption=false`；VTOR/备份域/165 参数/历史故障保持。会话内出现 1 次 152 ms 停顿（48 次 ≤6 ms、事件 0），超出 ≤10 ms 窗口，待工程师裁决换卡或放宽。[记录](docs/acceptance/pl-a/20261107-h04-power-loss.md)。
 - [x] H-04 缺卡启动：无卡时 heartbeat 在线、`logger start` 进入 Error(stage=2) 不挂死、列表请求回 "Log SD mount failed"、无新 fault；插回卡后旧 25 条日志完好、`logger start/stop` 恢复正常（验证短会话 id 25 不计入统计）。卡面确认为 **A1 HC1**（此前"无 A1/A2 标注"记录修正；A1 保证随机读 IOPS 而非无长写停顿，152 ms 事件仍按窗口裁决）。[记录](docs/acceptance/pl-a/20261107-h04-nocard.md)。
 - [x] H-04 写日志中拔卡：写入中拔卡 ≥5 s → logger 进 Error(stage=12)、errors+1、无 panic/重启、`SYSTEM_TIME` 连续；断电恢复后 28 条旧日志完好（id 27 大小与计数器逐字节一致）、头部 2 MiB 解析无损坏、新日志可启停、参数/故障不变。首次 <1 s 拔插被完全吸收（0 写失败）。[记录](docs/acceptance/pl-a/20261107-h04-card-removal.md)。
-- [x] H-04 改善实施（工程师裁决：不换卡，扩容后复测）：队列 512→1024 槽（+112 KiB RAM，吸收 ≥2 s 停顿）+ 写失败自动换文件重启（3 次/500 ms 退避，PX4 对齐）；host 189 项、fmt、双 Clippy 通过，打包 source=`050461399e9cbd95`（static RAM 368,976 B、余量 88,752 B、帧 11,496 B 不变）。[依据](docs/logging-dropout-options.md)。
-- [ ] H-04 复测：授权回装 `050461399e9cbd95` 后重跑 300 s 分布（预期 dropout 趋零）+ 拔卡自动重启验证 + 断电/缺卡回归；然后按窗口收口。
+- [x] **H-04 收口（2026-11-07 通过）**：最终分布 300 s r3 = 10 次 ≤5 ms（合计 20 ms）、正常丢失 0.0141%、事件 0，按 ≤10 ms/事件 0 窗口通过；断电 ×3、缺卡、拔卡 Error 路径全部板载实测通过。边界如实移交：自动重启板载目击待实验台 USB 固定后补验；152 ms 长尾已由 1024 槽扩容缓解（A1 卡未达 PX4 可靠卡档）。[收口记录](docs/acceptance/pl-a/20261107-h04-closure.md)。
+- [ ] 下一步 **H-02（ESC）**：工程师把 ESC 接上 CAN1 并供电（桨叶已拆、零输出），主机用 `!dronecan` 只读枚举节点身份/index，然后按 P4b-a CAN-A04 做零输出 Status 与断线恢复实测。
 
 - [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
 - [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
