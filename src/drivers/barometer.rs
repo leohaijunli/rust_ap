@@ -15,6 +15,7 @@ use embassy_stm32::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Watch};
 use embassy_time::{Duration, Instant, Timer};
 use v6x_rust_led::bmp388::{self, register, Calibration, Sample};
+use v6x_rust_led::mavlink_vehicle::{self, SensorState};
 
 const TRANSACTION_US: u64 = 10_000;
 const RECOVERY_MS: u64 = 500;
@@ -49,6 +50,18 @@ pub fn latest() -> Option<Sample> {
     state
         .sample
         .filter(|sample| sample.fresh(Instant::now().as_micros()))
+}
+
+pub fn health() -> SensorState {
+    let sample = LATEST
+        .try_get()
+        .filter(|state| state.error.is_none())
+        .and_then(|state| state.sample);
+    mavlink_vehicle::barometer_health(
+        CHIP_ID.load(Ordering::Acquire),
+        sample,
+        Instant::now().as_micros(),
+    )
 }
 
 struct Sensor {

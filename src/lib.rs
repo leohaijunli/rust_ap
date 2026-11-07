@@ -42,6 +42,8 @@ pub mod mavlink_estimator;
 pub mod mavlink_power;
 #[path = "core/mavlink_protocol.rs"]
 pub mod mavlink_protocol;
+#[path = "core/mavlink_vehicle.rs"]
+pub mod mavlink_vehicle;
 #[path = "core/metrics.rs"]
 pub mod metrics;
 #[path = "core/parameter_store.rs"]

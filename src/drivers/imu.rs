@@ -23,6 +23,7 @@ use v6x_rust_led::icm42688::{
     self, bits, register, Bank, Config, FifoBatch, Sample, FIFO_BYTES, FIFO_PACKET_BYTES,
     MAX_FIFO_SAMPLES, SETTINGS, WHO_AM_I_VALUE,
 };
+use v6x_rust_led::mavlink_vehicle::{self, SensorState};
 
 const SPI_HZ: Hertz = Hertz(24_000_000);
 const TRANSFER_TIMEOUT: Duration = Duration::from_millis(2);
@@ -88,6 +89,16 @@ impl RuntimeState {
 
 pub fn latest() -> Option<Sample> {
     LATEST.try_get()
+}
+
+pub fn health() -> (SensorState, SensorState) {
+    // The IMU can preempt telemetry; read the reference time after the sample.
+    mavlink_vehicle::imu_health(
+        STATE.who_am_i.load(Ordering::Acquire),
+        STATE.initialized.load(Ordering::Acquire),
+        latest(),
+        Instant::now().as_micros(),
+    )
 }
 
 pub fn set_ahrs_active(enabled: bool) {

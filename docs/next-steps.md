@@ -2,7 +2,7 @@
 
 本文档整合 `plan.md`（范围/边界/必要测试）与 `TODO.md`（状态/依赖）为唯一的前向执行计划，作为日常工作参考。历史证据与已通过结果保留在原两份文档及 `docs/acceptance/` 的链接中，不在此复述；新结果仍记入 `docs/acceptance/` 并回链本表的对应条目。
 
-新产品路线的[评估与下一步建议](p0-p3-review-and-next-plan.md)已完成；最小 QGC 类型/健康位补齐是建议的软件下一项，尚未实施。现行阶段门与非零输出授权不因此变更。
+新产品路线的[评估与下一步建议](p0-p3-review-and-next-plan.md)已完成。工程师随后授权推进，最小 QGC 类型/健康位与[能力矩阵](qgc-compatibility.md)的软件实现、7 项用例/fmt/Clippy 及普通包构建/布局已通过，source=`fdf7fcd1ff9d10c7`；没有自动回装，QGC 版本/GUI/实物门待验。现行阶段门与非零输出授权不因此变更。[本轮记录](acceptance/p2/20261107-qgc-minimal.md)。
 
 ## 1. 当前基线（2026-11-07 回装，复用历史验收）
 
@@ -13,6 +13,7 @@
 | 日志/dropout | 第 1 层完成：`dronecan_raw_command` 移除，产生 37.6→24.3 kB/s，dropout 41→4 次；剩余 3 次 ≥65.5 ms（u16 饱和，实际更长）为卡级停顿。第 2 层核查完毕：固定 `embedded-fatfs` 无预分配接口，写入器已 32 KiB 攒批，软件侧到顶 |
 | 已修复并板验 | `record_can_stats` 误用 `Group::Health` 限流器（历史 bug）导致 `rust_runtime_health` 被 10 Hz can_stats 饿死；改回 `Group::Can` 后板验：health 与 can_stats 并存（≈10 Hz），12 s 会话 dropout=0。source=`ad99705b817a8c7f` |
 | 协议/参数 | 165 项参数、P0–P3 软件+部分板载通过、MAVCAN（CAN2）收口、P4b-g 软件刷入（NO_GPS 帧已验） |
+| QGC 最小兼容 | 新源码使用 Quadrotor、真实传感器健康位，修复默认掩码误置位；7 项测试、普通/host Clippy 与普通打包通过，source=`fdf7fcd1ff9d10c7`。未回装，GUI 待验；上次板载记录仍是 `bf2f2a0bd91f5421` |
 | 当前实物状态 | IMU/BMP388 有效；CAN1/GNSS 无数据、INA219 无应答、PX4IO Timeout。参数存档兼容载入但 dirty=true/pending_save=false，未保存；旧 panic 保留；M1/完整 E7 不放行 |
 
 ## 2. 未收口问题（按优先级）

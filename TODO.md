@@ -13,10 +13,15 @@
 
 ## 2026-11-07 状态检查与回装
 
+- [x] 工程师授权推进最小 QGC 兼容：Quadrotor 身份、真实 IMU/baro/GPS/AHRS 健康位与[能力矩阵](docs/qgc-compatibility.md)已实现；7 项新用例、fmt、host/普通 H753 Clippy 通过，解锁/输出门未改。[本轮记录](docs/acceptance/p2/20261107-qgc-minimal.md)。
+- [x] 新普通包构建/布局通过，source=`fdf7fcd1ff9d10c7`；static RAM=`254224 B`、最大入口栈帧=`11496 B` 不变。未自动烧录。
+- [ ] 本轮实现/矩阵/软件结果已本地提交；非交互推送因 GitHub 凭据不可用失败。工程师完成授权后再执行 `git push`。
+- [ ] 工程师确认 QGC 版本并授权新包回装后，完成一次四旋翼类型/健康位的用户可见核对；不启用非零输出。
+
 - [x] 从干净的 `aaba83b` 当前源码构建普通包，原 board 53/protocol v5 bootloader 上传与 CRC 校验、COM4 身份/3 个 disarmed 心跳/平台与备份域核对通过；没有修改固件代码或 IO 应用。[本次记录](docs/acceptance/p1/20261107-current-firmware.md)。
 - [x] 只读快照：主 `Filter/Running`、fault=None、max_update=559 µs、期限超时=0、积分 0 ppm；继承参数启用状态，未设参/保存、未清旧 panic、未启动新日志。
 - [x] 阅读 P0–P3 产品方案并完成[评估与下一步建议](docs/p0-p3-review-and-next-plan.md)；仅文档建议，未更改现行阶段门或实施控制/非零输出。
-- [ ] 下一步建议补最小 QGC 类型/健康位兼容；硬件主线仍按 H-04/02/03/10 与当前传感器/IO 待验项推进，再验 M1。详见[下一步计划](docs/next-steps.md)。
+- [ ] 最小 QGC 兼容的板载/GUI 门与硬件主线仍按 H-04/02/03/10、当前传感器/IO 待验项推进，再验 M1。详见[下一步计划](docs/next-steps.md)。
 
 ## 单实例 EKF 与 IMU 时基 — 2026-11-06 记录
 

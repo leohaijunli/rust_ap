@@ -299,23 +299,7 @@ pub async fn handle(
 }
 
 pub fn heartbeat() -> MavMessage {
-    MavMessage::HEARTBEAT(HEARTBEAT_DATA {
-        // PX4 main_mode MANUAL=1, sub_mode=0; compatibility only, no mode action.
-        custom_mode: 1 << 16,
-        mavtype: MavType::MAV_TYPE_GENERIC,
-        // QGC only saves onboard logs as `.ulg` when the autopilot is PX4;
-        // every other identity is stored as `.bin`. We keep the original PX4
-        // bootloader, MAVLink2 and no FTP capability, so the message-based
-        // LOG_* download path is still used.
-        autopilot: MavAutopilot::MAV_AUTOPILOT_PX4,
-        base_mode: if crate::OUTPUT_STATE.armed {
-            MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED | MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED
-        } else {
-            MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
-        },
-        system_status: MavState::MAV_STATE_STANDBY,
-        mavlink_version: 3,
-    })
+    v6x_rust_led::mavlink_vehicle::heartbeat(crate::OUTPUT_STATE.armed)
 }
 
 /// Periodic status line. It carries the estimator's actual state so a ground
@@ -341,15 +325,35 @@ pub fn status_text() -> MavMessage {
 }
 
 pub fn system_status() -> MavMessage {
-    MavMessage::SYS_STATUS(SYS_STATUS_DATA {
-        // The explicit validity/staleness flag is available in !metrics. Before
-        // the first valid window retain the baseline's zero load field.
-        load: crate::diagnostics::cpu_load().unwrap_or(0),
-        voltage_battery: u16::MAX,
-        current_battery: -1,
-        battery_remaining: -1,
-        ..Default::default()
-    })
+    use v6x_rust_led::mavlink_vehicle::{self, SensorState, Sensors};
+
+    let (gyro, accel) = crate::imu::health();
+    let barometer = crate::barometer::health();
+    let gps = crate::dronecan_can::latest_gps();
+    let gps = mavlink_vehicle::gps_health(gps, embassy_time::Instant::now().as_micros());
+    let output = crate::estimator::latest();
+    // latest() rejects old epochs/stale output; AHRS health is not navigation qualification.
+    let ahrs = SensorState {
+        present: true,
+        enabled: crate::estimator::report().requested,
+        healthy: output.is_some_and(|output| {
+            output.euler.is_some()
+                && output
+                    .snapshot
+                    .angular_velocity
+                    .is_some_and(|value| value.xyz.iter().all(|v| v.is_finite()))
+        }),
+    };
+    mavlink_vehicle::system_status(
+        Sensors {
+            gyro,
+            accel,
+            barometer,
+            gps,
+            ahrs,
+        },
+        crate::diagnostics::cpu_load(),
+    )
 }
 
 pub fn system_time() -> MavMessage {
@@ -464,8 +468,7 @@ pub fn autopilot_version() -> MavMessage {
     let mut uid2 = [0u8; 18];
     uid2[..uid.len()].copy_from_slice(&uid);
     MavMessage::AUTOPILOT_VERSION(AUTOPILOT_VERSION_DATA {
-        capabilities: MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
-            | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_BYTEWISE,
+        capabilities: v6x_rust_led::mavlink_vehicle::CAPABILITIES,
         flight_sw_version: v6x_rust_led::build_info::FLIGHT_SW_VERSION,
         flight_custom_version: v6x_rust_led::build_info::SOURCE_ID.to_le_bytes(),
         vendor_id: 0x1209,
