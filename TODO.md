@@ -19,7 +19,8 @@
 - [x] H-04 300 s 分布：7,528,960 B、25.06 kB/s，正常丢失 32 条（0.0225%）、事件 0；发现 dropout 时长在时间戳交错时饱和为 65535 ms（6/12），已改 `saturating_sub` 并加 host 用例，188 项通过；新包 source=`f1825489b4f35661`。[记录](docs/acceptance/pl-a/20261107-h04-300s.md)。
 - [x] H-04 回装与 300 s 复测：原 bootloader 回装 `f1825489b4f35661`（VTOR/时钟/备份域/165 参数/历史故障保持）；300 s 分布 17 次 dropout 全部 ≤6 ms（合计 46 ms）、正常丢失 34 条（0.0239%）、事件 0，按 ≤10 ms/事件 0 窗口通过。[记录](docs/acceptance/pl-a/20261107-h04-300s-r2.md)。
 - [x] H-04 受控断电：写日志中断电后日志 id 24（17,832,448 B、712.85 s）完整可解析、`file_corruption=false`；VTOR/备份域/165 参数/历史故障保持。会话内出现 1 次 152 ms 停顿（48 次 ≤6 ms、事件 0），超出 ≤10 ms 窗口，待工程师裁决换卡或放宽。[记录](docs/acceptance/pl-a/20261107-h04-power-loss.md)。
-- [ ] H-04 收口：剩余缺卡启动、写日志中拔卡（[实物步骤](docs/acceptance/pl-a/20261107-h04-physical-procedure.md)，物理操作由工程师执行）；152 ms 越界事件的窗口裁决并入收口。
+- [x] H-04 缺卡启动：无卡时 heartbeat 在线、`logger start` 进入 Error(stage=2) 不挂死、列表请求回 "Log SD mount failed"、无新 fault；插回卡后旧 25 条日志完好、`logger start/stop` 恢复正常（验证短会话 id 25 不计入统计）。卡面确认为 **A1 HC1**（此前"无 A1/A2 标注"记录修正；A1 保证随机读 IOPS 而非无长写停顿，152 ms 事件仍按窗口裁决）。[记录](docs/acceptance/pl-a/20261107-h04-nocard.md)。
+- [ ] H-04 收口：剩余写日志中拔卡（[实物步骤](docs/acceptance/pl-a/20261107-h04-physical-procedure.md)，物理操作由工程师执行）；152 ms 越界事件的窗口裁决并入收口。
 
 - [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
 - [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
