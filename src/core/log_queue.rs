@@ -337,9 +337,12 @@ impl Logger {
         });
         let result = if let Some((start_ms, last_ms)) = dropout {
             let now = (now_us / 1_000) as u32;
+            // Producers pass their sample timestamps, so a later record can carry
+            // an earlier time. Saturating subtraction keeps that from wrapping the
+            // duration up to the u16 ceiling (65535 ms).
             let duration = last_ms
-                .wrapping_sub(start_ms)
-                .max(now.wrapping_sub(start_ms))
+                .saturating_sub(start_ms)
+                .max(now.saturating_sub(start_ms))
                 .min(u32::from(u16::MAX)) as u16;
             let marker = QueuedRecord::new(Class::Event, ulog::dropout(duration))
                 .expect("dropout record fits runtime queue");
@@ -499,6 +502,41 @@ mod tests {
         assert_eq!(logger.pop().unwrap().as_bytes()[2], b'O');
         assert_eq!(logger.pop().unwrap().as_bytes(), &[4]);
         assert_eq!(logger.stats().normal_dropped, 1);
+    }
+
+    #[test]
+    fn dropout_duration_does_not_wrap_on_out_of_order_timestamp() {
+        let logger = Logger::new();
+        logger.initialize();
+        for _ in 0..NORMAL_LIMIT {
+            logger
+                .try_record(Class::Normal, 0, Record::from_bytes(&[1]).unwrap())
+                .unwrap();
+        }
+        // Queue full at t=5.000 s: the first dropped record starts the episode.
+        assert!(logger
+            .try_record(Class::Normal, 5_000_000, Record::from_bytes(&[2]).unwrap())
+            .is_err());
+        assert!(logger.pop().is_some());
+        // Another producer reports a slightly earlier sample time. Before the
+        // saturating fix this wrapped to 65535 ms; it must now report 0 ms.
+        logger
+            .try_record(Class::Normal, 4_999_000, Record::from_bytes(&[3]).unwrap())
+            .unwrap();
+        let mut found = false;
+        while let Some(record) = logger.pop() {
+            let bytes = record.as_bytes();
+            if bytes.len() == 5 && bytes[2] == b'O' {
+                assert!(!found, "duplicate dropout marker");
+                assert_eq!(
+                    u16::from_le_bytes([bytes[3], bytes[4]]),
+                    0,
+                    "out-of-order timestamp must not saturate the duration"
+                );
+                found = true;
+            }
+        }
+        assert!(found, "dropout marker missing");
     }
 
     #[test]

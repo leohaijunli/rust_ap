@@ -16,7 +16,8 @@
 - [x] 工程师授权回装 `a17a2d35bab6f05a`：原 bootloader 上传/CRC 校验、Quadrotor/disarmed/平台与备份域通过；165 项值/类型/顺序及历史故障保持，未设参/保存/启动日志。[回装记录](docs/acceptance/p2/20261107-qgc-flash.md)。
 - [x] 元数据两文件只读下载/CRC/精确字节核对通过；工程师确认 QGC 5.0.3 类型、示例标签及设置说明正常。本轮显示子项收口，不等于完整 P2/P3/M1 验收。
 - [x] H-04 基线（32 GB 普通卡）：65 s 零输出日志 1,654,784 B、25.31 kB/s，3 次各 5 ms dropout、正常丢失 8 条（0.026%）、事件 0，pyulog 可解析。[基线记录](docs/acceptance/pl-a/20261107-h04-baseline.md)。
-- [ ] H-04 收口：工程师给出允许丢失窗口，并决定换 A1/A2/pSLC 卡，或用此普通卡继续 5 min 分布与受控断电/拔卡；不自动断电/拔卡、不启用输出。
+- [x] H-04 300 s 分布：7,528,960 B、25.06 kB/s，正常丢失 32 条（0.0225%）、事件 0；发现 dropout 时长在时间戳交错时饱和为 65535 ms（6/12），已改 `saturating_sub` 并加 host 用例，188 项通过；新包 source=`f1825489b4f35661`。[记录](docs/acceptance/pl-a/20261107-h04-300s.md)。
+- [ ] H-04 收口：窗口已定（正常日志单次 ≤10 ms、事件丢失 0），继续用此普通卡；需工程师授权回装 `f1825489b4f35661` 后重跑 300 s，再做受控断电/缺卡/拔卡（[实物步骤](docs/acceptance/pl-a/20261107-h04-physical-procedure.md)）。
 
 - [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
 - [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
