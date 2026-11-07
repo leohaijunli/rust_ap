@@ -1,16 +1,19 @@
-# 下一步计划（2026-11-06 重整）
+# 下一步计划（2026-11-07 状态同步）
 
 本文档整合 `plan.md`（范围/边界/必要测试）与 `TODO.md`（状态/依赖）为唯一的前向执行计划，作为日常工作参考。历史证据与已通过结果保留在原两份文档及 `docs/acceptance/` 的链接中，不在此复述；新结果仍记入 `docs/acceptance/` 并回链本表的对应条目。
 
-## 1. 当前基线（已收口，2026-11-06）
+新产品路线的[评估与下一步建议](p0-p3-review-and-next-plan.md)已完成；最小 QGC 类型/健康位补齐是建议的软件下一项，尚未实施。现行阶段门与非零输出授权不因此变更。
+
+## 1. 当前基线（2026-11-07 回装，复用历史验收）
 
 | 领域 | 状态 |
 | --- | --- |
-| 估计器 | 单实例 EKF2/Mahony + TIM8 批次积分：host 180 项通过；板载 `Filter/Running`、fault=0、`max_update_us≈560`（预算 2000）、1 kHz 发布 `missed=0`、`integration_error_ppm=0`。**与 PX4 v1.17.0 同板实测对比完成**：EKF 单次更新 max 560 vs PX4 565 µs（同级），栈 33.4 KB 单栈 vs PX4 ~45 KB 分散栈，详见[记录](acceptance/ekf2/20261106-single-estimator-timebase.md)。source=`ad99705b817a8c7f`（PX4 对比后已恢复） |
-| 标准输出 | host fixture 165 字段 + pyulog/pymavlink 解析通过；SD 日志 17 主题无损坏；USB MAVLink 流核对待做 |
+| 估计器 | 当前 source=`bf2f2a0bd91f5421` 普通包已回装至 COM4；只读快照 `Filter/Running`、fault=None、max_update=559 µs、发布 missed=0、积分 0 ppm。host 180 项、65 s 门与 PX4 同板对比复用[历史记录](acceptance/ekf2/20261106-single-estimator-timebase.md)，本次没有重新做完整时序验收。[回装记录](acceptance/p1/20261107-current-firmware.md) |
+| 标准输出 | host fixture 165 字段与历史 pyulog/pymavlink、USB/SD 成对核对已通过；本次未启动新日志。Flight Review/PlotJuggler 实际打开仍不能由 pyulog 解析替代 |
 | 日志/dropout | 第 1 层完成：`dronecan_raw_command` 移除，产生 37.6→24.3 kB/s，dropout 41→4 次；剩余 3 次 ≥65.5 ms（u16 饱和，实际更长）为卡级停顿。第 2 层核查完毕：固定 `embedded-fatfs` 无预分配接口，写入器已 32 KiB 攒批，软件侧到顶 |
 | 已修复并板验 | `record_can_stats` 误用 `Group::Health` 限流器（历史 bug）导致 `rust_runtime_health` 被 10 Hz can_stats 饿死；改回 `Group::Can` 后板验：health 与 can_stats 并存（≈10 Hz），12 s 会话 dropout=0。source=`ad99705b817a8c7f` |
 | 协议/参数 | 165 项参数、P0–P3 软件+部分板载通过、MAVCAN（CAN2）收口、P4b-g 软件刷入（NO_GPS 帧已验） |
+| 当前实物状态 | IMU/BMP388 有效；CAN1/GNSS 无数据、INA219 无应答、PX4IO Timeout。参数存档兼容载入但 dirty=true/pending_save=false，未保存；旧 panic 保留；M1/完整 E7 不放行 |
 
 ## 2. 未收口问题（按优先级）
 

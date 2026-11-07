@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-06。**P0、P1、P3a、RTC-01/TIME-01 完成；P4b-a、PL-a、P2、P4 软件门通过，PL-a/PL-b 有限 HIL 通过；H7 PX4IO 通信、日志短按/长按保留事件与蜂鸣软件通过，灯归属/IO 实物待 H-12；IO MCU Rust 重写已排 IO-R0～R5，尚未实施；参数自动保存与 QGC 分组元数据（397 + MAVFTP）已实现并板载校验；MAVCAN（CAN2）已收口（GUI 节点可见与数据通过）；P4b-g GPS 软件实现并已刷入板载（source=`588ab77941985319`，NO_GPS 断链帧已验），GPS 实物数据与 TIME-02 待验；MAVLink 参数重构 P0 已板载收齐 159，P1–P3 软件与普通包通过（source=`f5756b75d6ed78bf`），本轮板载验证待验；实物集中待 H-02/03/04、H-10/12/13、QGC GUI 目视与工程师操作，M1 未开始。**
+更新：2026-11-07。**当前普通包 source=`bf2f2a0bd91f5421` 已回装，COM4，disarmed，单主 EKF2/TIM8 运行正常。P0、P1、P3a、RTC-01/TIME-01 已完成，数据链/日志/协议软件与有限板验结果可复用；MAVCAN（CAN2）历史已收口。当前 CAN1/GNSS 无数据、INA219 无应答、PX4IO Timeout；SD 故障/时延、双链路/参数重启与传感器实物门仍待工程师。M1 与完整 E7 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -11,7 +11,14 @@
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
-## 当前优先工作 — 单实例 EKF 与 IMU 时基
+## 2026-11-07 状态检查与回装
+
+- [x] 从干净的 `aaba83b` 当前源码构建普通包，原 board 53/protocol v5 bootloader 上传与 CRC 校验、COM4 身份/3 个 disarmed 心跳/平台与备份域核对通过；没有修改固件代码或 IO 应用。[本次记录](docs/acceptance/p1/20261107-current-firmware.md)。
+- [x] 只读快照：主 `Filter/Running`、fault=None、max_update=559 µs、期限超时=0、积分 0 ppm；继承参数启用状态，未设参/保存、未清旧 panic、未启动新日志。
+- [x] 阅读 P0–P3 产品方案并完成[评估与下一步建议](docs/p0-p3-review-and-next-plan.md)；仅文档建议，未更改现行阶段门或实施控制/非零输出。
+- [ ] 下一步建议补最小 QGC 类型/健康位兼容；硬件主线仍按 H-04/02/03/10 与当前传感器/IO 待验项推进，再验 M1。详见[下一步计划](docs/next-steps.md)。
+
+## 单实例 EKF 与 IMU 时基 — 2026-11-06 记录
 
 ### 2026-11-06 工程师追加要求
 
