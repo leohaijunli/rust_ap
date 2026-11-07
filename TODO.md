@@ -13,6 +13,10 @@
 
 ## 2026-11-07 状态检查与回装
 
+- [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
+- [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
+- [ ] 本轮参数说明实现/审核结果已本地提交；推送因 GitHub 非交互凭据不可用失败。实际 QGC 显示仍待工程师确认版本、授权新包回装及重新获取元数据。
+
 - [x] 工程师授权推进最小 QGC 兼容：Quadrotor 身份、真实 IMU/baro/GPS/AHRS 健康位与[能力矩阵](docs/qgc-compatibility.md)已实现；7 项新用例、fmt、host/普通 H753 Clippy 通过，解锁/输出门未改。[本轮记录](docs/acceptance/p2/20261107-qgc-minimal.md)。
 - [x] 新普通包构建/布局通过，source=`fdf7fcd1ff9d10c7`；static RAM=`254224 B`、最大入口栈帧=`11496 B` 不变。未自动烧录。
 - [ ] 本轮实现/矩阵/软件结果已本地提交；非交互推送因 GitHub 凭据不可用失败。工程师完成授权后再执行 `git push`。

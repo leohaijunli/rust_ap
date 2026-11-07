@@ -2,6 +2,7 @@
 """Generate the EKF2 parameter catalog from fixed PX4 v1.17.0 YAML."""
 
 import argparse
+import json
 import math
 import os
 import subprocess
@@ -168,6 +169,31 @@ def render(definitions, ref):
     return "\n".join(lines)
 
 
+def render_help(documents, ref):
+    """Freeze source descriptions/options, never runtime values or limits."""
+    entries = {}
+    for path, document in documents:
+        for group in document.get("parameters", []):
+            for name, meta in group.get("definitions", {}).items():
+                require(name not in entries, f"{name}: duplicate help entry")
+                short = " ".join(meta.get("description", {}).get("short", "").split())
+                require(short, f"{name}: missing parameter description")
+                options = meta.get("bit" if meta["type"] == "bitmask" else "values", {})
+                entries[name] = {
+                    "type": meta["type"],
+                    "shortDesc": short,
+                    "options": {str(key): str(value) for key, value in options.items()},
+                }
+    return json.dumps({
+        "version": 1,
+        "source": "PX4-Autopilot EKF2 YAML",
+        "ref": ref,
+        "license": "BSD-3-Clause",
+        "sourceFiles": [path for path, _ in documents],
+        "parameters": entries,
+    }, indent=2, ensure_ascii=False) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -178,6 +204,7 @@ def main():
     )
     parser.add_argument("--ref", default=DEFAULT_REF, help="fixed PX4 git ref")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--help-output", type=Path, help="Also generate/check descriptive EKF2 help JSON")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -186,8 +213,10 @@ def main():
     args = parser.parse_args()
 
     try:
-        definitions = collect(load_documents(args.root, args.ref))
+        documents = load_documents(args.root, args.ref)
+        definitions = collect(documents)
         rendered = render(definitions, args.ref)
+        help_text = render_help(documents, args.ref) if args.help_output else None
     except (OSError, subprocess.CalledProcessError, ValueError) as error:
         print(f"gen_params: {error}", file=sys.stderr)
         return 1
@@ -201,11 +230,19 @@ def main():
         if current != rendered:
             print(f"gen_params: {args.output} is out of date", file=sys.stderr)
             return 1
+        if args.help_output and (
+                not args.help_output.exists()
+                or args.help_output.read_text(encoding="utf-8") != help_text):
+            print(f"gen_params: {args.help_output} is out of date", file=sys.stderr)
+            return 1
         print(f"gen_params: {len(definitions)} parameters up to date")
         return 0
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(rendered, encoding="utf-8", newline="\n")
+    if args.help_output:
+        args.help_output.parent.mkdir(parents=True, exist_ok=True)
+        args.help_output.write_text(help_text, encoding="utf-8", newline="\n")
     print(f"gen_params: wrote {len(definitions)} parameters to {args.output}")
     return 0
 

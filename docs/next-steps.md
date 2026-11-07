@@ -4,6 +4,8 @@
 
 新产品路线的[评估与下一步建议](p0-p3-review-and-next-plan.md)已完成。工程师随后授权推进，最小 QGC 类型/健康位与[能力矩阵](qgc-compatibility.md)的软件实现、7 项用例/fmt/Clippy 及普通包构建/布局已通过，source=`fdf7fcd1ff9d10c7`；没有自动回装，QGC 版本/GUI/实物门待验。现行阶段门与非零输出授权不因此变更。[本轮记录](acceptance/p2/20261107-qgc-minimal.md)。
 
+随后完成全 165 项[参数说明与审核](parameter-settings.md)：原数值/范围/存储及算法不变，逐项区分配置读取、条件作用与未接入；相关用例/fmt/Clippy、CRC 与普通包构建/布局通过，source=`a17a2d35bab6f05a`。未自动设参或烧录，新文案的 QGC 显示待回装/重新获取元数据。[记录](acceptance/p3a/20261107-parameter-help.md)。
+
 ## 1. 当前基线（2026-11-07 回装，复用历史验收）
 
 | 领域 | 状态 |

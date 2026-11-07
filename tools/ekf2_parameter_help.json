@@ -1,0 +1,810 @@
+{
+  "version": 1,
+  "source": "PX4-Autopilot EKF2 YAML",
+  "ref": "d6f12ad1c4f70ad3230afd7d86e971421e02fef4",
+  "license": "BSD-3-Clause",
+  "sourceFiles": [
+    "src/modules/ekf2/module.yaml",
+    "src/modules/ekf2/params_accel_bias.yaml",
+    "src/modules/ekf2/params_airspeed.yaml",
+    "src/modules/ekf2/params_aux_global_position.yaml",
+    "src/modules/ekf2/params_aux_velocity.yaml",
+    "src/modules/ekf2/params_barometer.yaml",
+    "src/modules/ekf2/params_drag.yaml",
+    "src/modules/ekf2/params_external_vision.yaml",
+    "src/modules/ekf2/params_gnss.yaml",
+    "src/modules/ekf2/params_gravity.yaml",
+    "src/modules/ekf2/params_gyro_bias.yaml",
+    "src/modules/ekf2/params_magnetometer.yaml",
+    "src/modules/ekf2/params_multi.yaml",
+    "src/modules/ekf2/params_optical_flow.yaml",
+    "src/modules/ekf2/params_range_finder.yaml",
+    "src/modules/ekf2/params_selector.yaml",
+    "src/modules/ekf2/params_sideslip.yaml",
+    "src/modules/ekf2/params_terrain.yaml",
+    "src/modules/ekf2/params_volatile.yaml",
+    "src/modules/ekf2/params_wind.yaml"
+  ],
+  "parameters": {
+    "EKF2_EN": {
+      "type": "boolean",
+      "shortDesc": "EKF2 enable",
+      "options": {}
+    },
+    "EKF2_LOG_VERBOSE": {
+      "type": "boolean",
+      "shortDesc": "Verbose logging",
+      "options": {}
+    },
+    "EKF2_PREDICT_US": {
+      "type": "int32",
+      "shortDesc": "EKF prediction period",
+      "options": {}
+    },
+    "EKF2_DELAY_MAX": {
+      "type": "float",
+      "shortDesc": "Maximum delay of all the aiding sensors",
+      "options": {}
+    },
+    "EKF2_ANGERR_INIT": {
+      "type": "float",
+      "shortDesc": "1-sigma tilt angle uncertainty after gravity vector alignment",
+      "options": {}
+    },
+    "EKF2_HDG_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for heading fusion",
+      "options": {}
+    },
+    "EKF2_HEAD_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for magnetic heading fusion",
+      "options": {}
+    },
+    "EKF2_NOAID_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for non-aiding position hold",
+      "options": {}
+    },
+    "EKF2_NOAID_TOUT": {
+      "type": "int32",
+      "shortDesc": "Maximum inertial dead-reckoning time",
+      "options": {}
+    },
+    "EKF2_HGT_REF": {
+      "type": "enum",
+      "shortDesc": "Determines the reference source of height data used by the EKF",
+      "options": {
+        "0": "Barometric pressure",
+        "1": "GPS",
+        "2": "Range sensor",
+        "3": "Vision"
+      }
+    },
+    "EKF2_IMU_CTRL": {
+      "type": "bitmask",
+      "shortDesc": "IMU control",
+      "options": {
+        "0": "Gyro Bias",
+        "1": "Accel Bias",
+        "2": "Gravity vector fusion"
+      }
+    },
+    "EKF2_GYR_NOISE": {
+      "type": "float",
+      "shortDesc": "Rate gyro noise for covariance prediction",
+      "options": {}
+    },
+    "EKF2_ACC_NOISE": {
+      "type": "float",
+      "shortDesc": "Accelerometer noise for covariance prediction",
+      "options": {}
+    },
+    "EKF2_IMU_POS_X": {
+      "type": "float",
+      "shortDesc": "X position of IMU in body frame",
+      "options": {}
+    },
+    "EKF2_IMU_POS_Y": {
+      "type": "float",
+      "shortDesc": "Y position of IMU in body frame",
+      "options": {}
+    },
+    "EKF2_IMU_POS_Z": {
+      "type": "float",
+      "shortDesc": "Z position of IMU in body frame",
+      "options": {}
+    },
+    "EKF2_TAU_VEL": {
+      "type": "float",
+      "shortDesc": "Time constant of the velocity output prediction and smoothing filter",
+      "options": {}
+    },
+    "EKF2_TAU_POS": {
+      "type": "float",
+      "shortDesc": "Output predictor position time constant",
+      "options": {}
+    },
+    "EKF2_VEL_LIM": {
+      "type": "float",
+      "shortDesc": "Velocity limit",
+      "options": {}
+    },
+    "EKF2_ABIAS_INIT": {
+      "type": "float",
+      "shortDesc": "1-sigma IMU accelerometer switch-on bias",
+      "options": {}
+    },
+    "EKF2_ACC_B_NOISE": {
+      "type": "float",
+      "shortDesc": "Process noise for IMU accelerometer bias prediction",
+      "options": {}
+    },
+    "EKF2_ABL_LIM": {
+      "type": "float",
+      "shortDesc": "Accelerometer bias learning limit",
+      "options": {}
+    },
+    "EKF2_ABL_ACCLIM": {
+      "type": "float",
+      "shortDesc": "Maximum IMU accel magnitude that allows IMU bias learning",
+      "options": {}
+    },
+    "EKF2_ABL_GYRLIM": {
+      "type": "float",
+      "shortDesc": "Maximum IMU gyro angular rate magnitude that allows IMU bias learning",
+      "options": {}
+    },
+    "EKF2_ABL_TAU": {
+      "type": "float",
+      "shortDesc": "Accel bias learning inhibit time constant",
+      "options": {}
+    },
+    "EKF2_ARSP_THR": {
+      "type": "float",
+      "shortDesc": "Airspeed fusion threshold",
+      "options": {}
+    },
+    "EKF2_ASP_DELAY": {
+      "type": "float",
+      "shortDesc": "Airspeed measurement delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_TAS_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for TAS fusion",
+      "options": {}
+    },
+    "EKF2_EAS_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for airspeed fusion",
+      "options": {}
+    },
+    "EKF2_AGP_CTRL": {
+      "type": "bitmask",
+      "shortDesc": "Aux global position (AGP) sensor aiding",
+      "options": {
+        "0": "Horizontal position",
+        "1": "Vertical position"
+      }
+    },
+    "EKF2_AGP_MODE": {
+      "type": "enum",
+      "shortDesc": "Fusion reset mode",
+      "options": {
+        "0": "Automatic",
+        "1": "Dead-reckoning"
+      }
+    },
+    "EKF2_AGP_DELAY": {
+      "type": "float",
+      "shortDesc": "Aux global position estimator delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_AGP_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for aux global position measurements",
+      "options": {}
+    },
+    "EKF2_AGP_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for aux global position fusion",
+      "options": {}
+    },
+    "EKF2_AVEL_DELAY": {
+      "type": "float",
+      "shortDesc": "Auxiliary Velocity Estimate delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_BARO_CTRL": {
+      "type": "boolean",
+      "shortDesc": "Barometric sensor height aiding",
+      "options": {}
+    },
+    "EKF2_BARO_DELAY": {
+      "type": "float",
+      "shortDesc": "Barometer measurement delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_BARO_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for barometric and GPS height fusion",
+      "options": {}
+    },
+    "EKF2_BARO_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for barometric altitude",
+      "options": {}
+    },
+    "EKF2_GND_EFF_DZ": {
+      "type": "float",
+      "shortDesc": "Baro deadzone range for height fusion",
+      "options": {}
+    },
+    "EKF2_GND_MAX_HGT": {
+      "type": "float",
+      "shortDesc": "Height above ground level for ground effect zone",
+      "options": {}
+    },
+    "EKF2_PCOEF_XP": {
+      "type": "float",
+      "shortDesc": "Static pressure position error coefficient for the positive X axis",
+      "options": {}
+    },
+    "EKF2_PCOEF_XN": {
+      "type": "float",
+      "shortDesc": "Static pressure position error coefficient for the negative X axis",
+      "options": {}
+    },
+    "EKF2_PCOEF_YP": {
+      "type": "float",
+      "shortDesc": "Pressure position error coefficient for the positive Y axis",
+      "options": {}
+    },
+    "EKF2_PCOEF_YN": {
+      "type": "float",
+      "shortDesc": "Pressure position error coefficient for the negative Y axis",
+      "options": {}
+    },
+    "EKF2_PCOEF_Z": {
+      "type": "float",
+      "shortDesc": "Static pressure position error coefficient for the Z axis",
+      "options": {}
+    },
+    "EKF2_ASPD_MAX": {
+      "type": "float",
+      "shortDesc": "Maximum airspeed used for baro static pressure compensation",
+      "options": {}
+    },
+    "EKF2_DRAG_CTRL": {
+      "type": "boolean",
+      "shortDesc": "Multirotor wind estimation selection",
+      "options": {}
+    },
+    "EKF2_DRAG_NOISE": {
+      "type": "float",
+      "shortDesc": "Specific drag force observation noise variance",
+      "options": {}
+    },
+    "EKF2_BCOEF_X": {
+      "type": "float",
+      "shortDesc": "X-axis ballistic coefficient used for multi-rotor wind estimation",
+      "options": {}
+    },
+    "EKF2_BCOEF_Y": {
+      "type": "float",
+      "shortDesc": "Y-axis ballistic coefficient used for multi-rotor wind estimation",
+      "options": {}
+    },
+    "EKF2_MCOEF": {
+      "type": "float",
+      "shortDesc": "Propeller momentum drag coefficient for multi-rotor wind estimation",
+      "options": {}
+    },
+    "EKF2_EV_CTRL": {
+      "type": "bitmask",
+      "shortDesc": "External vision (EV) sensor aiding",
+      "options": {
+        "0": "Horizontal position",
+        "1": "Vertical position",
+        "2": "3D velocity",
+        "3": "Yaw"
+      }
+    },
+    "EKF2_EV_DELAY": {
+      "type": "float",
+      "shortDesc": "Vision Position Estimator delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_EV_NOISE_MD": {
+      "type": "enum",
+      "shortDesc": "External vision (EV) noise mode",
+      "options": {
+        "0": "EV reported variance (parameter lower bound)",
+        "1": "EV noise parameters"
+      }
+    },
+    "EKF2_EV_QMIN": {
+      "type": "int32",
+      "shortDesc": "External vision (EV) minimum quality (optional)",
+      "options": {}
+    },
+    "EKF2_EVA_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for vision angle measurements",
+      "options": {}
+    },
+    "EKF2_EVP_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for vision position fusion",
+      "options": {}
+    },
+    "EKF2_EVP_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for vision position measurements",
+      "options": {}
+    },
+    "EKF2_EVV_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for vision velocity estimate fusion",
+      "options": {}
+    },
+    "EKF2_EVV_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for vision velocity measurements",
+      "options": {}
+    },
+    "EKF2_EV_POS_X": {
+      "type": "float",
+      "shortDesc": "X position of VI sensor focal point in body frame",
+      "options": {}
+    },
+    "EKF2_EV_POS_Y": {
+      "type": "float",
+      "shortDesc": "Y position of VI sensor focal point in body frame",
+      "options": {}
+    },
+    "EKF2_EV_POS_Z": {
+      "type": "float",
+      "shortDesc": "Z position of VI sensor focal point in body frame",
+      "options": {}
+    },
+    "EKF2_GPS_CTRL": {
+      "type": "bitmask",
+      "shortDesc": "GNSS sensor aiding",
+      "options": {
+        "0": "Lon/lat",
+        "1": "Altitude",
+        "2": "3D velocity",
+        "3": "Dual antenna heading"
+      }
+    },
+    "EKF2_GPS_MODE": {
+      "type": "enum",
+      "shortDesc": "Fusion reset mode",
+      "options": {
+        "0": "Automatic",
+        "1": "Dead-reckoning"
+      }
+    },
+    "EKF2_GPS_DELAY": {
+      "type": "float",
+      "shortDesc": "GPS measurement delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_GPS_P_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for GNSS position",
+      "options": {}
+    },
+    "EKF2_GPS_P_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for GNSS position fusion",
+      "options": {}
+    },
+    "EKF2_GPS_YAW_OFF": {
+      "type": "float",
+      "shortDesc": "Heading/Yaw offset for dual antenna GPS",
+      "options": {}
+    },
+    "EKF2_GPS_V_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for GNSS velocity fusion",
+      "options": {}
+    },
+    "EKF2_GPS_V_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for GNSS velocity",
+      "options": {}
+    },
+    "EKF2_GPS_POS_X": {
+      "type": "float",
+      "shortDesc": "X position of GPS antenna in body frame",
+      "options": {}
+    },
+    "EKF2_GPS_POS_Y": {
+      "type": "float",
+      "shortDesc": "Y position of GPS antenna in body frame",
+      "options": {}
+    },
+    "EKF2_GPS_POS_Z": {
+      "type": "float",
+      "shortDesc": "Z position of GPS antenna in body frame",
+      "options": {}
+    },
+    "EKF2_GPS_CHECK": {
+      "type": "bitmask",
+      "shortDesc": "Integer bitmask controlling GPS checks",
+      "options": {
+        "0": "Sat count (EKF2_REQ_NSATS)",
+        "1": "PDOP (EKF2_REQ_PDOP)",
+        "2": "EPH (EKF2_REQ_EPH)",
+        "3": "EPV (EKF2_REQ_EPV)",
+        "4": "Speed accuracy (EKF2_REQ_SACC)",
+        "5": "Horizontal position drift (EKF2_REQ_HDRIFT)",
+        "6": "Vertical position drift (EKF2_REQ_VDRIFT)",
+        "7": "Horizontal speed offset (EKF2_REQ_HDRIFT)",
+        "8": "Vertical speed offset (EKF2_REQ_VDRIFT)",
+        "9": "Spoofing",
+        "10": "GPS fix type (EKF2_REQ_FIX)"
+      }
+    },
+    "EKF2_REQ_EPH": {
+      "type": "float",
+      "shortDesc": "Required EPH to use GPS",
+      "options": {}
+    },
+    "EKF2_REQ_EPV": {
+      "type": "float",
+      "shortDesc": "Required EPV to use GPS",
+      "options": {}
+    },
+    "EKF2_REQ_SACC": {
+      "type": "float",
+      "shortDesc": "Required speed accuracy to use GPS",
+      "options": {}
+    },
+    "EKF2_REQ_NSATS": {
+      "type": "int32",
+      "shortDesc": "Required satellite count to use GPS",
+      "options": {}
+    },
+    "EKF2_REQ_PDOP": {
+      "type": "float",
+      "shortDesc": "Maximum PDOP to use GPS",
+      "options": {}
+    },
+    "EKF2_REQ_HDRIFT": {
+      "type": "float",
+      "shortDesc": "Maximum horizontal drift speed to use GPS",
+      "options": {}
+    },
+    "EKF2_REQ_VDRIFT": {
+      "type": "float",
+      "shortDesc": "Maximum vertical drift speed to use GPS",
+      "options": {}
+    },
+    "EKF2_REQ_FIX": {
+      "type": "enum",
+      "shortDesc": "Required GPS fix",
+      "options": {
+        "0": "No fix required",
+        "2": "2D fix",
+        "3": "3D fix",
+        "4": "RTCM code differential",
+        "5": "RTK float",
+        "6": "RTK fixed",
+        "8": "Extrapolated"
+      }
+    },
+    "EKF2_REQ_GPS_H": {
+      "type": "float",
+      "shortDesc": "Required GPS health time on startup",
+      "options": {}
+    },
+    "EKF2_GSF_TAS": {
+      "type": "float",
+      "shortDesc": "Default value of true airspeed used in EKF-GSF AHRS calculation",
+      "options": {}
+    },
+    "EKF2_GRAV_NOISE": {
+      "type": "float",
+      "shortDesc": "Accelerometer measurement noise for gravity based observations",
+      "options": {}
+    },
+    "EKF2_GBIAS_INIT": {
+      "type": "float",
+      "shortDesc": "1-sigma IMU gyro switch-on bias",
+      "options": {}
+    },
+    "EKF2_GYR_B_NOISE": {
+      "type": "float",
+      "shortDesc": "Process noise for IMU rate gyro bias prediction",
+      "options": {}
+    },
+    "EKF2_GYR_B_LIM": {
+      "type": "float",
+      "shortDesc": "Gyro bias learning limit",
+      "options": {}
+    },
+    "EKF2_MAG_TYPE": {
+      "type": "enum",
+      "shortDesc": "Type of magnetometer fusion",
+      "options": {
+        "0": "Automatic",
+        "1": "Magnetic heading",
+        "5": "None",
+        "6": "Init"
+      }
+    },
+    "EKF2_MAG_DELAY": {
+      "type": "float",
+      "shortDesc": "Magnetometer measurement delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_MAG_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for magnetometer XYZ component fusion",
+      "options": {}
+    },
+    "EKF2_MAG_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for magnetometer 3-axis fusion",
+      "options": {}
+    },
+    "EKF2_MAG_B_NOISE": {
+      "type": "float",
+      "shortDesc": "Process noise for body magnetic field prediction",
+      "options": {}
+    },
+    "EKF2_MAG_E_NOISE": {
+      "type": "float",
+      "shortDesc": "Process noise for earth magnetic field prediction",
+      "options": {}
+    },
+    "EKF2_DECL_TYPE": {
+      "type": "bitmask",
+      "shortDesc": "Integer bitmask controlling handling of magnetic declination",
+      "options": {
+        "0": "use geo_lookup declination",
+        "1": "save EKF2_MAG_DECL on disarm"
+      }
+    },
+    "EKF2_MAG_ACCLIM": {
+      "type": "float",
+      "shortDesc": "Horizontal acceleration threshold used for heading observability check",
+      "options": {}
+    },
+    "EKF2_MAG_CHECK": {
+      "type": "bitmask",
+      "shortDesc": "Magnetic field strength test selection",
+      "options": {
+        "0": "Strength (EKF2_MAG_CHK_STR)",
+        "1": "Inclination (EKF2_MAG_CHK_INC)",
+        "2": "Wait for WMM"
+      }
+    },
+    "EKF2_MAG_CHK_STR": {
+      "type": "float",
+      "shortDesc": "Magnetic field strength check tolerance",
+      "options": {}
+    },
+    "EKF2_MAG_CHK_INC": {
+      "type": "float",
+      "shortDesc": "Magnetic field inclination check tolerance",
+      "options": {}
+    },
+    "EKF2_SYNT_MAG_Z": {
+      "type": "boolean",
+      "shortDesc": "Enable synthetic magnetometer Z component measurement",
+      "options": {}
+    },
+    "EKF2_MULTI_IMU": {
+      "type": "int32",
+      "shortDesc": "Multi-EKF IMUs",
+      "options": {}
+    },
+    "EKF2_MULTI_MAG": {
+      "type": "int32",
+      "shortDesc": "Multi-EKF Magnetometers",
+      "options": {}
+    },
+    "EKF2_OF_CTRL": {
+      "type": "boolean",
+      "shortDesc": "Optical flow aiding",
+      "options": {}
+    },
+    "EKF2_OF_DELAY": {
+      "type": "float",
+      "shortDesc": "Optical flow measurement delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_OF_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for optical flow fusion",
+      "options": {}
+    },
+    "EKF2_OF_N_MIN": {
+      "type": "float",
+      "shortDesc": "Optical flow minimum noise",
+      "options": {}
+    },
+    "EKF2_OF_N_MAX": {
+      "type": "float",
+      "shortDesc": "Optical flow maximum noise",
+      "options": {}
+    },
+    "EKF2_OF_QMIN": {
+      "type": "int32",
+      "shortDesc": "In air optical flow minimum quality",
+      "options": {}
+    },
+    "EKF2_OF_QMIN_GND": {
+      "type": "int32",
+      "shortDesc": "On ground optical flow minimum quality",
+      "options": {}
+    },
+    "EKF2_OF_GYR_SRC": {
+      "type": "enum",
+      "shortDesc": "Optical flow angular rate compensation source",
+      "options": {
+        "0": "Auto",
+        "1": "Internal"
+      }
+    },
+    "EKF2_OF_POS_X": {
+      "type": "float",
+      "shortDesc": "X position of optical flow focal point in body frame",
+      "options": {}
+    },
+    "EKF2_OF_POS_Y": {
+      "type": "float",
+      "shortDesc": "Y position of optical flow focal point in body frame",
+      "options": {}
+    },
+    "EKF2_OF_POS_Z": {
+      "type": "float",
+      "shortDesc": "Z position of optical flow focal point in body frame",
+      "options": {}
+    },
+    "EKF2_RNG_CTRL": {
+      "type": "enum",
+      "shortDesc": "Range sensor height aiding",
+      "options": {
+        "0": "Disable range fusion",
+        "1": "Enabled (conditional mode)",
+        "2": "Enabled"
+      }
+    },
+    "EKF2_RNG_DELAY": {
+      "type": "float",
+      "shortDesc": "Range finder measurement delay relative to IMU measurements",
+      "options": {}
+    },
+    "EKF2_RNG_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for range finder fusion",
+      "options": {}
+    },
+    "EKF2_RNG_NOISE": {
+      "type": "float",
+      "shortDesc": "Measurement noise for range finder fusion",
+      "options": {}
+    },
+    "EKF2_RNG_PITCH": {
+      "type": "float",
+      "shortDesc": "Range sensor pitch offset",
+      "options": {}
+    },
+    "EKF2_RNG_A_VMAX": {
+      "type": "float",
+      "shortDesc": "Maximum horizontal velocity allowed for conditional range aid mode",
+      "options": {}
+    },
+    "EKF2_RNG_A_HMAX": {
+      "type": "float",
+      "shortDesc": "Maximum height above ground allowed for conditional range aid mode",
+      "options": {}
+    },
+    "EKF2_RNG_QLTY_T": {
+      "type": "float",
+      "shortDesc": "Minumum range validity period",
+      "options": {}
+    },
+    "EKF2_RNG_K_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size used for range finder kinematic consistency check",
+      "options": {}
+    },
+    "EKF2_RNG_SFE": {
+      "type": "float",
+      "shortDesc": "Range finder range dependent noise scaler",
+      "options": {}
+    },
+    "EKF2_RNG_POS_X": {
+      "type": "float",
+      "shortDesc": "X position of range finder origin in body frame",
+      "options": {}
+    },
+    "EKF2_RNG_POS_Y": {
+      "type": "float",
+      "shortDesc": "Y position of range finder origin in body frame",
+      "options": {}
+    },
+    "EKF2_RNG_POS_Z": {
+      "type": "float",
+      "shortDesc": "Z position of range finder origin in body frame",
+      "options": {}
+    },
+    "EKF2_RNG_FOG": {
+      "type": "float",
+      "shortDesc": "Maximum distance at which the range finder could detect fog (m)",
+      "options": {}
+    },
+    "EKF2_SEL_ERR_RED": {
+      "type": "float",
+      "shortDesc": "Selector error reduce threshold",
+      "options": {}
+    },
+    "EKF2_SEL_IMU_RAT": {
+      "type": "float",
+      "shortDesc": "Selector angular rate threshold",
+      "options": {}
+    },
+    "EKF2_SEL_IMU_ANG": {
+      "type": "float",
+      "shortDesc": "Selector angular threshold",
+      "options": {}
+    },
+    "EKF2_SEL_IMU_ACC": {
+      "type": "float",
+      "shortDesc": "Selector acceleration threshold",
+      "options": {}
+    },
+    "EKF2_SEL_IMU_VEL": {
+      "type": "float",
+      "shortDesc": "Selector angular threshold",
+      "options": {}
+    },
+    "EKF2_FUSE_BETA": {
+      "type": "boolean",
+      "shortDesc": "Enable synthetic sideslip fusion",
+      "options": {}
+    },
+    "EKF2_BETA_GATE": {
+      "type": "float",
+      "shortDesc": "Gate size for synthetic sideslip fusion",
+      "options": {}
+    },
+    "EKF2_BETA_NOISE": {
+      "type": "float",
+      "shortDesc": "Noise for synthetic sideslip fusion",
+      "options": {}
+    },
+    "EKF2_TERR_NOISE": {
+      "type": "float",
+      "shortDesc": "Terrain altitude process noise",
+      "options": {}
+    },
+    "EKF2_TERR_GRAD": {
+      "type": "float",
+      "shortDesc": "Magnitude of terrain gradient",
+      "options": {}
+    },
+    "EKF2_MIN_RNG": {
+      "type": "float",
+      "shortDesc": "Expected range finder reading when on ground",
+      "options": {}
+    },
+    "EKF2_MAG_DECL": {
+      "type": "float",
+      "shortDesc": "Magnetic declination",
+      "options": {}
+    },
+    "EKF2_WIND_NSD": {
+      "type": "float",
+      "shortDesc": "Process noise spectral density for wind velocity prediction",
+      "options": {}
+    }
+  }
+}

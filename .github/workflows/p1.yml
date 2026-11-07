@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - name: Check EKF2 parameter catalog
         run: |
-          .venv/bin/python tools/gen_params.py --root target/px4-ekf2-source --check
+          .venv/bin/python tools/gen_params.py --root target/px4-ekf2-source --help-output tools/ekf2_parameter_help.json --check
           .venv/bin/python tools/gen_ekf2_covariance.py --root target/px4-ekf2-source --check
           .venv/bin/python tools/gen_ekf2_mag.py --root target/px4-ekf2-source --check
           .venv/bin/python tools/gen_ekf2_wmm.py --root target/px4-ekf2-source --check
@@ -97,6 +97,8 @@ jobs:
           host="$(rustc -vV | sed -n 's/^host: //p')"
           .venv/bin/python tools/gen_ekf2_runtime_params.py --check
           cargo build --locked --target "$host" --example parameter_catalog --example bmp388_compensation
+          cargo test --locked --target "$host" --example parameter_catalog
+          .venv/bin/python -m unittest discover -s tools -p 'test_gen_parameter_metadata.py'
           .venv/bin/python tools/gen_parameter_metadata.py --check --rust "target/$host/debug/examples/parameter_catalog"
           .venv/bin/python tools/check_bmp388.py --rust "target/$host/debug/examples/bmp388_compensation"
           .venv/bin/python -m unittest discover -s tools -p 'test_upload_windows.py'

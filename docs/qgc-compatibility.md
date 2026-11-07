@@ -8,6 +8,7 @@
 
 - HEARTBEAT：`MAV_TYPE_QUADROTOR`、`MAV_AUTOPILOT_PX4`、CUSTOM_MODE_ENABLED；`custom_mode` 仍为 PX4 MANUAL/sub_mode=0 的兼容上报，不代表已有手动控制器。
 - AUTOPILOT_VERSION 仅声明 MAVLink2 与 PARAM_ENCODE_BYTEWISE，不新增任务、Offboard、通用 FTP 等能力位。
+- 参数已补[设置说明与使用状态](parameter-settings.md)：全 165 项有说明，78 个 EKF2 配置键已读取、64 项未接入；原数值/范围不变，目录选项不保证全部已实现。
 - SYS_STATUS 的普通/扩展 present、enabled、health 六个掩码显式从空值开始；生成代码的默认掩码会置首个标志，不能使用它表示“未知/没有”。
 - `health ⊆ enabled ⊆ present`。物理设备身份未确认时不标存在；已确认身份但样本缺失/陈旧/失效时不标健康。AHRS 的 present 只表示内建软件能力。
 

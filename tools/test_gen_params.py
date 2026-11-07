@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -70,6 +71,19 @@ class DefinitionParsingTests(unittest.TestCase):
 
 
 class RenderingTests(unittest.TestCase):
+    def test_help_preserves_descriptions_and_bit_positions_without_copying_values(self):
+        documents = [("module.yaml", {"parameters": [{"definitions": {
+            "EKF2_CTRL": {"type": "bitmask", "description": {"short": "Sensor control"}, "bit": {0: "First", 3: "Fourth"}, "default": 1, "min": 0, "max": 15},
+        }}]})]
+        help_data = json.loads(gen_params.render_help(documents, "fixed-ref"))
+        entry = help_data["parameters"]["EKF2_CTRL"]
+        self.assertEqual(entry["options"], {"0": "First", "3": "Fourth"})
+        self.assertEqual(entry["shortDesc"], "Sensor control")
+        self.assertEqual(help_data["ref"], "fixed-ref")
+        self.assertNotIn("default", entry)
+        self.assertNotIn("min", entry)
+        self.assertNotIn("max", entry)
+
     def test_render_emits_one_rust_entry_per_parameter(self):
         definitions = [
             gen_params.Definition("EKF2_F", "Float", 0.5, 0.0, 1.0, "m/s", "Planned"),
@@ -104,6 +118,24 @@ class RenderingTests(unittest.TestCase):
 
 
 class CheckTests(unittest.TestCase):
+    def test_check_includes_fixed_source_help_without_rewriting_stale_files(self):
+        documents = [("module.yaml", {"parameters": [{"definitions": {
+            "EKF2_F": {**float_definition(), "description": {"short": "Noise"}},
+        }}]})]
+        catalog = gen_params.render(gen_params.collect(documents), "fixed-ref")
+        help_text = gen_params.render_help(documents, "fixed-ref")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "catalog.rs"
+            help_file = Path(directory) / "help.json"
+            output.write_text(catalog, encoding="utf-8")
+            help_file.write_text(help_text, encoding="utf-8")
+            argv = ["gen_params.py", "--ref", "fixed-ref", "--output", str(output), "--help-output", str(help_file), "--check"]
+            with patch("sys.argv", argv), patch.object(gen_params, "load_documents", return_value=documents), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(gen_params.main(), 0)
+                help_file.write_text("stale help", encoding="utf-8")
+                self.assertEqual(gen_params.main(), 1)
+                self.assertEqual(help_file.read_text(encoding="utf-8"), "stale help")
+
     def test_check_accepts_current_table_and_rejects_drift_without_rewriting(self):
         document = {"parameters": [{"definitions": {"EKF2_F": float_definition()}}]}
         documents = [("module.yaml", document)]
