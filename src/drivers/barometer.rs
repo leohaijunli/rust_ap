@@ -1,16 +1,15 @@
-//! Single-owner internal I2C4 BMP388 driver. Only a verified 0x50 chip is written.
+//! BMP388 device owner sharing internal I2C4 with BMM150 on the thread executor.
 //! I2C4 uses BDMA, which cannot access the current AXI buffers. The HAL's bounded
 //! blocking transfers avoid an invalid DMA placement; IMU remains on its higher
 //! priority interrupt executor. This is not an async preemption guarantee.
 
+use core::cell::RefCell;
 use core::fmt;
 use core::sync::atomic::{AtomicU32, AtomicU8, Ordering};
 
 use embassy_stm32::{
-    gpio::{Level, Output, Speed},
     i2c::{mode::Master, Error as I2cError, I2c},
     mode::Blocking,
-    peripherals, Peri,
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Watch};
 use embassy_time::{Duration, Instant, Timer};
@@ -65,7 +64,7 @@ pub fn health() -> SensorState {
 }
 
 struct Sensor {
-    i2c: I2c<'static, Blocking, Master>,
+    i2c: &'static RefCell<I2c<'static, Blocking, Master>>,
 }
 
 impl Sensor {
@@ -73,13 +72,17 @@ impl Sensor {
         let started = Instant::now();
         let result = self
             .i2c
+            .borrow_mut()
             .blocking_write_read(bmp388::ADDRESS, &[register], bytes);
         self.finish(result, started)
     }
 
     fn write(&mut self, register: u8, value: u8) -> Result<(), Error> {
         let started = Instant::now();
-        let result = self.i2c.blocking_write(bmp388::ADDRESS, &[register, value]);
+        let result = self
+            .i2c
+            .borrow_mut()
+            .blocking_write(bmp388::ADDRESS, &[register, value]);
         self.finish(result, started)
     }
 
@@ -150,9 +153,7 @@ impl Sensor {
 }
 
 #[embassy_executor::task]
-pub async fn run(i2c: I2c<'static, Blocking, Master>, power: Peri<'static, peripherals::PG8>) -> ! {
-    let _power = Output::new(power, Level::High, Speed::Low);
-    Timer::after_millis(10).await;
+pub async fn run(i2c: &'static RefCell<I2c<'static, Blocking, Master>>) -> ! {
     let mut sensor = Sensor { i2c };
     let mut sequence = 0_u32;
     loop {

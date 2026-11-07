@@ -2,7 +2,7 @@
 
 use mavlink::common::*;
 
-use crate::{bmp388, gps, icm42688, px4_messages::SensorGps};
+use crate::{bmm150, bmp388, gps, icm42688, px4_messages::SensorGps};
 
 pub const CAPABILITIES: MavProtocolCapability =
     MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
@@ -20,6 +20,7 @@ pub struct Sensors {
     pub gyro: SensorState,
     pub accel: SensorState,
     pub barometer: SensorState,
+    pub magnetometer: SensorState,
     pub gps: SensorState,
     pub ahrs: SensorState,
 }
@@ -69,6 +70,10 @@ pub fn system_status(sensors: Sensors, load: Option<u16>) -> MavMessage {
         (
             MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE,
             sensors.barometer,
+        ),
+        (
+            MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_3D_MAG,
+            sensors.magnetometer,
         ),
         (MavSysStatusSensor::MAV_SYS_STATUS_SENSOR_GPS, sensors.gps),
         (MavSysStatusSensor::MAV_SYS_STATUS_AHRS, sensors.ahrs),
@@ -151,6 +156,16 @@ pub fn gps_health(sample: Option<SensorGps>, now: u64) -> SensorState {
     }
 }
 
+/// Known device presence is separate from a fresh measurement or EKF fusion.
+pub fn magnetometer_health(chip_id: u8, sample: Option<bmm150::Sample>, now: u64) -> SensorState {
+    let present = chip_id == bmm150::CHIP_ID;
+    SensorState {
+        present,
+        enabled: present,
+        healthy: present && sample.is_some_and(|sample| sample.fresh(now)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,10 +212,11 @@ mod tests {
             gyro: HEALTHY,
             accel: HEALTHY,
             barometer: HEALTHY,
+            magnetometer: HEALTHY,
             gps: HEALTHY,
             ahrs: HEALTHY,
         });
-        assert_eq!(data.onboard_control_sensors_present.bits(), 0x0020_002b);
+        assert_eq!(data.onboard_control_sensors_present.bits(), 0x0020_002f);
         assert_eq!(
             data.onboard_control_sensors_enabled,
             data.onboard_control_sensors_present
@@ -352,6 +368,34 @@ mod tests {
         sample.system_error = 0;
         sample.fix_type = gps::FixType::NoGps as u8;
         assert!(!gps_health(Some(sample), NOW).healthy);
+    }
+
+    #[test]
+    fn magnetometer_health_needs_identity_and_fresh_finite_nonzero_data() {
+        let sample = bmm150::Sample {
+            timestamp_sample: NOW,
+            sequence: 1,
+            field_gauss: [0.22, 0.0, 0.43],
+            error_count: 0,
+        };
+        assert_eq!(
+            magnetometer_health(bmm150::CHIP_ID, Some(sample), NOW + bmm150::FRESH_US),
+            HEALTHY
+        );
+        assert!(!magnetometer_health(0, Some(sample), NOW).present);
+        for (sample, now) in [
+            (None, NOW),
+            (Some(sample), NOW - 1),
+            (Some(sample), NOW + bmm150::FRESH_US + 1),
+        ] {
+            let state = magnetometer_health(bmm150::CHIP_ID, sample, now);
+            assert!(state.present && state.enabled && !state.healthy);
+        }
+        let invalid = bmm150::Sample {
+            field_gauss: [f32::NAN, 0.0, 0.43],
+            ..sample
+        };
+        assert!(!magnetometer_health(bmm150::CHIP_ID, Some(invalid), NOW).healthy);
     }
 
     #[test]

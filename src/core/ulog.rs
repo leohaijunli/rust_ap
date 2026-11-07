@@ -4,11 +4,13 @@ use core::mem::size_of;
 
 use crate::estimator::standard_output::EulerAttitude;
 use crate::ina219::Measurement;
-use crate::px4_messages::{ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro};
+use crate::px4_messages::{
+    ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro, SensorMag, VehicleMagnetometer,
+};
 
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 800;
-pub const TOPIC_COUNT: usize = 13;
+pub const TOPIC_COUNT: usize = 15;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -33,6 +35,8 @@ pub enum TopicId {
     SensorBaro = 35,
     EstimatorRuntime = 36,
     AttitudeEuler = 37,
+    SensorMag = 38,
+    VehicleMagnetometer = 39,
 }
 
 pub struct Topic {
@@ -121,6 +125,18 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
         format: "rust_attitude_euler:uint64_t timestamp;uint64_t timestamp_sample;float roll;float pitch;float yaw;uint8_t quat_reset_counter;bool relative_yaw;",
         payload_len: 30,
     },
+    Topic {
+        id: TopicId::SensorMag,
+        name: "sensor_mag",
+        format: "sensor_mag:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float x;float y;float z;float temperature;uint32_t error_count;",
+        payload_len: 40,
+    },
+    Topic {
+        id: TopicId::VehicleMagnetometer,
+        name: "vehicle_magnetometer",
+        format: "vehicle_magnetometer:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float[3] magnetometer_ga;uint8_t calibration_count;",
+        payload_len: 33,
+    },
 ];
 
 impl TopicId {
@@ -129,6 +145,8 @@ impl TopicId {
             Self::SensorBaro => 10,
             Self::EstimatorRuntime => 11,
             Self::AttitudeEuler => 12,
+            Self::SensorMag => 13,
+            Self::VehicleMagnetometer => 14,
             _ => self as usize,
         }
     }
@@ -434,6 +452,28 @@ pub fn sensor_gyro_payload(report: SensorGyro) -> Payload {
         report.clip_counter,
         report.samples,
     )
+}
+
+pub fn sensor_mag_payload(report: SensorMag) -> Payload {
+    let mut payload = Payload::new();
+    payload.push_u64(report.timestamp_sample).unwrap();
+    payload.push_u32(report.device_id).unwrap();
+    for value in [report.x, report.y, report.z, report.temperature] {
+        payload.push_f32(value).unwrap();
+    }
+    payload.push_u32(report.error_count).unwrap();
+    payload
+}
+
+pub fn vehicle_magnetometer_payload(report: VehicleMagnetometer) -> Payload {
+    let mut payload = Payload::new();
+    payload.push_u64(report.timestamp_sample).unwrap();
+    payload.push_u32(report.device_id).unwrap();
+    for value in report.magnetometer_ga {
+        payload.push_f32(value).unwrap();
+    }
+    payload.push_u8(report.calibration_count).unwrap();
+    payload
 }
 
 fn sensor_payload(

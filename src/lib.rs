@@ -5,6 +5,8 @@
 #[cfg(test)]
 extern crate std;
 
+#[path = "core/bmm150.rs"]
+pub mod bmm150;
 #[path = "core/bmp388.rs"]
 pub mod bmp388;
 
@@ -38,6 +40,8 @@ pub mod mavcan;
 pub mod mavftp;
 #[path = "core/mavlink_estimator.rs"]
 pub mod mavlink_estimator;
+#[path = "core/mavlink_magnetometer.rs"]
+pub mod mavlink_magnetometer;
 #[path = "core/mavlink_power.rs"]
 pub mod mavlink_power;
 #[path = "core/mavlink_protocol.rs"]

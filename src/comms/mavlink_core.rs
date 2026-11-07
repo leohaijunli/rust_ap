@@ -329,6 +329,7 @@ pub fn system_status() -> MavMessage {
 
     let (gyro, accel) = crate::imu::health();
     let barometer = crate::barometer::health();
+    let magnetometer = crate::magnetometer::health();
     let gps = crate::dronecan_can::latest_gps();
     let gps = mavlink_vehicle::gps_health(gps, embassy_time::Instant::now().as_micros());
     let output = crate::estimator::latest();
@@ -349,6 +350,7 @@ pub fn system_status() -> MavMessage {
             gyro,
             accel,
             barometer,
+            magnetometer,
             gps,
             ahrs,
         },
@@ -384,7 +386,7 @@ pub fn highres_imu() -> Option<MavMessage> {
         fields_updated |= HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_ABS_PRESSURE;
         fields_updated |= HighresImuUpdatedFlags::HIGHRES_IMU_UPDATED_PRESSURE_ALT;
     }
-    Some(MavMessage::HIGHRES_IMU(HIGHRES_IMU_DATA {
+    let mut data = HIGHRES_IMU_DATA {
         time_usec: sample.sample_timestamp_us,
         xacc: accel_frd[0],
         yacc: accel_frd[1],
@@ -399,7 +401,13 @@ pub fn highres_imu() -> Option<MavMessage> {
         fields_updated,
         id: v6x_rust_led::icm42688::SOURCE_ID,
         ..Default::default()
-    }))
+    };
+    v6x_rust_led::mavlink_magnetometer::update_highres_imu(
+        &mut data,
+        crate::magnetometer::latest(),
+        now,
+    );
+    Some(MavMessage::HIGHRES_IMU(data))
 }
 
 /// Keep barometer temperature separate from the IMU temperature. This standard

@@ -466,6 +466,49 @@ fn events_wait_for_imu_and_duplicate_or_invalid_measurements_do_not_latch_the_fi
 }
 
 #[test]
+fn compensated_bmm150_samples_fuse_and_missing_mag_expires_without_stopping_imu() {
+    // Factory-trimmed synthetic ADC samples, not hardware/navigation acceptance.
+    let trim = crate::bmm150::tests::trim();
+    let bytes = crate::bmm150::tests::data(70, -1, 200, 8192);
+    let mut main = Runtime::<GnssEkf>::new(params(), 0).unwrap();
+    for index in 1..=6_000_u64 {
+        let time = 1_000_000 + index * 1_000;
+        main.ingest_imu(imu(time), time).unwrap();
+        if index.is_multiple_of(20) {
+            main.apply_measurement(
+                Measurement::Baro(BaroAltitude {
+                    timestamp: time,
+                    altitude_m: 25.0,
+                }),
+                time,
+            )
+            .unwrap();
+        }
+        if index.is_multiple_of(50) {
+            let sample = crate::bmm150::Sample {
+                timestamp_sample: time,
+                sequence: (index / 50) as u32,
+                field_gauss: trim.compensate(&bytes).unwrap(),
+                error_count: 0,
+            };
+            main.apply_measurement(sample.measurement(time).unwrap(), time)
+                .unwrap();
+        }
+        main.maintain(time);
+    }
+    let mag = main.filter().core().aid_status().unwrap().1;
+    assert!(mag.fused && !mag.rejected, "{mag:?}");
+    assert_ne!(main.filter().core().control_status() & (1 << 35), 0);
+    for time in (7_001_000..=8_500_000).step_by(1_000) {
+        main.ingest_imu(imu(time), time).unwrap();
+        main.maintain(time);
+    }
+    assert_eq!(main.filter().core().control_status() & (1 << 35), 0);
+    assert_eq!(main.status().fault, None);
+    assert_eq!(main.status().selection, Selection::Filter);
+}
+
+#[test]
 fn snapshot_parameters_reconfigure_baro_and_reject_insufficient_delay_capacity() {
     let values = Snapshot::default()
         .with(Id::EstEnable, 1.0)

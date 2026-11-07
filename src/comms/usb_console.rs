@@ -34,7 +34,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
     let _ = match command {
         Command::Help => writeln!(
             response,
-            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu ina219 px4io logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
+            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu baro mag ina219 px4io logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
         ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
         Command::Metrics => crate::diagnostics::write_diagnostics(&mut response)
@@ -50,6 +50,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::Imu => crate::imu::write_diagnostics(&mut response),
         Command::Ina219 => crate::ina219::write_diagnostics(&mut response),
         Command::Baro => crate::barometer::write_diagnostics(&mut response),
+        Command::Mag => crate::magnetometer::write_diagnostics(&mut response),
         Command::Estimator => crate::estimator::write_diagnostics(&mut response),
         Command::Px4io => crate::px4io::write_diagnostics(&mut response),
         Command::Logger => crate::sd_logger::write_diagnostics(&mut response)
@@ -291,6 +292,7 @@ pub(crate) enum Command {
     Imu,
     Ina219,
     Baro,
+    Mag,
     Estimator,
     EstimatorStart,
     EstimatorStop,
@@ -353,6 +355,7 @@ impl CommandLine {
                     b"!imu" | b"imu" => Some(Command::Imu),
                     b"!ina219" | b"ina219" => Some(Command::Ina219),
                     b"!baro" | b"baro" => Some(Command::Baro),
+                    b"!mag" | b"mag" => Some(Command::Mag),
                     b"!ekf2" | b"ekf2" => Some(Command::Estimator),
                     b"!ekf2 start" | b"ekf2 start" => Some(Command::EstimatorStart),
                     b"!ekf2 stop" | b"ekf2 stop" => Some(Command::EstimatorStop),

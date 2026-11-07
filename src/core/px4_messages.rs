@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 // Message fields adapted from PX4 v1.17.0; see tools/px4_msgs/LICENSE.
-//! PX4 message contracts at the data boundary; vectors are FRD and SI units.
+//! PX4 message contracts: FRD vectors, SI except magnetic fields in Gauss.
 
 use core::f32::consts::PI;
 
@@ -29,6 +29,58 @@ impl SensorBaro {
             pressure: sample.pressure_pa,
             temperature: sample.temperature_c,
             error_count: sample.error_count,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SensorMag {
+    pub timestamp: u64,
+    pub timestamp_sample: u64,
+    pub device_id: u32,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub temperature: f32,
+    pub error_count: u32,
+}
+
+impl SensorMag {
+    pub fn from_sample(sample: crate::bmm150::Sample, timestamp: u64) -> Self {
+        let [x, y, z] = sample.field_gauss;
+        Self {
+            timestamp,
+            timestamp_sample: sample.timestamp_sample,
+            device_id: crate::bmm150::DEVICE_ID,
+            x,
+            y,
+            z,
+            // BMM150 has no temperature channel. Never borrow the BMP388 value.
+            temperature: f32::NAN,
+            error_count: sample.error_count,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VehicleMagnetometer {
+    pub timestamp: u64,
+    pub timestamp_sample: u64,
+    pub device_id: u32,
+    pub magnetometer_ga: [f32; 3],
+    pub calibration_count: u8,
+}
+
+impl VehicleMagnetometer {
+    /// The only current source: factory-trim compensation, board/body rotation 0.
+    /// No vehicle calibration change or external-source selection is fabricated.
+    pub fn from_sensor(sensor: SensorMag) -> Self {
+        Self {
+            timestamp: sensor.timestamp,
+            timestamp_sample: sensor.timestamp_sample,
+            device_id: sensor.device_id,
+            magnetometer_ga: [sensor.x, sensor.y, sensor.z],
+            calibration_count: 0,
         }
     }
 }

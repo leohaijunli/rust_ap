@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-07。**当前普通包 source=`a17a2d35bab6f05a` 已回装，COM4，disarmed；QGC 5.0.3 四旋翼类型/参数说明已由工程师确认，165 项参数及元数据 CRC/字节保持核对通过。单主 EKF2/TIM8 运行正常。P0、P1、P3a、RTC-01/TIME-01 已完成；MAVCAN（CAN2）历史已收口。CAN1/GNSS 无数据、INA219 无应答、PX4IO Timeout；SD 故障/时延、双链路/参数重启与传感器实物门仍待工程师。M1 与完整 E7 未放行。**
+更新：2026-11-07。**最近已回装普通包 source=`050461399e9cbd95`；QGC 5.0.3 类型/参数说明、单主 EKF2/TIM8 与 H-04 限定范围已有记录。当前新增板载 BMM150→EKF2 软件，待授权回装及地磁/BMP388 共存实测；外接磁源选择与安装校准未实现。CAN/GNSS、双链路、传感器及 IO 实物门仍按原依赖；M1 与完整 E7 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -10,6 +10,11 @@
 - 保持纯 Rust/Embassy、原 PX4 bootloader、`0x08020000` 入口和 QGC 恢复能力。
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
+
+## 板载地磁 — 2026-11-07
+
+- [x] BMM150/I²C4 驱动与主 EKF2 磁事件入口、标准地磁日志/遥测/诊断已接入；共用 BMP388 总线而不切断共享电源。host 196 项、256 组固定 PX4 补偿对拍、pyulog、Clippy/元数据与普通包通过，source=`cd136580311b4298`（RAM +292 B、入口帧不变）。[软件记录](docs/acceptance/magnetometer/20261107-bmm150.md)。
+- [ ] 待工程师授权回装，验证地磁身份/轴向/实际融合和 BMP388 共存。仅工厂 trim，外接选择/安装校准未实现，不提前放行 M1/E7。
 
 ## 2026-11-07 状态检查与回装
 
@@ -26,7 +31,7 @@
 
 - [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
 - [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
-- [ ] 本地提交未推送：GitHub 非交互凭据不可用（`unable to get password`），`origin/main` 落后 3 个提交；需工程师提供凭据或手动推送。
+- [x] GitHub 凭据问题已解决：仓库配置 `credential.username=leohaijunli`，此前积压提交已推送；后续沿用正常非交互推送。
 
 - [x] 工程师授权推进最小 QGC 兼容：Quadrotor 身份、真实 IMU/baro/GPS/AHRS 健康位与[能力矩阵](docs/qgc-compatibility.md)已实现；7 项新用例、fmt、host/普通 H753 Clippy 通过，解锁/输出门未改。[本轮记录](docs/acceptance/p2/20261107-qgc-minimal.md)。
 - [x] 新普通包构建/布局通过，source=`fdf7fcd1ff9d10c7`；static RAM=`254224 B`、最大入口栈帧=`11496 B` 不变。未自动烧录。

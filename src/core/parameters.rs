@@ -203,6 +203,15 @@ with_ekf2_parameters! {
         name: "MAV_RATE_POWER", getter: mav_rate_power, group: Link, kind: Real, default: 10.0,
         min: 0.0, max: 20.0, access: NextCycle
     },
+    // Append after all shipped IDs so legacy positional parameter records survive.
+    LogEnMag {
+        name: "LOG_EN_MAG", getter: log_en_mag, group: SdLog, kind: Integer, default: 1.0,
+        min: 0.0, max: 1.0, access: NextCycle
+    },
+    LogMagHz {
+        name: "LOG_MAG_HZ", getter: log_mag_hz, group: SdLog, kind: Real, default: 20.0,
+        min: 1.0, max: 20.0, access: NextCycle
+    },
     }
 }
 

@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控实施计划
 
-更新：2026-11-06。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
+更新：2026-11-07。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
 状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)。
 
 ## 1. 当前进度与执行原则
@@ -200,6 +200,12 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 - **BARO-04 EKF 与必要验收**：压力→高度基准/观测转换单列，使用独立 baro 时间，不能为了 combined baro/mag fixture 伪造磁场，也不以 GNSS 高度冒充气压。host 验补偿/大小端/SI、失败/陈旧/恢复与字段编码；普通 fmt/Clippy/release/布局后，工程师配合一次身份/温压读取、MAVLink 字段/速率、短时 pyulog 和一次失效/恢复。精度与板载融合资格须真实依据，不因读数关闭 E7/M1 门。
 
 当前 `src/core/bmp388.rs` / `src/drivers/barometer.rs` 已实现并回装：I2C4 PF14/PF15、0x77、PG8，forced 压力×16/温度×2，43.3 ms 后收数；256 个固定 C++ 对拍通过，实物首读通过。独立气压输入不伪造磁场；MAVLink/ULog 实物解析与一次失效恢复尚未完成，见[BARO 记录](docs/acceptance/barometer/20261104-bringup.md)。
+
+### 板载地磁与 EKF 输入（2026-11-07 工程师新增）
+
+- **MAG-01 驱动**：按固定 PX4 v1.17.0 的 Rev 3 定义实现 BMM150/I²C4/0x10、rotation=0；与 BMP388 共用 PF14/PF15 和 PG8。线程任务只在有界阻塞事务内借用总线，恢复不切断共享电源；唤醒后校验 0x32，再软复位、自检、读取 trim 和回读 20 Hz 高精度配置。
+- **MAG-02 数据链**：工厂 trim 补偿后的 FRD/Gauss、独立采样时间、序号和真实 device ID 经已有 `Measurement::Mag` 入口送 EKF2；失效/超时/溢出不送零值。补标准 `sensor_mag` / `vehicle_magnetometer` ULog、`HIGHRES_IMU` 磁场与健康位、`!mag` 和磁融合诊断。日志参数追加在已发行 ID 之后，不改旧值或存档。
+- **MAG-03 边界与必验**：本轮只接板载源，不实现外接驱动/多源投票或 QGC 校准。工厂 trim 不代表安装后硬/软铁校准，航向仍无飞行资格。host 核对补偿/单位/大小端/陈旧及溢出、固定 PX4 补偿对拍、磁事件融合/失效和 pyulog 字段；普通 fmt/Clippy/release/布局。回装须另获授权；实物需 ID/自检/XYZ、转动方向、磁融合诊断、短日志和 BMP388 共存核对，不由 host 结果放行。
 
 ### INA219 支路电流（工程师新增）
 

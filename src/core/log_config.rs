@@ -19,9 +19,10 @@ pub enum Group {
     Event,
     Estimator,
     Barometer,
+    Magnetometer,
 }
 
-pub const GROUP_COUNT: usize = 7;
+pub const GROUP_COUNT: usize = 8;
 
 impl Group {
     const fn enable(self) -> Id {
@@ -33,6 +34,7 @@ impl Group {
             Group::Event => Id::LogEnEvent,
             Group::Estimator => Id::LogEnEst,
             Group::Barometer => Id::LogEnBaro,
+            Group::Magnetometer => Id::LogEnMag,
         }
     }
 
@@ -45,6 +47,7 @@ impl Group {
             Group::Event => None,
             Group::Estimator => Some(Id::LogEstHz),
             Group::Barometer => Some(Id::LogBaroHz),
+            Group::Magnetometer => Some(Id::LogMagHz),
         }
     }
 }
@@ -116,6 +119,7 @@ pub fn refresh_all() {
         Group::Event,
         Group::Estimator,
         Group::Barometer,
+        Group::Magnetometer,
     ] {
         refresh_default(group);
     }
@@ -130,6 +134,7 @@ fn group_for(id: Id) -> Option<Group> {
         Group::Event,
         Group::Estimator,
         Group::Barometer,
+        Group::Magnetometer,
     ]
     .into_iter()
     .find(|group| group.enable() == id || group.rate() == Some(id))
@@ -169,7 +174,7 @@ mod tests {
                 .iter()
                 .filter(|entry| entry.name.starts_with("LOG_"))
                 .count(),
-            13
+            15
         );
         for group in [
             Group::Imu,
@@ -179,6 +184,7 @@ mod tests {
             Group::Event,
             Group::Estimator,
             Group::Barometer,
+            Group::Magnetometer,
         ] {
             assert!(REGISTRY.iter().any(|entry| entry.id == group.enable()));
             if let Some(rate) = group.rate() {

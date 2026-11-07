@@ -26,7 +26,8 @@ use v6x_rust_led::logger::{
 };
 use v6x_rust_led::parameters::{Kind, REGISTRY};
 use v6x_rust_led::px4_messages::{
-    ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro, PX4_REVISION,
+    ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro, SensorMag, VehicleMagnetometer,
+    PX4_REVISION,
 };
 use v6x_rust_led::ulog::{self, DataEncoder, TopicId, TOPICS};
 use v6x_rust_led::wall_clock::Utc;
@@ -109,6 +110,28 @@ pub fn record_baro(sample: v6x_rust_led::bmp388::Sample) {
     )
     .expect("fixed SensorBaro fits the runtime record");
     let _ = LOGGER.try_record(Class::Normal, now, record);
+}
+
+pub fn record_mag(sample: v6x_rust_led::bmm150::Sample) {
+    let now = Instant::now().as_micros();
+    if !ready()
+        || !sample.fresh(now)
+        || !v6x_rust_led::log_config::rate(Group::Magnetometer, sample.timestamp_sample)
+    {
+        return;
+    }
+    let report = SensorMag::from_sample(sample, now);
+    for (topic, payload) in [
+        (TopicId::SensorMag, ulog::sensor_mag_payload(report)),
+        (
+            TopicId::VehicleMagnetometer,
+            ulog::vehicle_magnetometer_payload(VehicleMagnetometer::from_sensor(report)),
+        ),
+    ] {
+        let record = ulog::data_record(topic as u16, now, payload.as_bytes())
+            .expect("fixed magnetometer record fits");
+        let _ = LOGGER.try_record(Class::Normal, now, record);
+    }
 }
 
 pub fn request_start() -> Result<(), ControlError> {

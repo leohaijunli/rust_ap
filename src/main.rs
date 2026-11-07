@@ -36,6 +36,9 @@ mod ina219;
 #[path = "drivers/logger_switch.rs"]
 mod logger_switch;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/magnetometer.rs"]
+mod magnetometer;
+#[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/mavcan.rs"]
 mod mavcan;
 #[cfg(not(feature = "fault-dump"))]
@@ -338,13 +341,26 @@ async fn application(p: Peripherals, spawner: Spawner) {
     );
     spawner.spawn(ina219::run(i2c3)).unwrap();
 
-    // Fixed FMUv6X Rev 3 internal barometer bus. I2C4's BDMA cannot
+    // Fixed FMUv6X Rev 3 internal BMP388/BMM150 bus. I2C4's BDMA cannot
     // access AXI; use the HAL's 10-ms-bounded blocking path instead.
+    let _sensor_power = Output::new(p.PG8, Level::High, Speed::Low);
+    Timer::after_millis(10).await;
     let mut baro_config = I2cConfig::default();
     baro_config.frequency = Hertz(400_000);
     baro_config.timeout = embassy_time::Duration::from_millis(10);
-    let i2c4 = I2c::new_blocking(p.I2C4, p.PF14, p.PF15, baro_config);
-    spawner.spawn(barometer::run(i2c4, p.PG8)).unwrap();
+    static INTERNAL_I2C: StaticCell<
+        RefCell<I2c<'static, embassy_stm32::mode::Blocking, embassy_stm32::i2c::mode::Master>>,
+    > = StaticCell::new();
+    // Non-Sync RefCell is shared only by sibling thread tasks. Each blocking
+    // transfer releases the borrow before yielding; interrupts never use it.
+    let i2c4 = INTERNAL_I2C.init(RefCell::new(I2c::new_blocking(
+        p.I2C4,
+        p.PF14,
+        p.PF15,
+        baro_config,
+    )));
+    spawner.spawn(barometer::run(i2c4)).unwrap();
+    spawner.spawn(magnetometer::run(i2c4)).unwrap();
 
     // USB CDC ACM on the FS OTG peripheral (PA11/PA12), clocked from PLL3Q.
     static EP_OUT_BUFFER: StaticCell<[u8; 256]> = StaticCell::new();

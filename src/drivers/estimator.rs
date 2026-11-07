@@ -132,8 +132,7 @@ pub fn configure(values: parameters::Snapshot) -> Result<(), parameters::Error> 
     Ok(())
 }
 
-/// Sensor publishers call this exactly once per real sample. Future mag/range
-/// drivers use this same entry with calibrated data and their real device ID.
+/// Sensor publishers call this once per accepted sample with its real device ID.
 pub fn submit_measurement(measurement: Measurement, device_id: u32) {
     if ACTIVE_EPOCH.load(Ordering::Acquire) == 0 {
         return;
@@ -671,6 +670,13 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
             state.snapshot.aids[1].is_some(),
             state.snapshot.aids[2].is_some()
         )?;
+        if let Some(mag) = state.snapshot.aids[1] {
+            writeln!(
+                output,
+                "EKF2_MAG device_id={} timestamp_sample={} fused={} rejected={}",
+                mag.device_id, mag.status.timestamp, mag.status.fused, mag.status.rejected
+            )?;
+        }
     }
     if let Some(perf) = PERF.try_get() {
         for (name, timing) in [
