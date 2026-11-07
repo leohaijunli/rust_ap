@@ -6,16 +6,18 @@
 
 随后完成全 165 项[参数说明与审核](parameter-settings.md)：原数值/范围/存储及算法不变，逐项区分配置读取、条件作用与未接入；相关用例/fmt/Clippy、CRC 与普通包构建/布局通过，source=`a17a2d35bab6f05a`。未自动设参或烧录，新文案的 QGC 显示待回装/重新获取元数据。[记录](acceptance/p3a/20261107-parameter-help.md)。
 
+工程师随后授权回装，新包 `a17a2d35bab6f05a` 已经原 bootloader 上传/CRC 校验；165 项值/类型与历史故障保持，元数据 CRC/字节相同，QGC 5.0.3 类型/说明界面由工程师确认通过。[回装记录](acceptance/p2/20261107-qgc-flash.md)。下一步回到 H-04 输入/实物门，不自动进行断电/拔卡。
+
 ## 1. 当前基线（2026-11-07 回装，复用历史验收）
 
 | 领域 | 状态 |
 | --- | --- |
-| 估计器 | 当前 source=`bf2f2a0bd91f5421` 普通包已回装至 COM4；只读快照 `Filter/Running`、fault=None、max_update=559 µs、发布 missed=0、积分 0 ppm。host 180 项、65 s 门与 PX4 同板对比复用[历史记录](acceptance/ekf2/20261106-single-estimator-timebase.md)，本次没有重新做完整时序验收。[回装记录](acceptance/p1/20261107-current-firmware.md) |
+| 估计器 | 当前 source=`a17a2d35bab6f05a` 已回装至 COM4；只读快照 `Filter/Running`、fault=None、max_update=560 µs、发布 missed=0、积分 0 ppm。host/65 s 门与 PX4 同板对比复用[历史记录](acceptance/ekf2/20261106-single-estimator-timebase.md)，不冒充新完整时序验收。[回装记录](acceptance/p2/20261107-qgc-flash.md) |
 | 标准输出 | host fixture 165 字段与历史 pyulog/pymavlink、USB/SD 成对核对已通过；本次未启动新日志。Flight Review/PlotJuggler 实际打开仍不能由 pyulog 解析替代 |
 | 日志/dropout | 第 1 层完成：`dronecan_raw_command` 移除，产生 37.6→24.3 kB/s，dropout 41→4 次；剩余 3 次 ≥65.5 ms（u16 饱和，实际更长）为卡级停顿。第 2 层核查完毕：固定 `embedded-fatfs` 无预分配接口，写入器已 32 KiB 攒批，软件侧到顶 |
 | 已修复并板验 | `record_can_stats` 误用 `Group::Health` 限流器（历史 bug）导致 `rust_runtime_health` 被 10 Hz can_stats 饿死；改回 `Group::Can` 后板验：health 与 can_stats 并存（≈10 Hz），12 s 会话 dropout=0。source=`ad99705b817a8c7f` |
 | 协议/参数 | 165 项参数、P0–P3 软件+部分板载通过、MAVCAN（CAN2）收口、P4b-g 软件刷入（NO_GPS 帧已验） |
-| QGC 最小兼容 | 新源码使用 Quadrotor、真实传感器健康位，修复默认掩码误置位；7 项测试、普通/host Clippy 与普通打包通过，source=`fdf7fcd1ff9d10c7`。未回装，GUI 待验；上次板载记录仍是 `bf2f2a0bd91f5421` |
+| QGC 最小兼容 | 当前合并包已回装：Quadrotor/disarmed、真实健康掩码 `0x0020000B`、165 项新说明和元数据 CRC/字节核对通过；工程师确认 QGC 5.0.3 类型/说明界面正常，完整双链路与实物门仍待验 |
 | 当前实物状态 | IMU/BMP388 有效；CAN1/GNSS 无数据、INA219 无应答、PX4IO Timeout。参数存档兼容载入但 dirty=true/pending_save=false，未保存；旧 panic 保留；M1/完整 E7 不放行 |
 
 ## 2. 未收口问题（按优先级）

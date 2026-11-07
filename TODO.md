@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-07。**当前普通包 source=`bf2f2a0bd91f5421` 已回装，COM4，disarmed，单主 EKF2/TIM8 运行正常。P0、P1、P3a、RTC-01/TIME-01 已完成，数据链/日志/协议软件与有限板验结果可复用；MAVCAN（CAN2）历史已收口。当前 CAN1/GNSS 无数据、INA219 无应答、PX4IO Timeout；SD 故障/时延、双链路/参数重启与传感器实物门仍待工程师。M1 与完整 E7 未放行。**
+更新：2026-11-07。**当前普通包 source=`a17a2d35bab6f05a` 已回装，COM4，disarmed；QGC 5.0.3 四旋翼类型/参数说明已由工程师确认，165 项参数及元数据 CRC/字节保持核对通过。单主 EKF2/TIM8 运行正常。P0、P1、P3a、RTC-01/TIME-01 已完成；MAVCAN（CAN2）历史已收口。CAN1/GNSS 无数据、INA219 无应答、PX4IO Timeout；SD 故障/时延、双链路/参数重启与传感器实物门仍待工程师。M1 与完整 E7 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -13,19 +13,22 @@
 
 ## 2026-11-07 状态检查与回装
 
+- [x] 工程师授权回装 `a17a2d35bab6f05a`：原 bootloader 上传/CRC 校验、Quadrotor/disarmed/平台与备份域通过；165 项值/类型/顺序及历史故障保持，未设参/保存/启动日志。[回装记录](docs/acceptance/p2/20261107-qgc-flash.md)。
+- [x] 元数据两文件只读下载/CRC/精确字节核对通过；工程师确认 QGC 5.0.3 类型、示例标签及设置说明正常。本轮显示子项收口，不等于完整 P2/P3/M1 验收。
+- [ ] 下一步 H-04：等待工程师提供 SD 卡型号/容量/等级（A1/A2 或工业 pSLC）、实测写延迟分布与允许丢失窗口；受控断电/拔卡由工程师执行，不自动操作、不启用输出。
+
 - [x] 工程师授权修正参数说明并审核其余参数：165 项均有使用状态/设置含义，数值/类型/默认/范围/分组逐项不变；固定 PX4 描述与运行时读取分开，去除整组 `unmapped` 误导。[设置指南](docs/parameter-settings.md) / [本轮记录](docs/acceptance/p3a/20261107-parameter-help.md)。
 - [x] 参数说明普通包与最后元数据 CRC/布局核对通过，source=`a17a2d35bab6f05a`；RAM/最大入口栈帧不变。未设参/保存/烧录。
-- [ ] 本轮参数说明实现/审核结果已本地提交；推送因 GitHub 非交互凭据不可用失败。实际 QGC 显示仍待工程师确认版本、授权新包回装及重新获取元数据。
+- [ ] 本地提交未推送：GitHub 非交互凭据不可用（`unable to get password`），`origin/main` 落后 3 个提交；需工程师提供凭据或手动推送。
 
 - [x] 工程师授权推进最小 QGC 兼容：Quadrotor 身份、真实 IMU/baro/GPS/AHRS 健康位与[能力矩阵](docs/qgc-compatibility.md)已实现；7 项新用例、fmt、host/普通 H753 Clippy 通过，解锁/输出门未改。[本轮记录](docs/acceptance/p2/20261107-qgc-minimal.md)。
 - [x] 新普通包构建/布局通过，source=`fdf7fcd1ff9d10c7`；static RAM=`254224 B`、最大入口栈帧=`11496 B` 不变。未自动烧录。
-- [ ] 本轮实现/矩阵/软件结果已本地提交；非交互推送因 GitHub 凭据不可用失败。工程师完成授权后再执行 `git push`。
-- [ ] 工程师确认 QGC 版本并授权新包回装后，完成一次四旋翼类型/健康位的用户可见核对；不启用非零输出。
+- [x] QGC 版本/回装授权及类型/参数说明用户可见核对已完成；健康位由同次协议读取覆盖，不启用非零输出。
 
 - [x] 从干净的 `aaba83b` 当前源码构建普通包，原 board 53/protocol v5 bootloader 上传与 CRC 校验、COM4 身份/3 个 disarmed 心跳/平台与备份域核对通过；没有修改固件代码或 IO 应用。[本次记录](docs/acceptance/p1/20261107-current-firmware.md)。
 - [x] 只读快照：主 `Filter/Running`、fault=None、max_update=559 µs、期限超时=0、积分 0 ppm；继承参数启用状态，未设参/保存、未清旧 panic、未启动新日志。
 - [x] 阅读 P0–P3 产品方案并完成[评估与下一步建议](docs/p0-p3-review-and-next-plan.md)；仅文档建议，未更改现行阶段门或实施控制/非零输出。
-- [ ] 最小 QGC 兼容的板载/GUI 门与硬件主线仍按 H-04/02/03/10、当前传感器/IO 待验项推进，再验 M1。详见[下一步计划](docs/next-steps.md)。
+- [ ] 硬件主线按 H-04/02/03/10 与当前传感器/IO 待验项推进，再验 M1；QGC 板载/GUI 子项已收口。详见[下一步计划](docs/next-steps.md)。
 
 ## 单实例 EKF 与 IMU 时基 — 2026-11-06 记录
 
