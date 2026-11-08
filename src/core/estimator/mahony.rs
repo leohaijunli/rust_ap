@@ -161,6 +161,8 @@ impl super::NavFilter for Mahony {
             valid: self.initialized && self.fault.is_none(),
             fault: self.fault,
             numerics: None,
+            stage: None,
+            pair: [f32::NAN; 2],
         }
     }
 }

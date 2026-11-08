@@ -249,11 +249,26 @@ pub enum NumericsItem {
     CovarianceAsymmetric(usize, usize),
 }
 
+/// Covariance mutation that first left `P` asymmetric; field diagnosis only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NumericsStage {
+    Prediction,
+    PredictionConstrain,
+    GainUpdate,
+    ScalarUpdate,
+    ResetVariance,
+    InitializeCovariance,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FilterHealth {
     pub valid: bool,
     pub fault: Option<FilterFault>,
     pub numerics: Option<NumericsItem>,
+    /// Stage that first broke covariance symmetry, and the disagreeing pair
+    /// as `[P[row][column], P[column][row]]`.
+    pub stage: Option<NumericsStage>,
+    pub pair: [f32; 2],
 }
 
 impl FilterHealth {
@@ -261,6 +276,8 @@ impl FilterHealth {
         valid: true,
         fault: None,
         numerics: None,
+        stage: None,
+        pair: [f32::NAN; 2],
     };
 }
 

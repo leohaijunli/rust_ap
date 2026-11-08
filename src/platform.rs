@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use cortex_m::peripheral::SCB;
+use cortex_m::peripheral::{FPU, SCB};
 use embassy_stm32::interrupt::{InterruptExt, Priority};
 use embassy_stm32::pac::{DBGMCU, FLASH, PWR, RCC, SYSCFG, TIM8};
 use embassy_stm32::rcc::{
@@ -17,11 +17,36 @@ pub const HCLK_HZ: u32 = 240_000_000;
 pub const PCLK_HZ: u32 = 120_000_000;
 pub const TICK_HZ: u32 = 1_000_000;
 
+// ARM CMSIS 5.9.0 core_cm7.h: architectural FPCCR control/status bits.
+const FPCCR_ASPEN: u32 = 1 << 31;
+const FPCCR_LSPEN: u32 = 1 << 30;
+const FPCCR_LSPACT: u32 = 1;
+
 pub fn init() -> Peripherals {
     crate::fault::capture_before_hal();
     // The only supported board has revision V silicon (PX4 MCU_REV_V=0x2003).
     assert_eq!(DBGMCU.idc().read().rev_id(), 0x2003);
     let mut core = cortex_m::Peripherals::take().expect("core peripherals taken once");
+    // The bootloader leaves FPCCR=0; cortex-m-rt enables CP10/11 but does not
+    // restore automatic context saving. TIM7 preempts the floating-point EKF
+    // on TIM5, so hardware must preserve S0-S15/FPSCR on exception entry.
+    // Use eager stacking to avoid lazy-save timing/state across nested IRQs.
+    cortex_m::interrupt::free(|_| {
+        assert_eq!(core.FPU.fpccr.read() & FPCCR_LSPACT, 0);
+        // SAFETY: core.FPU is uniquely owned here, before the executors/HAL
+        // start. IRQs are masked and no pending lazy FP frame is being changed.
+        unsafe {
+            core.FPU
+                .fpccr
+                .modify(|value| (value | FPCCR_ASPEN) & !FPCCR_LSPEN);
+        }
+        cortex_m::asm::dsb();
+        cortex_m::asm::isb();
+        assert_eq!(
+            core.FPU.fpccr.read() & (FPCCR_ASPEN | FPCCR_LSPEN),
+            FPCCR_ASPEN
+        );
+    });
     core.SCB.disable_dcache(&mut core.CPUID);
     core.SCB.enable_icache();
     core.DCB.enable_trace();
@@ -182,6 +207,15 @@ pub fn write_diagnostics(out: &mut impl fmt::Write) -> fmt::Result {
     writeln!(out, "CORE id={:08x} vtor={:08x} ccr={:08x} scr={:08x} aircr={:08x} dwt_ctrl={:08x} reset_flags={:08x}",
         DBGMCU.idc().read().0, scb.vtor.read(), scb.ccr.read(), scb.scr.read(), scb.aircr.read(),
         unsafe { (*cortex_m::peripheral::DWT::PTR).ctrl.read() }, crate::fault::reset_flags())?;
+    // SAFETY: these are read-only snapshots of the H753's architectural FPU
+    // registers. No peripheral ownership or floating-point mode is changed.
+    let fpu = unsafe { &*FPU::PTR };
+    let fpccr = fpu.fpccr.read();
+    let fpscr = cortex_m::register::fpscr::read();
+    writeln!(out, "FPU cpacr={:08x} fpccr={:08x} fpcar={:08x} fpdscr={:08x} fpscr={:08x} aspen={} lspen={} lspact={} rounding={:?} flush_to_zero={} default_nan={}",
+        scb.cpacr.read(), fpccr, fpu.fpcar.read(), fpu.fpdscr.read(), fpscr.bits(),
+        fpccr & FPCCR_ASPEN != 0, fpccr & FPCCR_LSPEN != 0, fpccr & FPCCR_LSPACT != 0,
+        fpscr.rmode(), fpscr.fz(), fpscr.dn())?;
     writeln!(out, "TIMER name=TIM8 psc={} arr={} cr1={:08x} irq_priority={} update_irq_priority={} fast_irq_priority={} usb_irq_priority={}",
         TIM8.psc().read(), TIM8.arr().read().arr(), TIM8.cr1().read().0,
         embassy_stm32::interrupt::TIM8_CC.get_priority() as u8,

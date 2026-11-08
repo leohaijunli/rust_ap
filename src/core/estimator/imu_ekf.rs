@@ -12,8 +12,8 @@ use super::{
     math::{self, square, GlobalPosition},
     output_predictor::{OutputParams, OutputPredictor},
     reset_status::{ResetReport, ResetStatus},
-    Covariance, FilterFault, FilterHealth, ImuDelta, NavOutput, NumericsItem, ParamValue,
-    StateVector, Timestamp, STATE_COUNT,
+    Covariance, FilterFault, FilterHealth, ImuDelta, NavOutput, NumericsItem, NumericsStage,
+    ParamValue, StateVector, Timestamp, STATE_COUNT,
 };
 
 #[path = "baro_mag.rs"]
@@ -241,6 +241,8 @@ pub struct ImuEkf {
     pub(super) px4_fault: u32,
     fault: Option<FilterFault>,
     numerics_fault: Option<NumericsItem>,
+    numerics_stage: Option<NumericsStage>,
+    numerics_pair: [f32; 2],
     gyro_bias_inhibit: [bool; 3],
     accel_bias_inhibit: [bool; 3],
     gyro_magnitude: f32,
@@ -344,6 +346,8 @@ impl ImuEkf {
             px4_fault: 0,
             fault: Some(FilterFault::Input),
             numerics_fault: None,
+            numerics_stage: None,
+            numerics_pair: [f32::NAN; 2],
             gyro_bias_inhibit: [false; 3],
             accel_bias_inhibit: [false; 3],
             gyro_magnitude: 0.0,
@@ -723,6 +727,8 @@ impl ImuEkf {
                 && self.px4_fault == 0,
             fault: self.fault,
             numerics: self.numerics_fault,
+            stage: self.numerics_stage,
+            pair: self.numerics_pair,
         }
     }
 
@@ -1020,6 +1026,7 @@ impl ImuEkf {
         if let Some(params) = self.range_params {
             self.covariance[23][23] = square(params.minimum_ground_clearance_m);
         }
+        self.note_symmetry(NumericsStage::InitializeCovariance);
     }
 
     fn update_bias_inhibit(
@@ -1084,6 +1091,7 @@ impl ImuEkf {
                 self.covariance[row][column] = self.covariance[column][row];
             }
         }
+        self.note_symmetry(NumericsStage::Prediction);
         if let Some(params) = self.aiding_params {
             for (start, noise) in [(15, params.mag_earth_noise), (18, params.mag_bias_noise)] {
                 for i in start..start + 3 {
@@ -1102,6 +1110,7 @@ impl ImuEkf {
             }
         }
         self.constrain_variances();
+        self.note_symmetry(NumericsStage::PredictionConstrain);
     }
 
     fn predict_state(&mut self, sample: &ImuDelta) {
@@ -1446,6 +1455,7 @@ impl ImuEkf {
             self.covariance[index][i] = 0.0;
         }
         self.covariance[index][index] = variance;
+        self.note_symmetry(NumericsStage::ResetVariance);
     }
 
     pub(super) fn fuse_direct(
@@ -1488,15 +1498,17 @@ impl ImuEkf {
         let ph: [f32; STATE_COUNT] = core::array::from_fn(|i| self.covariance[i][index]);
         for i in 0..STATE_COUNT {
             for j in 0..=i {
-                self.covariance[i][j] =
+                let updated =
                     self.covariance[i][j] - ph[i] * gain[j] + gain[i] * variance * gain[j];
-                self.covariance[j][i] = self.covariance[i][j];
+                self.covariance[i][j] = updated;
+                self.covariance[j][i] = updated;
             }
         }
         if constrain {
             self.constrain_variances();
         }
         self.correct_state(gain, innovation);
+        self.note_symmetry(NumericsStage::GainUpdate);
     }
 
     fn correct_state(&mut self, gain: [f32; STATE_COUNT], innovation: f32) {
@@ -1561,13 +1573,15 @@ impl ImuEkf {
         let ph = self.project_covariance(observation);
         for i in 0..STATE_COUNT {
             for j in 0..=i {
-                self.covariance[i][j] =
+                let updated =
                     self.covariance[i][j] - ph[i] * gain[j] + gain[i] * variance * gain[j];
-                self.covariance[j][i] = self.covariance[i][j];
+                self.covariance[i][j] = updated;
+                self.covariance[j][i] = updated;
             }
         }
         self.constrain_variances();
         self.correct_state(gain, innovation);
+        self.note_symmetry(NumericsStage::ScalarUpdate);
     }
 
     pub(super) fn project_covariance(&self, observation: [f32; STATE_COUNT]) -> [f32; STATE_COUNT] {
@@ -1652,6 +1666,23 @@ impl ImuEkf {
             return Some(NumericsItem::CovarianceAsymmetric(row, column));
         }
         None
+    }
+
+    /// Remember the first covariance mutation stage that broke symmetry, so a
+    /// field fault points at the code path instead of only naming the pair.
+    fn note_symmetry(&mut self, stage: NumericsStage) {
+        if self.numerics_stage.is_some() {
+            return;
+        }
+        let Some((row, column)) = (0..STATE_COUNT).find_map(|i| {
+            (0..i)
+                .find(|j| self.covariance[i][*j] != self.covariance[*j][i])
+                .map(|j| (i, j))
+        }) else {
+            return;
+        };
+        self.numerics_stage = Some(stage);
+        self.numerics_pair = [self.covariance[row][column], self.covariance[column][row]];
     }
 
     #[cfg(test)]
@@ -1858,6 +1889,17 @@ mod tests {
 
     #[test]
     fn general_observation_joseph_update_keeps_correlated_velocity_covariance() {
+        let check_mirrors = |filter: &ImuEkf| {
+            for row in 0..STATE_COUNT {
+                for column in 0..row {
+                    assert_eq!(
+                        filter.covariance[row][column].to_bits(),
+                        filter.covariance[column][row].to_bits(),
+                        "mirror ({row},{column})"
+                    );
+                }
+            }
+        };
         let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
         filter.initialize_covariance();
         filter.reset_variance(3, 1.0);
@@ -1874,6 +1916,11 @@ mod tests {
         assert!((filter.covariance[3][3] - 17.0 / 18.0).abs() < 1e-6);
         assert!((filter.covariance[4][4] - 8.0 / 18.0).abs() < 1e-6);
         assert!((filter.covariance[3][4] + 8.0 / 18.0).abs() < 1e-6);
+        assert!(filter.numerics_valid());
+        check_mirrors(&filter);
+        let innovation_variance = filter.covariance[3][3] + 0.5;
+        filter.fuse_direct(-1.0, innovation_variance, 0.5, 3, true);
+        check_mirrors(&filter);
         assert!(filter.numerics_valid());
     }
 
@@ -2047,6 +2094,9 @@ mod tests {
             filter.numerics_item(),
             Some(NumericsItem::CovarianceAsymmetric(5, 4))
         );
+        filter.note_symmetry(NumericsStage::GainUpdate);
+        assert_eq!(filter.health().stage, Some(NumericsStage::GainUpdate));
+        assert_eq!(filter.health().pair, [1.0, 0.0]);
         filter.covariance[5][4] = 0.0;
         assert_eq!(filter.numerics_item(), None);
         filter.covariance[5][5] = -1.0;

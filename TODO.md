@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-08。**已回装 `2c58e1faa86f4f72`，BMM150/BMP388 身份/有效读数/共享总线与磁日志/遥测通过；原参数/故障保持。真实磁融合触发 Numerics/Fatal，两次观察后停止重试，当前数据估计回退 Mahony；根因未定位、磁融合实物门未过。失败项诊断固件已构建（source=`2de8a1b91a3d467d`）待授权回装。外接驱动/切换、安装校准、M1 与完整 E7 未放行。**
+更新：2026-11-08。**已授权回装 `da2bd6595cb3de1c`，修复浮点中断上下文保存缺失；60.5 s 板上对照保持 EKF Running/Filter 与有效磁融合，无 Numerics，227 项参数/历史故障保持。该数值失效已定位并针对性复测，外接切换、安装校准、M1 与完整 E7 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -16,7 +16,12 @@
 - [x] BMM150/I²C4 驱动与主 EKF2 磁事件入口、标准地磁日志/遥测/诊断已接入；共用 BMP388 总线而不切断共享电源。host 196 项、256 组固定 PX4 补偿对拍、pyulog、Clippy/元数据与普通包通过，source=`cd136580311b4298`（RAM +292 B、入口帧不变）。[软件记录](docs/acceptance/magnetometer/20261107-bmm150.md)。
 - [x] 2026-11-08 磁源机制：四源 DeviceId/内外属性、CAL_MAG0～3 绑定与矩阵/旋转、优先级健康选择、失效回退/降级、只重置磁历史；209 项、双源 pyulog、Clippy 与普通包通过，source=`2c58e1faa86f4f72`。[记录](docs/acceptance/magnetometer/20261108-selection.md)。
 - [x] 已授权回装并实测 BMM150/BMP388 共存、227 项参数保持、短日志/磁遥测；驱动错误 0。[板载记录](docs/acceptance/magnetometer/20261108-bringup.md)。
-- [ ] 真实磁融合后 Numerics/Fatal 可重复（一次授权重试约 8.6 s 再现），停止板上重试、回退 Mahony。静态值离线探针未复现；已加入失败项诊断（`NumericsItem`：输出预测器/降采样/全局/状态分量/四元数/协方差有限·负方差·不对称），经 `health()`→`Status.numerics`→`!ekf2` 的 `numerics=` 输出；host 210 项、fmt 与 4 组 Clippy 通过，source=`2de8a1b91a3d467d`，待工程师授权回装复现并同时抓 `!metrics`。安装校准/外接切换与 M1/E7 仍待验。
+- [x] 失败项/对称性阶段诊断：host 210 项、fmt/Clippy 与普通包通过；授权回装 `2de8a1b91a3d467d`、`95b1b57207604874`，分别观察到不对称、负方差及非有限协方差，未清故障或保存参数。[续测记录](docs/acceptance/magnetometer/20261108-bringup.md#失败项诊断续测)。
+- [x] 授权只读诊断回装 `3e8d1725a4f91020`：FPCCR=0 / ASPEN=false、Nearest、无 FZ/DN；开机更新 823 次后负方差。确认上下文保存配置缺陷，不归因于高 CPU。[记录](docs/acceptance/magnetometer/20261108-bringup.md#fpu-只读核对与修复准备)。
+- [x] FPU 修复对照：`da2bd6595cb3de1c` 启动设置 ASPEN=1/LSPEN=0；两种 Joseph 更新各 7 组 ARM 镜像指令同寄存器且无中间覆盖，host 210 项/Clippy/普通构建通过。授权 60.5 s 对照，updates 7684→13712、磁融合有效、fault/numerics=None；CPU 32.2–32.4%、step 峰值 1403 µs/2000 µs、漏期 0、栈余 25,592 B。[修复记录](docs/acceptance/magnetometer/20261108-bringup.md#fpu-修复板上对照通过)。
+- [ ] 同类审查待修：备用 fault-dump 入口未覆盖 FPU 初始化；偏角融合缺固定 PX4 的坏创新方差拒绝保护。两项为源码审查发现，尚未修改/上板，不与已验证 FPU 根因混为一谈。[审查](docs/acceptance/magnetometer/20261108-bringup.md#同类问题审查)。
+- [ ] 预防建议待落实：所有固件入口共用 FPU 初始化；启动/IRQ/执行器/工具链变更增加有界的真实浮点抢占回归，不能以 host 离线通过代替。尚未新增 CI 或额外硬件测试，当前通过窗口复用。[建议](docs/acceptance/magnetometer/20261108-bringup.md#后续预防建议)。
+- [ ] 机体安装校准、外接磁驱动与真实切换、完整 E7/M1 仍待验；IMU/TIM8 时基差独立跟进，不由此次 Numerics 修复自动收口。
 
 ## 2026-11-07 状态检查与回装
 

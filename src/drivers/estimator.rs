@@ -700,9 +700,10 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     }
     if let Some(state) = OUTPUT.try_get() {
         let status = state.status;
-        writeln!(output, "EKF2_STATE instance=main samples={} updates={} measurements={} selected={:?} mode={:?} fault={:?} last_fault={:?} numerics={:?} recoveries={} deadline_misses={} max_update_us={}",
+        writeln!(output, "EKF2_STATE instance=main samples={} updates={} measurements={} selected={:?} mode={:?} fault={:?} last_fault={:?} numerics={:?} numerics_stage={:?} numerics_pair=[{:e},{:e}] recoveries={} deadline_misses={} max_update_us={}",
             status.samples, status.updates, status.measurements, status.selection, status.mode, status.fault,
-            status.last_fault, status.numerics, status.recoveries, status.deadline_misses, status.max_update_us)?;
+            status.last_fault, status.numerics, status.numerics_stage, status.numerics_pair[0], status.numerics_pair[1],
+            status.recoveries, status.deadline_misses, status.max_update_us)?;
         writeln!(
             output,
             "EKF2_AIDS baro_available={} mag_available={} range_available={}",
