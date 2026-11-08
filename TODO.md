@@ -59,7 +59,7 @@
 - [x] 核心 180 项、标准输出解析器 7 项用例通过，原始 8 kHz / 批次积分 A/B 满足既定误差门限。[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
 - [x] 完成 TIM8/时间戳换算的受影响项复验、Clippy、标准输出 fixture 和普通固件打包/布局：fmt/Clippy（4 组特性 + host 示例）通过，标准输出 7 项通过，打包 source=`eb0d589438e0a6dc`、最大入口栈帧 11496 B。[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
 - [x] 板载烧录与 65 s 采集（工程师授权）：TIM8 运行、主 EKF2 选 Filter 且 fault=None、`max_update_us=556`、`deadline_misses=0`、1 kHz 发布 `missed=0`、`integration_error_ppm=0`；PX4 换算后传感器时间残差 `-32270 ppm`（不进入积分）。共享栈最低观测 32144 B，按工程师指示仅记录不作门。旧 panic 记录保留，`!ekf2 stop` 已收尾。
-- [ ] 提交并推送本轮改动（此前推送曾受 GitHub 凭据阻塞）。
+- [x] 2026-11-08 状态核查确认：本轮改动已随后续提交推送（凭据阻塞已解决，仓库与 origin/main 同步），此项收口。
 - [x] 共享栈判据放宽（工程师确认，2026-11-06）：untouched ≥16 KiB（原 ≥32 KiB）。依据 PX4 v1.17.0 Kconfig 默认 WQ 栈：INS0（EKF2）6000 B、SPI 2392、hp_default 2800、uavcan 3624、lp_default 3500、tty 1728、manager 1280，等效路径合计 ≈21.3 KB 拆在 ~7 个独立任务栈；本项目单共享栈实测 touched 33392 B 同量级。`p1_capture.analyze`/`ekf2_runtime_capture` 两处门已参数化同步，[决策记录](docs/next-steps.md)。
 - [x] 按新判据完整 65 s 采集 **passed=true, issues=[]**：`Filter/Running`、`deadline_misses=0`、`max_update_us=560`、`integration_error_ppm=0`、发布 `missed=0`、栈最低 30728 B、CPU 28.7%。P1 空载 10 µs release 门不再并入 E7 负载判定。见[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。TIM2 32 位驱动评估见 [时基说明](docs/imu-timebase.md)，暂不执行；传感器 −3.23% 时间残差归因保留 FIFO tick 分布证据后再投入。
 
