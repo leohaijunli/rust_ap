@@ -4,7 +4,7 @@ use super::{
     mahony::Mahony,
     math,
     standard_output::{AngularVelocity, Attitude},
-    AidId, FilterFault, ImuDelta, Measurement, NavFilter, StepReport,
+    AidId, FilterFault, ImuDelta, Measurement, NavFilter, NumericsItem, StepReport,
 };
 
 /// Budget for a complete delayed EKF epoch, normally every 10 ms. The 1-kHz
@@ -63,6 +63,7 @@ pub struct Status {
     pub mode: FilterMode,
     pub fault: Option<Fault>,
     pub last_fault: Option<Fault>,
+    pub numerics: Option<NumericsItem>,
     pub max_update_us: u32,
     pub deadline_misses: u32,
     pub recoveries: u32,
@@ -80,6 +81,7 @@ impl Status {
         mode: FilterMode::Running,
         fault: None,
         last_fault: None,
+        numerics: None,
         max_update_us: 0,
         deadline_misses: 0,
         recoveries: 0,
@@ -397,7 +399,9 @@ impl<F: NavFilter> Runtime<F> {
     }
 
     fn check_filter_fault(&mut self) {
-        if let Some(fault) = self.filter.health().fault {
+        let health = self.filter.health();
+        self.status.numerics = health.numerics;
+        if let Some(fault) = health.fault {
             self.fail(Fault::Filter(fault), fault != FilterFault::Timeout);
         }
     }

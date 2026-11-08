@@ -236,16 +236,31 @@ pub enum FilterFault {
     Timeout,
 }
 
+/// First failed numeric consistency check, kept for field diagnosis only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NumericsItem {
+    OutputPredictor,
+    Downsampler,
+    Global,
+    State(usize),
+    Quaternion,
+    CovarianceFinite(usize, usize),
+    CovarianceNegative(usize),
+    CovarianceAsymmetric(usize, usize),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FilterHealth {
     pub valid: bool,
     pub fault: Option<FilterFault>,
+    pub numerics: Option<NumericsItem>,
 }
 
 impl FilterHealth {
     pub const OK: Self = Self {
         valid: true,
         fault: None,
+        numerics: None,
     };
 }
 

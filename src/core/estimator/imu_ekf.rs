@@ -12,8 +12,8 @@ use super::{
     math::{self, square, GlobalPosition},
     output_predictor::{OutputParams, OutputPredictor},
     reset_status::{ResetReport, ResetStatus},
-    Covariance, FilterFault, FilterHealth, ImuDelta, NavOutput, ParamValue, StateVector, Timestamp,
-    STATE_COUNT,
+    Covariance, FilterFault, FilterHealth, ImuDelta, NavOutput, NumericsItem, ParamValue,
+    StateVector, Timestamp, STATE_COUNT,
 };
 
 #[path = "baro_mag.rs"]
@@ -240,6 +240,7 @@ pub struct ImuEkf {
     pub(super) control: u64,
     pub(super) px4_fault: u32,
     fault: Option<FilterFault>,
+    numerics_fault: Option<NumericsItem>,
     gyro_bias_inhibit: [bool; 3],
     accel_bias_inhibit: [bool; 3],
     gyro_magnitude: f32,
@@ -342,6 +343,7 @@ impl ImuEkf {
             control: IN_AIR,
             px4_fault: 0,
             fault: Some(FilterFault::Input),
+            numerics_fault: None,
             gyro_bias_inhibit: [false; 3],
             accel_bias_inhibit: [false; 3],
             gyro_magnitude: 0.0,
@@ -720,6 +722,7 @@ impl ImuEkf {
                 && self.fault.is_none()
                 && self.px4_fault == 0,
             fault: self.fault,
+            numerics: self.numerics_fault,
         }
     }
 
@@ -787,7 +790,7 @@ impl ImuEkf {
     ) -> Result<bool, FilterFault> {
         // Preserve the legacy adapter's immediate corruption check. The runtime
         // validates P at each mutation in step_extended, not on every raw input.
-        if self.initialized && !self.numerics_valid() {
+        if self.initialized && !self.numerics_ok() {
             return self.fail(FilterFault::Numerics);
         }
         self.ingest_imu(input)?;
@@ -838,10 +841,12 @@ impl ImuEkf {
         self.angular_velocity = input.delta_angle_rad.map(|v| v / input.delta_angle_dt_s);
         self.output_predictor.predict(input);
         if !self.output_predictor.numerics_valid() {
+            self.numerics_fault = Some(NumericsItem::OutputPredictor);
             return self.fail(FilterFault::Numerics);
         }
         let downsampled = self.downsampler.update(input);
         if !self.downsampler.numerics_valid() {
+            self.numerics_fault = Some(NumericsItem::Downsampler);
             return self.fail(FilterFault::Numerics);
         }
         let Some(mut sample) = downsampled else {
@@ -911,7 +916,7 @@ impl ImuEkf {
         let Some(delayed) = self.pending_imu.take() else {
             return Ok(false);
         };
-        if self.initialized && !self.numerics_valid() {
+        if self.initialized && !self.numerics_ok() {
             return self.fail(FilterFault::Numerics);
         }
         let period = self.params.predict_us as f32 * 1e-6;
@@ -959,7 +964,7 @@ impl ImuEkf {
         if let Err(fault) = self.control_fusion(&delayed, extension) {
             return self.fail(fault);
         }
-        if !self.numerics_valid() {
+        if !self.numerics_ok() {
             return self.fail(FilterFault::Numerics);
         }
         let q = self.quaternion();
@@ -972,6 +977,7 @@ impl ImuEkf {
             [self.state[13], self.state[14], self.state[15]],
         );
         if !self.output_predictor.numerics_valid() {
+            self.numerics_fault = Some(NumericsItem::OutputPredictor);
             return self.fail(FilterFault::Numerics);
         }
         Ok(true)
@@ -1610,19 +1616,59 @@ impl ImuEkf {
         }
     }
 
+    /// First failing consistency item; `None` when state, covariance and outputs
+    /// are consistent. Kept on the filter so `health()` survives the fallback.
+    fn numerics_item(&self) -> Option<NumericsItem> {
+        if !self.output_predictor.numerics_valid() {
+            return Some(NumericsItem::OutputPredictor);
+        }
+        if !self.downsampler.numerics_valid() {
+            return Some(NumericsItem::Downsampler);
+        }
+        if !self.global.is_finite() {
+            return Some(NumericsItem::Global);
+        }
+        if let Some(index) = self.state.iter().position(|value| !value.is_finite()) {
+            return Some(NumericsItem::State(index));
+        }
+        if (math::norm(&self.quaternion()) - 1.0).abs() >= 1e-4 {
+            return Some(NumericsItem::Quaternion);
+        }
+        if let Some((row, column)) = (0..STATE_COUNT).find_map(|i| {
+            (0..STATE_COUNT)
+                .find(|j| !self.covariance[i][*j].is_finite())
+                .map(|j| (i, j))
+        }) {
+            return Some(NumericsItem::CovarianceFinite(row, column));
+        }
+        if let Some(index) = (0..STATE_COUNT).find(|i| self.covariance[*i][*i] < 0.0) {
+            return Some(NumericsItem::CovarianceNegative(index));
+        }
+        if let Some((row, column)) = (0..STATE_COUNT).find_map(|i| {
+            (0..i)
+                .find(|j| self.covariance[i][*j] != self.covariance[*j][i])
+                .map(|j| (i, j))
+        }) {
+            return Some(NumericsItem::CovarianceAsymmetric(row, column));
+        }
+        None
+    }
+
+    #[cfg(test)]
     fn numerics_valid(&self) -> bool {
-        self.output_predictor.numerics_valid()
-            && self.global.is_finite()
-            && self.state.iter().all(|value| value.is_finite())
-            && (math::norm(&self.quaternion()) - 1.0).abs() < 1e-4
-            && self
-                .covariance
-                .iter()
-                .flatten()
-                .all(|value| value.is_finite())
-            && (0..STATE_COUNT).all(|i| self.covariance[i][i] >= 0.0)
-            && (0..STATE_COUNT)
-                .all(|i| (0..i).all(|j| self.covariance[i][j] == self.covariance[j][i]))
+        self.numerics_item().is_none()
+    }
+
+    /// Mutable guard: remembers the first failing item before `fail()` records
+    /// the fault, so diagnostics survive the fallback.
+    fn numerics_ok(&mut self) -> bool {
+        match self.numerics_item() {
+            None => true,
+            Some(item) => {
+                self.numerics_fault = Some(item);
+                false
+            }
+        }
     }
 }
 
@@ -1971,5 +2017,43 @@ mod tests {
             filter.update(&stationary(timestamp)).unwrap();
         }
         assert_eq!(filter.accel_bias_inhibit, baseline);
+    }
+
+    #[test]
+    fn numerics_item_names_the_first_failed_check() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        filter.initialize_covariance();
+        assert_eq!(filter.numerics_item(), None);
+        filter.state[4] = f32::NAN;
+        assert_eq!(filter.numerics_item(), Some(NumericsItem::State(4)));
+        filter.state[4] = 0.0;
+        filter.state[0] = 2.0;
+        assert_eq!(filter.numerics_item(), Some(NumericsItem::Quaternion));
+        filter.state[0] = 1.0;
+        filter.covariance[7][3] = f32::NAN;
+        assert_eq!(
+            filter.numerics_item(),
+            Some(NumericsItem::CovarianceFinite(7, 3))
+        );
+        filter.covariance[7][3] = 0.0;
+        filter.covariance[5][5] = -1.0;
+        assert_eq!(
+            filter.numerics_item(),
+            Some(NumericsItem::CovarianceNegative(5))
+        );
+        filter.covariance[5][5] = 1.0;
+        filter.covariance[5][4] = 1.0;
+        assert_eq!(
+            filter.numerics_item(),
+            Some(NumericsItem::CovarianceAsymmetric(5, 4))
+        );
+        filter.covariance[5][4] = 0.0;
+        assert_eq!(filter.numerics_item(), None);
+        filter.covariance[5][5] = -1.0;
+        assert!(!filter.numerics_ok());
+        assert_eq!(
+            filter.health().numerics,
+            Some(NumericsItem::CovarianceNegative(5))
+        );
     }
 }

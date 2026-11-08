@@ -160,6 +160,7 @@ impl super::NavFilter for Mahony {
         super::FilterHealth {
             valid: self.initialized && self.fault.is_none(),
             fault: self.fault,
+            numerics: None,
         }
     }
 }
