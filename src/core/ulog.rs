@@ -10,10 +10,11 @@ use crate::px4_messages::{
 
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 800;
-pub const TOPIC_COUNT: usize = 15;
+pub const TOPIC_COUNT: usize = 18;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
+const SENSOR_MAG_FORMAT: &str = "sensor_mag:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float x;float y;float z;float temperature;uint32_t error_count;";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]
@@ -37,6 +38,9 @@ pub enum TopicId {
     AttitudeEuler = 37,
     SensorMag = 38,
     VehicleMagnetometer = 39,
+    SensorMag1 = 40,
+    SensorMag2 = 41,
+    SensorMag3 = 42,
 }
 
 pub struct Topic {
@@ -128,7 +132,7 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
     Topic {
         id: TopicId::SensorMag,
         name: "sensor_mag",
-        format: "sensor_mag:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float x;float y;float z;float temperature;uint32_t error_count;",
+        format: SENSOR_MAG_FORMAT,
         payload_len: 40,
     },
     Topic {
@@ -137,6 +141,9 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
         format: "vehicle_magnetometer:uint64_t timestamp;uint64_t timestamp_sample;uint32_t device_id;float[3] magnetometer_ga;uint8_t calibration_count;",
         payload_len: 33,
     },
+    Topic { id: TopicId::SensorMag1, name: "sensor_mag", format: SENSOR_MAG_FORMAT, payload_len: 40 },
+    Topic { id: TopicId::SensorMag2, name: "sensor_mag", format: SENSOR_MAG_FORMAT, payload_len: 40 },
+    Topic { id: TopicId::SensorMag3, name: "sensor_mag", format: SENSOR_MAG_FORMAT, payload_len: 40 },
 ];
 
 impl TopicId {
@@ -147,12 +154,23 @@ impl TopicId {
             Self::AttitudeEuler => 12,
             Self::SensorMag => 13,
             Self::VehicleMagnetometer => 14,
+            Self::SensorMag1 => 15,
+            Self::SensorMag2 => 16,
+            Self::SensorMag3 => 17,
             _ => self as usize,
         }
     }
 
     pub const fn definition(self) -> &'static Topic {
         &TOPICS[self.index()]
+    }
+    pub const fn multi_id(self) -> u8 {
+        match self {
+            Self::SensorMag1 => 1,
+            Self::SensorMag2 => 2,
+            Self::SensorMag3 => 3,
+            _ => 0,
+        }
     }
 }
 
@@ -261,7 +279,7 @@ pub fn parameter_f32(name: &str, value: f32) -> Result<Record, Error> {
 }
 
 pub fn subscription(topic: TopicId) -> Result<Record, Error> {
-    raw_subscription(topic as u16, 0, topic.definition().name)
+    raw_subscription(topic as u16, topic.multi_id(), topic.definition().name)
 }
 
 pub fn raw_subscription(message_id: u16, multi_id: u8, name: &str) -> Result<Record, Error> {
@@ -736,8 +754,13 @@ mod tests {
                 size_of::<u64>() + fields_size(topic.format)
             );
             assert!(format(topic.id).unwrap().as_bytes().len() <= MAX_RECORD_LEN);
-            assert_eq!(subscription(topic.id).unwrap().as_bytes()[3], 0);
-            assert!(!TOPICS[..index].iter().any(|other| other.name == topic.name));
+            assert_eq!(
+                subscription(topic.id).unwrap().as_bytes()[3],
+                topic.id.multi_id()
+            );
+            assert!(!TOPICS[..index].iter().any(
+                |other| other.name == topic.name && other.id.multi_id() == topic.id.multi_id()
+            ));
         }
     }
 

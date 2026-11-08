@@ -34,6 +34,8 @@ pub mod log_queue;
 pub mod logger;
 #[path = "core/logger_switch.rs"]
 pub mod logger_switch;
+#[path = "core/magnetometer.rs"]
+pub mod magnetometer;
 #[path = "core/mavcan.rs"]
 pub mod mavcan;
 #[path = "core/mavftp.rs"]

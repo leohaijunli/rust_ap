@@ -112,26 +112,42 @@ pub fn record_baro(sample: v6x_rust_led::bmp388::Sample) {
     let _ = LOGGER.try_record(Class::Normal, now, record);
 }
 
-pub fn record_mag(sample: v6x_rust_led::bmm150::Sample) {
+pub fn record_raw_mag(report: SensorMag, instance: usize) {
     let now = Instant::now().as_micros();
     if !ready()
-        || !sample.fresh(now)
-        || !v6x_rust_led::log_config::rate(Group::Magnetometer, sample.timestamp_sample)
+        || instance >= 4
+        || !v6x_rust_led::log_config::mag_rate(instance, report.timestamp_sample)
     {
         return;
     }
-    let report = SensorMag::from_sample(sample, now);
-    for (topic, payload) in [
-        (TopicId::SensorMag, ulog::sensor_mag_payload(report)),
-        (
-            TopicId::VehicleMagnetometer,
-            ulog::vehicle_magnetometer_payload(VehicleMagnetometer::from_sensor(report)),
-        ),
-    ] {
-        let record = ulog::data_record(topic as u16, now, payload.as_bytes())
-            .expect("fixed magnetometer record fits");
-        let _ = LOGGER.try_record(Class::Normal, now, record);
+    let topic = [
+        TopicId::SensorMag,
+        TopicId::SensorMag1,
+        TopicId::SensorMag2,
+        TopicId::SensorMag3,
+    ][instance];
+    let payload = ulog::sensor_mag_payload(report);
+    let record = ulog::data_record(topic as u16, report.timestamp, payload.as_bytes())
+        .expect("fixed magnetometer record fits");
+    let _ = LOGGER.try_record(Class::Normal, now, record);
+}
+
+pub fn record_vehicle_mag(report: VehicleMagnetometer) {
+    let now = Instant::now().as_micros();
+    if !ready()
+        || !report.fresh(now)
+        || !v6x_rust_led::log_config::mag_rate(4, report.timestamp_sample)
+    {
+        return;
     }
+    let payload = ulog::vehicle_magnetometer_payload(report);
+    let record = ulog::data_record(
+        TopicId::VehicleMagnetometer as u16,
+        report.timestamp,
+        payload.as_bytes(),
+    )
+    .expect("fixed selected mag record fits");
+    let _ = LOGGER.try_record(Class::Normal, now, record);
 }
 
 pub fn request_start() -> Result<(), ControlError> {

@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控实施计划
 
-更新：2026-11-07。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
+更新：2026-11-08。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
 状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)。
 
 ## 1. 当前进度与执行原则
@@ -205,7 +205,8 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 - **MAG-01 驱动**：按固定 PX4 v1.17.0 的 Rev 3 定义实现 BMM150/I²C4/0x10、rotation=0；与 BMP388 共用 PF14/PF15 和 PG8。线程任务只在有界阻塞事务内借用总线，恢复不切断共享电源；唤醒后校验 0x32，再软复位、自检、读取 trim 和回读 20 Hz 高精度配置。
 - **MAG-02 数据链**：工厂 trim 补偿后的 FRD/Gauss、独立采样时间、序号和真实 device ID 经已有 `Measurement::Mag` 入口送 EKF2；失效/超时/溢出不送零值。补标准 `sensor_mag` / `vehicle_magnetometer` ULog、`HIGHRES_IMU` 磁场与健康位、`!mag` 和磁融合诊断。日志参数追加在已发行 ID 之后，不改旧值或存档。
-- **MAG-03 边界与必验**：本轮只接板载源，不实现外接驱动/多源投票或 QGC 校准。工厂 trim 不代表安装后硬/软铁校准，航向仍无飞行资格。host 核对补偿/单位/大小端/陈旧及溢出、固定 PX4 补偿对拍、磁事件融合/失效和 pyulog 字段；普通 fmt/Clippy/release/布局。回装须另获授权；实物需 ID/自检/XYZ、转动方向、磁融合诊断、短日志和 BMP388 共存核对，不由 host 结果放行。
+- **MAG-03 首轮边界与必验**：首轮只接板载源，不实现外接驱动或 QGC 校准拟合。工厂 trim 不代表安装后硬/软铁校准，航向仍无飞行资格。host 核对补偿/单位/大小端/陈旧及溢出、固定 PX4 补偿对拍、磁事件融合/失效和 pyulog 字段；普通 fmt/Clippy/release/布局。回装须另获授权；实物需 ID/自检/XYZ、转动方向、磁融合诊断、短日志和 BMP388 共存核对，不由 host 结果放行。
+- **MAG-04 区分机制（2026-11-08 工程师追加）**：实现四源 ID/板级内外属性、四组 `CAL_MAGn_*` 绑定、软/硬铁与外接安装旋转、健康/优先级选择及失败降级。设备/校准切换只清理磁历史、在延迟消费时重置磁偏置，不重置整滤波器；原始磁实例与选中磁源分离到日志/遥测。host 验校准/默认优先级/禁用/故障及陈旧/切换缓冲/满通道重置意图、存档容量；独立解析多实例日志、普通构建/布局。当前外接驱动和自动校准拟合仍未实现，外接实物与飞行资格另验。沿用原 1024 B FRAM 槽，超 166 个非默认键明确拒绝保存。
 
 ### INA219 支路电流（工程师新增）
 

@@ -158,6 +158,7 @@ fn shared_one_khz_integrals_track_the_raw_eight_khz_reference_during_rotation() 
                     Measurement::Mag(MagSample {
                         timestamp: time,
                         field_gauss: field,
+                        reset: false,
                     }),
                     time,
                 )
@@ -402,6 +403,7 @@ fn aid_events_fuse_without_gnss_and_invalid_gnss_is_rejected() {
                 Measurement::Mag(MagSample {
                     timestamp: time,
                     field_gauss: [0.22, 0.0, 0.43],
+                    reset: false,
                 }),
                 Measurement::Range(RangeSample {
                     timestamp: time,

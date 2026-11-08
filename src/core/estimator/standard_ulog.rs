@@ -457,7 +457,7 @@ mod tests {
             assert!(TOPICS[..index].iter().all(|other| other.name != topic.name));
             assert_eq!(subscription(topic.id).unwrap().as_bytes()[3], 0);
         }
-        assert_eq!(ulog::TOPIC_COUNT, 15);
+        assert_eq!(ulog::TOPIC_COUNT, 18);
         assert!(crate::log_queue::RUNTIME_RECORD_LEN >= 218);
     }
 

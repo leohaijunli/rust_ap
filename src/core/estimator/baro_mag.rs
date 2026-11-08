@@ -59,6 +59,53 @@ mod tests {
         assert_eq!(filter.control & (MAG | MAG_3D | MAG_ALIGNED | YAW), 0);
         assert_eq!(filter.covariance[15][15], math::square(params.mag_noise));
     }
+
+    #[test]
+    fn source_reset_discards_old_mag_buffer_then_resets_bias_at_the_delayed_horizon_only() {
+        let params = BaroMagParams::default();
+        let mut filter = ImuEkf::with_baro_mag(&ImuEkfParams::default(), params, 0).unwrap();
+        let mut aids = filter.aiding.take().unwrap();
+        filter.latest_us = 2_000_000;
+        filter.delayed_us = 1_940_000;
+        filter.average_dt_s = 0.01;
+        filter.state[19..22].copy_from_slice(&[0.1, 0.2, 0.3]);
+        filter.state[4..7].copy_from_slice(&[1.0, 2.0, 3.0]);
+        filter.control |= MAG | MAG_HDG | YAW;
+        aids.mag_counter = 20;
+        aids.baro_counter = 17;
+        aids.mag_started = true;
+        aids.mag.push(
+            BaroMagSample {
+                timestamp: 1_939_000,
+                field_gauss: [8.0; 3],
+                altitude_m: f32::NAN,
+            },
+            1_930_000,
+        );
+        aids.push_mag(
+            crate::estimator::MagSample {
+                timestamp: 1_950_000,
+                field_gauss: [0.22, 0.07, 0.43],
+                reset: true,
+            },
+            &filter,
+        )
+        .unwrap();
+        assert_eq!(&filter.state[19..22], &[0.1, 0.2, 0.3]); // no premature producer-side reset
+        aids.control_mag(&mut filter);
+        assert_eq!(&filter.state[19..22], &[0.1, 0.2, 0.3]); // new sample not eligible yet
+        filter.delayed_us = 1_946_000;
+        aids.control_mag(&mut filter);
+        assert_eq!(&filter.state[19..22], &[0.0; 3]);
+        assert_eq!(aids.mag_lpf, [0.22, 0.07, 0.43]);
+        assert_eq!(aids.mag_counter, 1);
+        assert_eq!(aids.baro_counter, 17);
+        assert_eq!(&filter.state[4..7], &[1.0, 2.0, 3.0]);
+        assert_eq!(filter.control & MAG, 0);
+        for i in 18..21 {
+            assert_eq!(filter.covariance[i][i], math::square(params.mag_noise));
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -147,6 +194,7 @@ pub(super) struct Aids {
     last_mag_push: u64,
     baro_started: bool,
     mag_started: bool,
+    mag_reset_pending: bool,
     baro_counter: usize,
     mag_counter: usize,
     baro_lpf: f32,
@@ -200,6 +248,7 @@ impl Aids {
             last_mag_push: 0,
             baro_started: false,
             mag_started: false,
+            mag_reset_pending: false,
             baro_counter: 0,
             mag_counter: 0,
             baro_lpf: 0.0,
@@ -286,11 +335,17 @@ impl Aids {
         sample: super::super::MagSample,
         filter: &ImuEkf,
     ) -> Result<(), FilterFault> {
-        if sample.timestamp <= self.last_input
+        if sample.timestamp == 0
+            || !sample.reset && sample.timestamp <= self.last_input
             || sample.timestamp > filter.latest_us
             || sample.field_gauss.iter().any(|v| !v.is_finite())
         {
             return Err(FilterFault::Input);
+        }
+        if sample.reset {
+            self.mag.clear(self.mag.length);
+            self.mag_started = false;
+            self.mag_reset_pending = true;
         }
         self.last_input = sample.timestamp;
         let interval = (filter.latest_us - filter.delayed_us) / (self.mag.length as u64 - 1);
@@ -480,6 +535,20 @@ impl Aids {
             }
             return;
         };
+        if self.mag_reset_pending {
+            // Pinned controlMagFusion consumes reset at the delayed horizon,
+            // not on the producer task or by resetting the entire navigation EKF.
+            self.stop_mag(filter);
+            self.mag_counter = 0;
+            self.mag_heading_lpf = 0.0;
+            self.last_mag_bad = 0;
+            self.last_mag_fuse = 0;
+            self.mag_status = AidStatus::EMPTY;
+            if filter.control & (1 << 7) == 0 {
+                filter.control &= !YAW;
+            }
+            self.mag_reset_pending = false;
+        }
         let previous_yaw = filter.control & YAW != 0;
         if self.mag_counter == 0 {
             self.mag_lpf = sample.field_gauss;

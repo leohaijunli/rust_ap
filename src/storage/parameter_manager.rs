@@ -98,6 +98,12 @@ impl<'d> ParameterManager<'d> {
                 return Err(error);
             }
         }
+        if id.definition().group == parameters::Group::Compass {
+            if let Err(error) = crate::magnetometer::configure(self.snapshot()) {
+                let _ = self.values.borrow_mut().set(id, previous);
+                return Err(error);
+            }
+        }
         v6x_rust_led::log_config::apply(id, value);
         crate::sd_logger::record_parameter(
             Instant::now().as_micros(),
@@ -164,6 +170,7 @@ impl<'d> ParameterManager<'d> {
             self.log_all();
             self.apply_log_config();
             crate::estimator::configure(self.snapshot()).map_err(|_| Error::Unavailable)?;
+            crate::magnetometer::configure(self.snapshot()).map_err(|_| Error::Unavailable)?;
         }
         result
     }

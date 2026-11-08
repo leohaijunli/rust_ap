@@ -83,6 +83,10 @@ class MetadataTests(unittest.TestCase):
         self.assertIn("不解锁", metadata.runtime_help("EST_EN")[1])
         self.assertIn("只读", metadata.runtime_help("MAV_SYS_ID")[1])
         self.assertIn("地磁", metadata.runtime_help("LOG_EN_MAG")[0])
+        for field in ["ID","PRIO","XOFF","XSCALE","XODIAG","ROT","ROLL","PITCH","YAW"]:
+            short,detail=metadata.runtime_help("CAL_MAG3_"+field)
+            self.assertIn("校准槽 3",short)
+            self.assertIn("不执行校准拟合",detail)
 
     def test_check_detects_stale_files_without_overwriting_them(self):
         files = self.generate()

@@ -48,6 +48,14 @@ fn integration(entry: &Definition, params: &Params) -> &'static str {
 fn units(entry: &Definition) -> &'static str {
     if let Some(definition) = ekf2_parameter(entry.name) {
         definition.unit
+    } else if entry.group == Group::Compass && entry.name.ends_with("OFF") {
+        "gauss"
+    } else if entry.group == Group::Compass
+        && ["ROLL", "PITCH", "YAW"]
+            .iter()
+            .any(|s| entry.name.ends_with(s))
+    {
+        "deg"
     } else if entry.name.ends_with("_HZ") || entry.name.starts_with("MAV_RATE_") {
         "Hz"
     } else {

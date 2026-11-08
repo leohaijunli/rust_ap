@@ -24,6 +24,7 @@ pub enum Group {
     Ekf2,
     /// MAVLink link rates and other transport-owned settings.
     Link,
+    Compass,
 }
 
 impl Group {
@@ -35,6 +36,7 @@ impl Group {
             Self::Estimator => "Estimator",
             Self::Ekf2 => "EKF2",
             Self::Link => "Link",
+            Self::Compass => "Compass",
         }
     }
 }
@@ -212,6 +214,66 @@ with_ekf2_parameters! {
         name: "LOG_MAG_HZ", getter: log_mag_hz, group: SdLog, kind: Real, default: 20.0,
         min: 1.0, max: 20.0, access: NextCycle
     },
+    CalMag0Id { name: "CAL_MAG0_ID", getter: cal_mag0_id, group: Compass, kind: Integer, default: 0.0, min: 0.0, max: 16777215.0, access: NextCycle },
+    CalMag0Prio { name: "CAL_MAG0_PRIO", getter: cal_mag0_prio, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag0Xoff { name: "CAL_MAG0_XOFF", getter: cal_mag0_xoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag0Yoff { name: "CAL_MAG0_YOFF", getter: cal_mag0_yoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag0Zoff { name: "CAL_MAG0_ZOFF", getter: cal_mag0_zoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag0Xscale { name: "CAL_MAG0_XSCALE", getter: cal_mag0_xscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag0Yscale { name: "CAL_MAG0_YSCALE", getter: cal_mag0_yscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag0Zscale { name: "CAL_MAG0_ZSCALE", getter: cal_mag0_zscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag0Xodiag { name: "CAL_MAG0_XODIAG", getter: cal_mag0_xodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag0Yodiag { name: "CAL_MAG0_YODIAG", getter: cal_mag0_yodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag0Zodiag { name: "CAL_MAG0_ZODIAG", getter: cal_mag0_zodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag0Rot { name: "CAL_MAG0_ROT", getter: cal_mag0_rot, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag0Roll { name: "CAL_MAG0_ROLL", getter: cal_mag0_roll, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag0Pitch { name: "CAL_MAG0_PITCH", getter: cal_mag0_pitch, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag0Yaw { name: "CAL_MAG0_YAW", getter: cal_mag0_yaw, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag1Id { name: "CAL_MAG1_ID", getter: cal_mag1_id, group: Compass, kind: Integer, default: 0.0, min: 0.0, max: 16777215.0, access: NextCycle },
+    CalMag1Prio { name: "CAL_MAG1_PRIO", getter: cal_mag1_prio, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag1Xoff { name: "CAL_MAG1_XOFF", getter: cal_mag1_xoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag1Yoff { name: "CAL_MAG1_YOFF", getter: cal_mag1_yoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag1Zoff { name: "CAL_MAG1_ZOFF", getter: cal_mag1_zoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag1Xscale { name: "CAL_MAG1_XSCALE", getter: cal_mag1_xscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag1Yscale { name: "CAL_MAG1_YSCALE", getter: cal_mag1_yscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag1Zscale { name: "CAL_MAG1_ZSCALE", getter: cal_mag1_zscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag1Xodiag { name: "CAL_MAG1_XODIAG", getter: cal_mag1_xodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag1Yodiag { name: "CAL_MAG1_YODIAG", getter: cal_mag1_yodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag1Zodiag { name: "CAL_MAG1_ZODIAG", getter: cal_mag1_zodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag1Rot { name: "CAL_MAG1_ROT", getter: cal_mag1_rot, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag1Roll { name: "CAL_MAG1_ROLL", getter: cal_mag1_roll, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag1Pitch { name: "CAL_MAG1_PITCH", getter: cal_mag1_pitch, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag1Yaw { name: "CAL_MAG1_YAW", getter: cal_mag1_yaw, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag2Id { name: "CAL_MAG2_ID", getter: cal_mag2_id, group: Compass, kind: Integer, default: 0.0, min: 0.0, max: 16777215.0, access: NextCycle },
+    CalMag2Prio { name: "CAL_MAG2_PRIO", getter: cal_mag2_prio, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag2Xoff { name: "CAL_MAG2_XOFF", getter: cal_mag2_xoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag2Yoff { name: "CAL_MAG2_YOFF", getter: cal_mag2_yoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag2Zoff { name: "CAL_MAG2_ZOFF", getter: cal_mag2_zoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag2Xscale { name: "CAL_MAG2_XSCALE", getter: cal_mag2_xscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag2Yscale { name: "CAL_MAG2_YSCALE", getter: cal_mag2_yscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag2Zscale { name: "CAL_MAG2_ZSCALE", getter: cal_mag2_zscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag2Xodiag { name: "CAL_MAG2_XODIAG", getter: cal_mag2_xodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag2Yodiag { name: "CAL_MAG2_YODIAG", getter: cal_mag2_yodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag2Zodiag { name: "CAL_MAG2_ZODIAG", getter: cal_mag2_zodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag2Rot { name: "CAL_MAG2_ROT", getter: cal_mag2_rot, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag2Roll { name: "CAL_MAG2_ROLL", getter: cal_mag2_roll, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag2Pitch { name: "CAL_MAG2_PITCH", getter: cal_mag2_pitch, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag2Yaw { name: "CAL_MAG2_YAW", getter: cal_mag2_yaw, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag3Id { name: "CAL_MAG3_ID", getter: cal_mag3_id, group: Compass, kind: Integer, default: 0.0, min: 0.0, max: 16777215.0, access: NextCycle },
+    CalMag3Prio { name: "CAL_MAG3_PRIO", getter: cal_mag3_prio, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag3Xoff { name: "CAL_MAG3_XOFF", getter: cal_mag3_xoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag3Yoff { name: "CAL_MAG3_YOFF", getter: cal_mag3_yoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag3Zoff { name: "CAL_MAG3_ZOFF", getter: cal_mag3_zoff, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag3Xscale { name: "CAL_MAG3_XSCALE", getter: cal_mag3_xscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag3Yscale { name: "CAL_MAG3_YSCALE", getter: cal_mag3_yscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag3Zscale { name: "CAL_MAG3_ZSCALE", getter: cal_mag3_zscale, group: Compass, kind: Real, default: 1.0, min: 0.01, max: 10.0, access: NextCycle },
+    CalMag3Xodiag { name: "CAL_MAG3_XODIAG", getter: cal_mag3_xodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag3Yodiag { name: "CAL_MAG3_YODIAG", getter: cal_mag3_yodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag3Zodiag { name: "CAL_MAG3_ZODIAG", getter: cal_mag3_zodiag, group: Compass, kind: Real, default: 0.0, min: -10.0, max: 10.0, access: NextCycle },
+    CalMag3Rot { name: "CAL_MAG3_ROT", getter: cal_mag3_rot, group: Compass, kind: Integer, default: -1.0, min: -1.0, max: 100.0, access: NextCycle },
+    CalMag3Roll { name: "CAL_MAG3_ROLL", getter: cal_mag3_roll, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag3Pitch { name: "CAL_MAG3_PITCH", getter: cal_mag3_pitch, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    CalMag3Yaw { name: "CAL_MAG3_YAW", getter: cal_mag3_yaw, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
     }
 }
 
@@ -363,7 +425,9 @@ impl Snapshot {
                 return Err(Error::ReadOnly);
             }
         }
-        Ok(Self(values))
+        let snapshot = Self(values);
+        crate::magnetometer::Config::from_parameters(snapshot).map_err(|_| Error::Configuration)?;
+        Ok(snapshot)
     }
 
     pub fn with(self, id: Id, value: f32) -> Result<Self, Error> {
@@ -374,7 +438,12 @@ impl Snapshot {
         entry.validate(value)?;
         let mut values = self.0;
         values[id as usize] = value;
-        Ok(Self(values))
+        let snapshot = Self(values);
+        if entry.group == Group::Compass {
+            crate::magnetometer::Config::from_parameters(snapshot)
+                .map_err(|_| Error::Configuration)?;
+        }
+        Ok(snapshot)
     }
 
     pub fn values(&self) -> &[f32; COUNT] {
@@ -417,6 +486,12 @@ impl Parameters {
             return Err(Error::ReadOnly);
         }
         entry.validate(value)?;
+        if entry.group == Group::Compass {
+            let mut candidate = self.current;
+            candidate.0[id as usize] = value;
+            crate::magnetometer::Config::from_parameters(candidate)
+                .map_err(|_| Error::Configuration)?;
+        }
         let current = &mut self.current.0[id as usize];
         let changed = *current != value;
         *current = value;

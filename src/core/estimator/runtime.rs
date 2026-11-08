@@ -273,6 +273,16 @@ impl<F: NavFilter> Runtime<F> {
             return Err(MeasurementError::Stale);
         }
         let index = measurement.aid().index();
+        if matches!(measurement, Measurement::Mag(sample) if sample.reset) {
+            // A new source may have an earlier (but fresh) sample time. Never
+            // mix still-pending observations from the previously selected mag.
+            for pending in &mut self.pending {
+                if matches!(pending, Some(Measurement::Mag(_))) {
+                    *pending = None;
+                }
+            }
+            self.last_measurement[index] = 0;
+        }
         if timestamp <= self.last_measurement[index] {
             return Err(MeasurementError::Duplicate);
         }
@@ -523,6 +533,71 @@ fn initialize_value<F: NavFilter>(
 ) -> Result<(), FilterFault> {
     *filter = F::new(params, t0);
     filter.health().fault.map_or(Ok(()), Err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn valid_source_reset_replaces_pending_magnetic_events_not_other_aids() {
+        let params = crate::estimator::product::Params::from_parameters(
+            crate::parameters::Snapshot::default()
+                .with(crate::parameters::Id::EstEnable, 1.0)
+                .unwrap(),
+        )
+        .unwrap();
+        let mut runtime = Runtime::<crate::estimator::gnss::GnssEkf>::new(params, 0).unwrap();
+        let mag = |timestamp, reset| {
+            Measurement::Mag(crate::estimator::MagSample {
+                timestamp,
+                field_gauss: [0.22, 0.0, 0.43],
+                reset,
+            })
+        };
+        runtime
+            .apply_measurement(mag(1_050_000, false), 1_060_000)
+            .unwrap();
+        runtime
+            .apply_measurement(
+                Measurement::Baro(crate::estimator::imu_ekf::baro_mag::BaroAltitude {
+                    timestamp: 1_045_000,
+                    altitude_m: 20.0,
+                }),
+                1_060_000,
+            )
+            .unwrap();
+        assert_eq!(
+            runtime.apply_measurement(mag(1_070_000, true), 1_060_000),
+            Err(MeasurementError::Stale)
+        );
+        assert!(runtime
+            .pending
+            .iter()
+            .flatten()
+            .any(|m| m.timestamp() == 1_050_000));
+        runtime
+            .apply_measurement(mag(1_040_000, true), 1_060_000)
+            .unwrap();
+        assert_eq!(
+            runtime
+                .pending
+                .iter()
+                .flatten()
+                .filter(|m| matches!(m, Measurement::Mag(_)))
+                .count(),
+            1
+        );
+        assert!(runtime
+            .pending
+            .iter()
+            .flatten()
+            .any(|m| m.timestamp() == 1_040_000));
+        assert!(runtime
+            .pending
+            .iter()
+            .flatten()
+            .any(|m| matches!(m, Measurement::Baro(_))));
+    }
 }
 
 impl AidId {

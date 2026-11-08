@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-07。**最近已回装普通包 source=`050461399e9cbd95`；QGC 5.0.3 类型/参数说明、单主 EKF2/TIM8 与 H-04 限定范围已有记录。当前新增板载 BMM150→EKF2 软件，待授权回装及地磁/BMP388 共存实测；外接磁源选择与安装校准未实现。CAN/GNSS、双链路、传感器及 IO 实物门仍按原依赖；M1 与完整 E7 未放行。**
+更新：2026-11-08。**最近已回装普通包仍为 `050461399e9cbd95`；板载 BMM150 驱动与四磁源区分/校准应用/健康选择软件已交付，最新待回装 source=`2c58e1faa86f4f72`。安装校准参数应用不等于实物校准；外接驱动和实物切换仍待验。CAN/GNSS、双链路、传感器及 IO 门按原依赖；M1 与完整 E7 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -14,7 +14,8 @@
 ## 板载地磁 — 2026-11-07
 
 - [x] BMM150/I²C4 驱动与主 EKF2 磁事件入口、标准地磁日志/遥测/诊断已接入；共用 BMP388 总线而不切断共享电源。host 196 项、256 组固定 PX4 补偿对拍、pyulog、Clippy/元数据与普通包通过，source=`cd136580311b4298`（RAM +292 B、入口帧不变）。[软件记录](docs/acceptance/magnetometer/20261107-bmm150.md)。
-- [ ] 待工程师授权回装，验证地磁身份/轴向/实际融合和 BMP388 共存。仅工厂 trim，外接选择/安装校准未实现，不提前放行 M1/E7。
+- [x] 2026-11-08 磁源机制：四源 DeviceId/内外属性、CAL_MAG0～3 绑定与矩阵/旋转、优先级健康选择、失效回退/降级、只重置磁历史；209 项、双源 pyulog、Clippy 与普通包通过，source=`2c58e1faa86f4f72`。[记录](docs/acceptance/magnetometer/20261108-selection.md)。
+- [ ] 待工程师授权回装，验证板载身份/轴向/磁融合及 BMP388 共存；外接驱动/真实切换与安装校准另验，不提前放行 M1/E7。
 
 ## 2026-11-07 状态检查与回装
 

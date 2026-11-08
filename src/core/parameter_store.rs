@@ -360,6 +360,43 @@ mod tests {
     }
 
     #[test]
+    fn enlarged_compass_registry_reports_capacity_before_any_commit_is_created() {
+        use crate::parameters::{Group, Kind};
+        let previous = Commit::new(None, Snapshot::default(), OFF).unwrap();
+        let mut values = *Snapshot::default().values();
+        for entry in REGISTRY
+            .iter()
+            .filter(|e| e.access != Access::ReadOnly && e.group != Group::Compass)
+        {
+            let alternate = if entry.default != entry.min {
+                entry.min
+            } else if entry.kind == Kind::Integer {
+                entry.min + 1.0
+            } else {
+                (entry.min + entry.max) * 0.5
+            };
+            values[entry.id as usize] = alternate;
+        }
+        values[crate::parameters::Id::CalMag0Xoff as usize] = 0.01;
+        let snapshot = Snapshot::from_values(values).unwrap();
+        assert!(
+            REGISTRY
+                .iter()
+                .filter(|e| snapshot.get(e.id) != e.default)
+                .count()
+                > MAX_ENTRIES
+        );
+        assert!(matches!(
+            Commit::new(Some(previous.active), snapshot, OFF),
+            Err(CommitError::Capacity)
+        ));
+        assert_eq!(
+            decode(previous.data()).unwrap().snapshot,
+            Snapshot::default()
+        );
+    }
+
+    #[test]
     fn positional_records_migrate_without_losing_values() {
         let mut bytes = [0_u8; 68];
         bytes[0] = COMMITTED;

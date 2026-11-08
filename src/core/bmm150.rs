@@ -185,6 +185,7 @@ impl Sample {
                 crate::estimator::MagSample {
                     timestamp: self.timestamp_sample,
                     field_gauss: self.field_gauss,
+                    reset: false,
                 },
             ))
     }

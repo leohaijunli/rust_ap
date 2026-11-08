@@ -9,6 +9,9 @@ mod backup_domain;
 #[path = "drivers/barometer.rs"]
 mod barometer;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/bmm150.rs"]
+mod bmm150_driver;
+#[cfg(not(feature = "fault-dump"))]
 mod diagnostics;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/dronecan_can.rs"]
@@ -360,7 +363,8 @@ async fn application(p: Peripherals, spawner: Spawner) {
         baro_config,
     )));
     spawner.spawn(barometer::run(i2c4)).unwrap();
-    spawner.spawn(magnetometer::run(i2c4)).unwrap();
+    spawner.spawn(magnetometer::run()).unwrap();
+    spawner.spawn(bmm150_driver::run(i2c4)).unwrap();
 
     // USB CDC ACM on the FS OTG peripheral (PA11/PA12), clocked from PLL3Q.
     static EP_OUT_BUFFER: StaticCell<[u8; 256]> = StaticCell::new();

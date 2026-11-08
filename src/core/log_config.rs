@@ -58,6 +58,7 @@ struct State {
     // Rate-limit timestamps are read/written by both the thread executor and
     // the interrupt CAN executor, so they live behind a critical section.
     last_us: critical_section::Mutex<RefCell<[u64; GROUP_COUNT]>>,
+    mag_last_us: critical_section::Mutex<RefCell<[u64; 5]>>,
 }
 
 impl State {
@@ -66,6 +67,7 @@ impl State {
             enabled: [const { AtomicU8::new(1) }; GROUP_COUNT],
             period_us: [const { AtomicU32::new(0) }; GROUP_COUNT],
             last_us: critical_section::Mutex::new(RefCell::new([0; GROUP_COUNT])),
+            mag_last_us: critical_section::Mutex::new(RefCell::new([0; 5])),
         }
     }
 }
@@ -91,6 +93,9 @@ fn clear_last(group: Group) {
     critical_section::with(|section| {
         let mut lasts = STATE.last_us.borrow(section).borrow_mut();
         lasts[group as usize] = 0;
+        if group == Group::Magnetometer {
+            *STATE.mag_last_us.borrow(section).borrow_mut() = [0; 5];
+        }
     });
 }
 
@@ -162,6 +167,23 @@ pub fn enabled(group: Group) -> bool {
     STATE.enabled[group as usize].load(Ordering::Relaxed) != 0
 }
 
+/// Four raw magnetic instances and the selected stream each need a limiter:
+/// a shared group timestamp would let one sensor starve all the other streams.
+pub fn mag_rate(instance: usize, timestamp_us: u64) -> bool {
+    if instance >= 5 || !enabled(Group::Magnetometer) {
+        return false;
+    }
+    let period = STATE.period_us[Group::Magnetometer as usize].load(Ordering::Relaxed);
+    critical_section::with(|section| {
+        let mut last = STATE.mag_last_us.borrow(section).borrow_mut();
+        if timestamp_us < last[instance] || timestamp_us - last[instance] < u64::from(period) {
+            return false;
+        }
+        last[instance] = timestamp_us;
+        true
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +243,13 @@ mod tests {
         assert!(!enabled(Group::Event));
         apply(Id::LogEnEvent, 1.0);
         assert!(enabled(Group::Event));
+        // Raw magnetic instances and the selected stream cannot starve each other.
+        apply(Id::LogEnMag, 1.0);
+        apply(Id::LogMagHz, 20.0);
+        for instance in 0..5 {
+            assert!(mag_rate(instance, 5_000_000));
+            assert!(!mag_rate(instance, 5_001_000));
+        }
+        assert!(!mag_rate(5, 5_000_000));
     }
 }

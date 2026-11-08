@@ -68,6 +68,7 @@ impl HostFilter {
                         Some(Measurement::Mag(MagSample {
                             timestamp: v.baro_mag.timestamp,
                             field_gauss: v.baro_mag.field_gauss,
+                            reset: false,
                         })),
                         v.gnss.map(Measurement::Gnss),
                         v.range.map(|v| {

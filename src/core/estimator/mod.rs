@@ -134,6 +134,8 @@ pub struct GnssSample {
 pub struct MagSample {
     pub timestamp: Timestamp,
     pub field_gauss: [f32; 3],
+    /// Selected device/calibration changed: discard old magnetic history only.
+    pub reset: bool,
 }
 
 /// Range finder sample as delivered by the sensor. Tilt and lever-arm
@@ -490,6 +492,7 @@ mod tests {
         let mag = Measurement::Mag(MagSample {
             timestamp: 30,
             field_gauss: [0.2, 0.0, 0.4],
+            reset: false,
         });
         let range = Measurement::Range(RangeSample {
             timestamp: 40,

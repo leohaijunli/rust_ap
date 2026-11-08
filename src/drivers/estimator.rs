@@ -60,6 +60,7 @@ struct AidEvent {
     measurement: Measurement,
     received: u64,
     device_id: u32,
+    mag_generation: [u32; 2],
 }
 
 #[derive(Clone, Copy)]
@@ -133,18 +134,46 @@ pub fn configure(values: parameters::Snapshot) -> Result<(), parameters::Error> 
 }
 
 /// Sensor publishers call this once per accepted sample with its real device ID.
-pub fn submit_measurement(measurement: Measurement, device_id: u32) {
+pub fn submit_measurement(measurement: Measurement, device_id: u32) -> bool {
     if ACTIVE_EPOCH.load(Ordering::Acquire) == 0 {
-        return;
+        return false;
     }
     let event = AidEvent {
         measurement,
         received: Instant::now().as_micros(),
         device_id,
+        mag_generation: [0; 2],
     };
     if AIDS.try_send(event).is_err() {
         AID_DROPS.fetch_add(1, Ordering::Relaxed);
+        return false;
     }
+    true
+}
+
+pub fn active_epoch() -> u32 {
+    ACTIVE_EPOCH.load(Ordering::Acquire)
+}
+
+pub fn submit_magnetometer(selected: v6x_rust_led::magnetometer::Selected) -> bool {
+    if active_epoch() == 0 {
+        return false;
+    }
+    let event = AidEvent {
+        measurement: Measurement::Mag(v6x_rust_led::estimator::MagSample {
+            timestamp: selected.data.timestamp_sample,
+            field_gauss: selected.data.magnetometer_ga,
+            reset: selected.reset,
+        }),
+        received: Instant::now().as_micros(),
+        device_id: selected.data.device_id,
+        mag_generation: [selected.generation, selected.correction_generation],
+    };
+    if AIDS.try_send(event).is_err() {
+        AID_DROPS.fetch_add(1, Ordering::Relaxed);
+        return false;
+    }
+    true
 }
 
 pub use v6x_rust_led::estimator::report::Report;
@@ -338,6 +367,7 @@ async fn task(main: &'static mut ProductRuntime, _timer: Peri<'static, periphera
     let mut enabled = false;
     let mut resets = PublicationReset::default();
     let mut devices = [0_u32; 4];
+    let mut mag_identity = None;
     let mut next_publish = Instant::now();
     let mut timing = WorkerTimings {
         main_ingest: Timing::EMPTY,
@@ -359,6 +389,7 @@ async fn task(main: &'static mut ProductRuntime, _timer: Peri<'static, periphera
             main.disable();
             enabled = false;
             devices = [0; 4];
+            mag_identity = None;
             if control.params.enabled {
                 let started = Instant::now();
                 let prefer_filter = control.params.algorithm == Algorithm::Ekf2;
@@ -419,17 +450,26 @@ async fn task(main: &'static mut ProductRuntime, _timer: Peri<'static, periphera
             Either3::First(Input::Fault(fault)) => {
                 main.invalidate(fault);
             }
-            Either3::Second(event) => {
+            Either3::Second(mut event) => {
                 let index = match event.measurement {
                     Measurement::Baro(_) => 0,
                     Measurement::Mag(_) => 1,
                     Measurement::Range(_) => 2,
                     Measurement::Gnss(_) => 3,
                 };
+                let identity = (event.device_id, event.mag_generation);
+                if let Measurement::Mag(ref mut sample) = event.measurement {
+                    // A dropped/rejected reset must not let the next sample from
+                    // a different device/calibration blend into old mag history.
+                    sample.reset |= mag_identity != Some(identity);
+                }
                 let accepted =
                     event.received <= now && main.apply_measurement(event.measurement, now).is_ok();
                 if accepted {
                     devices[index] = event.device_id;
+                    if index == 1 {
+                        mag_identity = Some(identity);
+                    }
                 }
             }
             Either3::Third(()) => {}

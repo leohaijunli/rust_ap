@@ -65,6 +65,25 @@ def runtime_help(name):
         return "数据估计启用", "0 停止数据估计；1 启用；不解锁，也不授予导航资格。"
     if name == "EST_ALGO":
         return "请求的估计算法", "0=Mahony；1=EKF2，还受 EKF2_EN/构建类型影响。实际选择以 !ekf2 为准。"
+    if name.startswith("CAL_MAG"):
+        slot, separator, field = name[7:].partition("_")
+        if separator and slot in "0123" and len(slot) == 1:
+            labels = {
+                "ID": ("磁传感器校准绑定 ID", "0 未绑定；填写 !mag 的真实 device_id。校准槽编号不是板载/外接编号；重复非零 ID 拒绝。"),
+                "PRIO": ("磁传感器配置优先级", "-1 默认（内部 50、外部 75）；0 禁用，1..100 越高越优先，仍受健康选择约束。失败后的有效优先级降为 1，改变配置优先级或重启可重新参与选择。"),
+                "ROT": ("外接磁传感器安装方向", "支持 PX4 rotation 0..40、100 自定义，-1 未配置按 0；41..99 拒绝。内部磁源固定跟随本项目板/机体 rotation=0，不独立旋转；非零 ROLL/PITCH/YAW 使用自定义方向。"),
+            }
+            if field in labels:
+                short, detail = labels[field]
+            elif field in ("XOFF", "YOFF", "ZOFF"):
+                short, detail = "磁场硬铁偏移 " + field[0], "单位 Gauss，在软铁矩阵和安装旋转之前减去；不是 EKF 学到的磁偏置。"
+            elif field in ("XSCALE", "YSCALE", "ZSCALE", "XODIAG", "YODIAG", "ZODIAG"):
+                short, detail = "磁场软铁矩阵 " + field, "无量纲；SCALE 为对角项，X/Y/ZODIAG 为 XY/XZ/YZ 对称项。组合必须正定，非法组合拒绝。"
+            elif field in ("ROLL", "PITCH", "YAW"):
+                short, detail = "外接磁源自定义角 " + field, "单位 deg，ZYX 旋转；内部磁源忽略此角，以保持与 IMU 的机体方向一致。"
+            else:
+                raise ValueError(f"Missing compass description: {name}")
+            return f"校准槽 {slot}：{short}", detail + "此处只应用参数，不执行校准拟合；绑定不等于实物/飞行资格通过。"
     if name in LINK_STREAMS:
         short, detail = LINK_STREAMS[name]
         return short, detail + "作用于两链路默认值；511 的链路覆盖优先。"

@@ -83,6 +83,15 @@ impl VehicleMagnetometer {
             calibration_count: 0,
         }
     }
+    pub fn fresh(self, now: u64) -> bool {
+        self.device_id != 0
+            && self.timestamp_sample != 0
+            && self.timestamp_sample <= self.timestamp
+            && self.timestamp <= now
+            && now - self.timestamp_sample <= crate::magnetometer::TIMEOUT_US
+            && self.magnetometer_ga.iter().all(|v| v.is_finite())
+            && self.magnetometer_ga.iter().any(|v| *v != 0.0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
