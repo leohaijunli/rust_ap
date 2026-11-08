@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-08。**当前已授权回装合并修复包 `81fd0d06601f9e2f`；FPU/偏角保护与日志分包/调度修复已交付，同一日志前缀只读校验一致，227 项参数/历史故障保持。180.6 kB/s 为指定主机接收缓冲下的实测，不等于 QGC GUI 保证速率；没有删除真实 SD 日志。GUI/真实删除、外接切换、安装校准、M1 与完整 E7 未放行。**
+更新：2026-11-08。**工程师当前只有飞控本体，没有外接硬件；仅做软件修复、host 测试与构建，外设硬件门暂停。板载仍为 `81fd0d06601f9e2f`，工程师确认日志删除正常；yaw 调查停止。本轮气压日志门控与 6 项测试告警已修复，218 项 host、相关 Clippy 和合并包 `49b3552f38510053` 构建通过；未刷写，M1、完整 E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -8,8 +8,16 @@
 - 只做[必要测试](plan.md#4-仅保留必要测试)，复用已有通过结果；相关实现变化或新失败才补测。
 - `[x]` 有证据；阶段通过后放行依赖阶段。工程师负责实体操作，agent 负责实现和记录。
 - 保持纯 Rust/Embassy、原 PX4 bootloader、`0x08020000` 入口和 QGC 恢复能力。
+- 当前无外接设备，H-02/03/10 等硬件项暂停；只做软件，不要求接线、不自动刷写。
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
+
+## 当前纯软件工作 — 2026-11-08
+
+- [x] 气压日志新鲜度前置：陈旧/未来时间样本不消耗限流名额；原补偿、200 ms 新鲜度、参数/ULog 字段与 EKF 输入不变。旧顺序回归失败已保留，修后 4 项相关 host、fmt、普通 H753/host 库 Clippy 通过。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
+- [x] 气压修复初始候选 `2a2b272fcd059412` 构建/打包/入口帧检查通过，未回装；此包不含随后追加的 Clippy 清理。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
+- [x] 工程师追加要求清理 6 项测试 Clippy 告警：定长数组分块、精确 `0.7071f` 位值、条目顺序与编译期断言已修复；fmt、host 库/测试 Clippy `-D warnings` 与全套 218 项 host 通过，未改生产门限或算法。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
+- [x] 合并普通候选 `49b3552f38510053` 的 H753 Clippy、构建/打包/入口帧检查通过；RAM 与最大入口帧不变，未回装。板载仍为 `81fd0d06601f9e2f`。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
 
 ## 板载地磁 — 2026-11-07
 
@@ -22,6 +30,7 @@
 - [x] 同类遗漏软件修复：普通/备用入口共用 `src/fpu_context.rs`，保留 P0 时钟和旧故障；偏角融合补固定 PX4 的 `S<R` 拒绝/故障位及恢复。212 项 host、1001 点固定参考状态/协方差/NIS 对拍、fmt/相关 Clippy 与两配置构建通过；普通 `3de26249db0a54d7`、dump `9243a9b7e1a154e9` 为日志修改前的软件验证包，本轮未回装。[软件记录](docs/acceptance/magnetometer/20261108-bringup.md#同类遗漏软件修复)。
 - [x] 防回归原则已写入 `.opencode/skills/rust-embedded/SKILL.md`：统一入口、ABI、真实浮点抢占验证、镜像单次计算及坏方差保护；仍受必要测试/工程师授权约束，不把离线通过当作硬件证明。
 - [x] 合并普通包 `81fd0d06601f9e2f` 经授权原 bootloader 回装；只读检查 ASPEN=true、Running/Filter、fault/numerics=None、step 峰值 1302 µs、漏期 0。备用 dump 新初始化未上板，自动化抢占测试未新增；不扩展为完整 E7。
+- [x] 工程师报告 yaw 恢复稳定，要求停止根因调查并重测；最新只读窗口 Running/Filter、fault/numerics=None、漏期 0，未改算法/参数。磁融合布尔快照不当作成功率；不放行安装校准或飞行资格。[复测记录](docs/acceptance/magnetometer/20261108-bringup.md#yaw-只读复测与调查停止)。
 - [ ] 机体安装校准、外接磁驱动与真实切换、完整 E7/M1 仍待验；IMU/TIM8 时基差独立跟进，不由此次 Numerics 修复自动收口。
 
 ## 2026-11-07 状态检查与回装
@@ -173,7 +182,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 
 ## M1 后续
 
-- [ ] **PL-b / LOG-B01～02**：日志修复包 `81fd0d06601f9e2f` 已回装；90 字节分包、事件唤醒、受保护根目录 `.ULG` 删除与落盘确认已实现，4 项内存 FAT/6 项 logger 用例通过。只读同段 262080 B：旧包 59.5 kB/s、2554 错位/7 非尾短包；新包 0/0、哈希一致，默认接收含补包 35.3 kB/s，指定 1 MiB 接收缓冲 180.6 kB/s（条件不同，不宣称 GUI 倍数）。未执行真实删除；QGC GUI/删除及完整链路门仍待验。[记录](docs/acceptance/pl-b/20261108-qgc-log-service.md)。依赖 M1、PL-a、P2。
+- [ ] **PL-b / LOG-B01～02**：修复包 `81fd0d06601f9e2f` 已回装；90 字节分包、事件唤醒及受保护根目录 `.ULG` 删除的软件/构建和只读下载核对通过。**工程师确认实际日志删除正常**，不重复删除；GUI 下载速率、完整文件解析与链路门仍待验，不宣称 GUI 提速倍数。[记录](docs/acceptance/pl-b/20261108-qgc-log-service.md)。依赖 M1、PL-a、P2。
 - [ ] 更快日志路径待工程师选定范围：仅保留 SD 页缓存/USB 合帧建议，均未实现/测量；工程师已要求不推进 MAVFTP burst，现有元数据 FTP 保持不变。
 - [x] **RTC-01 / TIME-01**：source=`81d6c1221048f08a` 实测 LSE `ticking=true counting=true`，30 s 增加 31 s，`!time set 1700000000` 回读 `ok=true`，`SYSTEM_TIME` 与 `LOG_ENTRY.time_utc=1700000004` 非零。根因是清 `RSF` 未解锁 WPR，且 `DR` 后再次读 `SSR` 会重新锁住影子寄存器；见[时间基准](docs/time-sync.md)。
 - [ ] **TIME-02**：H-RTK GNSS 授时待 P4b-g；3D fix 且样本新鲜才采纳，GNSS > 地面站 `SYSTEM_TIME` > 继承 RTC，偏差 ≥5 s 才写；LSI 后备额外周期校准。无 GPS 驱动前，时间来自继承 RTC 或入站 `SYSTEM_TIME`。

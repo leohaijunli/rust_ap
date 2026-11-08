@@ -94,11 +94,11 @@ pub fn ready() -> bool {
 }
 
 pub fn record_baro(sample: v6x_rust_led::bmp388::Sample) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Barometer, sample.timestamp_sample) {
+    if !ready() {
         return;
     }
     let now = Instant::now().as_micros();
-    if !sample.fresh(now) {
+    if !v6x_rust_led::log_config::baro_rate(sample, now) {
         return;
     }
     let report = SensorBaro::from_sample(sample, now);

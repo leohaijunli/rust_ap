@@ -458,7 +458,7 @@ mod tests {
             assert_eq!(subscription(topic.id).unwrap().as_bytes()[3], 0);
         }
         assert_eq!(ulog::TOPIC_COUNT, 18);
-        assert!(crate::log_queue::RUNTIME_RECORD_LEN >= 218);
+        const { assert!(crate::log_queue::RUNTIME_RECORD_LEN >= 218) };
     }
 
     #[test]

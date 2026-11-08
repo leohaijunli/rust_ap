@@ -162,6 +162,11 @@ pub fn rate(group: Group, timestamp_us: u64) -> bool {
     })
 }
 
+/// Reject stale/future barometer samples before consuming a logging slot.
+pub fn baro_rate(sample: crate::bmp388::Sample, now_us: u64) -> bool {
+    sample.fresh(now_us) && rate(Group::Barometer, sample.timestamp_sample)
+}
+
 /// Whether an event source is enabled (no rate limiting).
 pub fn enabled(group: Group) -> bool {
     STATE.enabled[group as usize].load(Ordering::Relaxed) != 0
@@ -243,6 +248,53 @@ mod tests {
         assert!(!enabled(Group::Event));
         apply(Id::LogEnEvent, 1.0);
         assert!(enabled(Group::Event));
+
+        // At 1 Hz, a stale sample can steal the next fresh sample's slot.
+        apply(Id::LogBaroHz, 1.0);
+        let baro = crate::bmp388::Sample {
+            timestamp_sample: 1_000_000,
+            sequence: 0,
+            pressure_pa: 101_325.0,
+            temperature_c: 25.0,
+            error_count: 0,
+        };
+        // Rejected stale/future samples must not consume a logging slot.
+        assert!(!baro_rate(
+            baro,
+            baro.timestamp_sample + crate::bmp388::FRESH_US + 1
+        ));
+        let fresh = crate::bmp388::Sample {
+            timestamp_sample: baro.timestamp_sample + crate::bmp388::FRESH_US + 2,
+            ..baro
+        };
+        assert!(baro_rate(fresh, fresh.timestamp_sample));
+        let early = crate::bmp388::Sample {
+            timestamp_sample: fresh.timestamp_sample + 999_999,
+            ..baro
+        };
+        assert!(!baro_rate(early, early.timestamp_sample));
+        let next = crate::bmp388::Sample {
+            timestamp_sample: fresh.timestamp_sample + 1_000_000,
+            ..baro
+        };
+        assert!(baro_rate(next, next.timestamp_sample));
+        let future = crate::bmp388::Sample {
+            timestamp_sample: next.timestamp_sample + 1_000_000,
+            ..baro
+        };
+        assert!(!baro_rate(future, future.timestamp_sample - 1));
+        assert!(baro_rate(future, future.timestamp_sample));
+        assert!(!baro_rate(future, future.timestamp_sample + 1));
+        let boundary = crate::bmp388::Sample {
+            timestamp_sample: future.timestamp_sample + 1_000_000,
+            ..baro
+        };
+        assert!(baro_rate(
+            boundary,
+            boundary.timestamp_sample + crate::bmp388::FRESH_US
+        ));
+        apply(Id::LogBaroHz, Id::LogBaroHz.definition().default);
+
         // Raw magnetic instances and the selected stream cannot starve each other.
         apply(Id::LogEnMag, 1.0);
         apply(Id::LogMagHz, 20.0);

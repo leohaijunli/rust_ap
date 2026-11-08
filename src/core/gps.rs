@@ -211,7 +211,9 @@ mod tests {
         // decode_gnss_fix2 on the fix2_covariance_0 reference vector
         let payload: std::vec::Vec<u8> = "0000000000000040222018240a0640001bb2641628ea758700c0503880450430080000803f000000c00000003f530000003d"
             .as_bytes()
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| u8::from_str_radix(core::str::from_utf8(pair).unwrap(), 16).unwrap())
             .collect();
         gnss::decode_gnss_fix2(&payload).unwrap()

@@ -276,7 +276,7 @@ mod tests {
             minimum_m: 0.1,
             maximum_m: 30.0,
             pitch_offset_rad: 0.0,
-            minimum_cos_tilt: 0.7071,
+            minimum_cos_tilt: f32::from_bits(0x3f350481), // Exact pinned 0.7071f, not 1/sqrt(2).
             quality_hysteresis_us: 1_000_000,
             stuck_threshold_m: 0.1,
             maximum_fog_distance_m: 0.0,

@@ -1,6 +1,6 @@
 # QGC 日志服务修复与只读对照
 
-日期：2026-11-08。工程师报告 SD 日志下载慢、Erase All 不生效、删除后旧列表仍在；授权实现受保护的根目录 `.ULG` 删除，本轮不删除现有卡上的日志。
+日期：2026-11-08。工程师报告 SD 日志下载慢、Erase All 不生效、删除后旧列表仍在；授权实现受保护的根目录 `.ULG` 删除。agent 的软件测试及只读对照未执行删除；工程师随后自行验证当前固件可以顺利删除日志文件，见文末。
 
 ## 原因
 
@@ -37,10 +37,16 @@
 
 主机缓冲/补请求条件不同，**不宣称严格三倍提升或 QGC GUI 实际速率**。首次旧包完整控制台回复超时、新包严格连续接收失败也保留；随后短响应确认、分包检查与按缺块请求的完整校验取得上述结果，没有重刷或清除现场来隐藏失败。
 
-- 227 项参数值/类型/顺序与旧包相同，旧 `f509ec6b85b6a4fa` 故障全文不变；没有删除 SD 日志。
+- 只读对照时 227 项参数值/类型/顺序与旧包相同，旧 `f509ec6b85b6a4fa` 故障全文不变；该对照未删除 SD 日志。
 - 指定缓冲对照的前/后快照：CPU 32.2%/47.4%，PERIOD 漏期/超限/跳过均 0，栈 untouched=31560 B/guard=true；USB tx_errors=4377→4377，UART7=0。累计 USB 错误不当作这段下载新产生的丢包。
 - 后续只读检查：VTOR=`08020000`、FPU ASPEN=true/LSPEN=false、EKF Running/Filter、fault/numerics=None、step 峰值 1302 µs。此窗口不是完整 E7/M1。
 
 证据：`target/qgc-log-fix-20261108/` 的 baseline/updated/updated-buffered.json、前缀数据、upload.log、packet-debug.json、after-download-diagnostics.json 与两次失败记录；脚本 `verify_download.py` 仅 LIST/DATA/END 和只读诊断，无 ERASE。
 
-QGC GUI Refresh/Download/Cancel、全部文件完整解析和真实删除确认仍待工程师验证；此前 QGC 下载受错位/短包影响的文件建议重新下载校验。真实 Erase All 前应先保留所需日志，不用现有证据文件做自动删除试验。
+## 工程师日志删除验证
+
+2026-11-08 工程师确认：“我验证了目前板子的固件可以顺利的删除logs file”。当前已确认板载 source=`81fd0d06601f9e2f`；日志删除正常路径按工程师实物验证记录通过，不再列为待验或重复删除。
+
+本次确认未提供删除数量、目录前后快照或非 `.ULG` 文件的实物保留结果，不扩展为这些子项的板载证明；选择性删除及 I/O 失败路径仍引用内存 FAT 测试。
+
+QGC GUI Refresh/Download/Cancel、实际下载速率与完整文件解析仍待验，不由删除正常路径放行完整 PL-b/M1。此前受错位/短包影响的下载建议重新校验；后续删除前应先备份所需日志。

@@ -545,6 +545,51 @@ fn initialize_value<F: NavFilter>(
     filter.health().fault.map_or(Ok(()), Err)
 }
 
+impl AidId {
+    const fn index(self) -> usize {
+        match self {
+            Self::Gnss => 0,
+            Self::Baro => 1,
+            Self::Mag => 2,
+            Self::Range => 3,
+        }
+    }
+}
+
+impl Measurement {
+    pub fn valid(self) -> bool {
+        match self {
+            Self::Baro(v) => v.altitude_m.is_finite(),
+            Self::Mag(v) => v.field_gauss.iter().all(|v| v.is_finite()),
+            Self::Range(v) => {
+                v.distance_m.is_finite()
+                    && v.min_distance_m.is_finite()
+                    && v.max_distance_m.is_finite()
+                    && v.min_distance_m >= 0.0
+                    && v.max_distance_m > v.min_distance_m
+                    && (-1..=100).contains(&v.quality)
+            }
+            Self::Gnss(v) => {
+                let s = v.sample;
+                s.latitude_deg.is_finite()
+                    && s.latitude_deg.abs() <= 90.0
+                    && s.longitude_deg.is_finite()
+                    && s.longitude_deg.abs() <= 180.0
+                    && s.altitude_msl_m.is_finite()
+                    && s.velocity_ned_m_s.iter().all(|v| v.is_finite())
+                    && [
+                        s.horizontal_accuracy_m,
+                        s.vertical_accuracy_m,
+                        s.speed_accuracy_m_s,
+                        v.pdop,
+                    ]
+                    .iter()
+                    .all(|v| v.is_finite() && *v >= 0.0)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -607,50 +652,5 @@ mod tests {
             .iter()
             .flatten()
             .any(|m| matches!(m, Measurement::Baro(_))));
-    }
-}
-
-impl AidId {
-    const fn index(self) -> usize {
-        match self {
-            Self::Gnss => 0,
-            Self::Baro => 1,
-            Self::Mag => 2,
-            Self::Range => 3,
-        }
-    }
-}
-
-impl Measurement {
-    pub fn valid(self) -> bool {
-        match self {
-            Self::Baro(v) => v.altitude_m.is_finite(),
-            Self::Mag(v) => v.field_gauss.iter().all(|v| v.is_finite()),
-            Self::Range(v) => {
-                v.distance_m.is_finite()
-                    && v.min_distance_m.is_finite()
-                    && v.max_distance_m.is_finite()
-                    && v.min_distance_m >= 0.0
-                    && v.max_distance_m > v.min_distance_m
-                    && (-1..=100).contains(&v.quality)
-            }
-            Self::Gnss(v) => {
-                let s = v.sample;
-                s.latitude_deg.is_finite()
-                    && s.latitude_deg.abs() <= 90.0
-                    && s.longitude_deg.is_finite()
-                    && s.longitude_deg.abs() <= 180.0
-                    && s.altitude_msl_m.is_finite()
-                    && s.velocity_ned_m_s.iter().all(|v| v.is_finite())
-                    && [
-                        s.horizontal_accuracy_m,
-                        s.vertical_accuracy_m,
-                        s.speed_accuracy_m_s,
-                        v.pdop,
-                    ]
-                    .iter()
-                    .all(|v| v.is_finite() && *v >= 0.0)
-            }
-        }
     }
 }
