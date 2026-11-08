@@ -28,6 +28,9 @@ pub mod icm42688;
 pub mod ina219;
 #[path = "core/log_config.rs"]
 pub mod log_config;
+#[cfg(test)]
+#[path = "storage/log_files.rs"]
+mod log_files;
 #[path = "core/log_queue.rs"]
 pub mod log_queue;
 #[path = "core/logger.rs"]

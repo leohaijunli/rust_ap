@@ -12,41 +12,19 @@ use embassy_stm32::rcc::{
 use embassy_stm32::time::Hertz;
 use embassy_stm32::{Config, Peripherals};
 
+use crate::fpu_context::{self, FPCCR_ASPEN, FPCCR_LSPACT, FPCCR_LSPEN};
+
 pub const CPU_HZ: u32 = 480_000_000;
 pub const HCLK_HZ: u32 = 240_000_000;
 pub const PCLK_HZ: u32 = 120_000_000;
 pub const TICK_HZ: u32 = 1_000_000;
-
-// ARM CMSIS 5.9.0 core_cm7.h: architectural FPCCR control/status bits.
-const FPCCR_ASPEN: u32 = 1 << 31;
-const FPCCR_LSPEN: u32 = 1 << 30;
-const FPCCR_LSPACT: u32 = 1;
 
 pub fn init() -> Peripherals {
     crate::fault::capture_before_hal();
     // The only supported board has revision V silicon (PX4 MCU_REV_V=0x2003).
     assert_eq!(DBGMCU.idc().read().rev_id(), 0x2003);
     let mut core = cortex_m::Peripherals::take().expect("core peripherals taken once");
-    // The bootloader leaves FPCCR=0; cortex-m-rt enables CP10/11 but does not
-    // restore automatic context saving. TIM7 preempts the floating-point EKF
-    // on TIM5, so hardware must preserve S0-S15/FPSCR on exception entry.
-    // Use eager stacking to avoid lazy-save timing/state across nested IRQs.
-    cortex_m::interrupt::free(|_| {
-        assert_eq!(core.FPU.fpccr.read() & FPCCR_LSPACT, 0);
-        // SAFETY: core.FPU is uniquely owned here, before the executors/HAL
-        // start. IRQs are masked and no pending lazy FP frame is being changed.
-        unsafe {
-            core.FPU
-                .fpccr
-                .modify(|value| (value | FPCCR_ASPEN) & !FPCCR_LSPEN);
-        }
-        cortex_m::asm::dsb();
-        cortex_m::asm::isb();
-        assert_eq!(
-            core.FPU.fpccr.read() & (FPCCR_ASPEN | FPCCR_LSPEN),
-            FPCCR_ASPEN
-        );
-    });
+    fpu_context::init(&mut core.FPU);
     core.SCB.disable_dcache(&mut core.CPUID);
     core.SCB.enable_icache();
     core.DCB.enable_trace();

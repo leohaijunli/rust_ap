@@ -4,15 +4,17 @@
 use core::{
     cell::RefCell,
     fmt,
+    future::{pending, poll_fn},
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
+use embassy_futures::select::select3;
 use embassy_stm32::gpio::Output;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, Timer};
 use mavlink::{common::*, MavHeader};
 use v6x_rust_led::{
-    logger::{Link, LogError, LogRequest, LogResponse},
+    logger::{erase_allowed, Link, LogError, LogRequest, LogResponse},
     mavftp,
     mavlink_protocol::{addressed_to_vehicle, Decoded, FrameParser, ParamStream},
     telemetry::Scheduler,
@@ -143,6 +145,19 @@ fn tx(link: Link) -> &'static Channel<CriticalSectionRawMutex, Transfer, 4> {
     match link {
         Link::Usb => &USB_TX,
         Link::Uart => &UART_TX,
+    }
+}
+
+async fn log_work_ready(link: Link, connected: bool) {
+    if !connected {
+        pending::<()>().await;
+        return;
+    }
+    crate::sd_logger::log_response_ready(link).await;
+    // A queued response cannot make progress while TX is full. Wait for space
+    // instead of repeatedly waking on the already nonempty response queue.
+    if tx(link).is_full() {
+        poll_fn(|context| tx(link).poll_ready_to_send(context)).await;
     }
 }
 
@@ -418,20 +433,19 @@ impl State {
         self.reply = Reply::EMPTY;
         if let Some(request) = mavlink_core::log_request(&decoded.message) {
             if crate::sd_logger::request_logs(self.link, request).is_err() {
-                if matches!(request, LogRequest::List { .. }) {
-                    self.reply.push(
-                        mavlink_core::log_response(LogResponse::Entry {
-                            id: 0,
-                            num_logs: 0,
-                            last_log_num: 0,
-                            size: 0,
-                            time_utc: 0,
-                        })
-                        .unwrap(),
-                    );
-                }
+                let error = if matches!(request, LogRequest::Erase)
+                    && !erase_allowed(
+                        crate::sd_logger::snapshot().status,
+                        crate::OUTPUT_STATE.armed,
+                        crate::OUTPUT_STATE.outputs_enabled,
+                    ) {
+                    LogError::EraseDenied
+                } else {
+                    LogError::Busy
+                };
+                // Busy/failed listing must not masquerade as an empty SD card.
                 self.reply
-                    .push(mavlink_core::log_response(LogResponse::Error(LogError::Busy)).unwrap());
+                    .push(mavlink_core::log_response(LogResponse::Error(error)).unwrap());
             }
             return;
         }
@@ -624,6 +638,11 @@ pub async fn run(
                 }
             }
         }
-        Timer::at(now + Duration::from_millis(5)).await;
+        select3(
+            Timer::at(now + Duration::from_millis(5)),
+            log_work_ready(Link::Usb, states[0].connected),
+            log_work_ready(Link::Uart, states[1].connected),
+        )
+        .await;
     }
 }

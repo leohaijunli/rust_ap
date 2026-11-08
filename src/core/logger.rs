@@ -131,7 +131,8 @@ pub enum LogError {
     NotFound,
     Range,
     Read,
-    EraseDisabled,
+    EraseDenied,
+    Erase,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,7 +151,36 @@ pub enum LogResponse {
         data: [u8; 90],
     },
     Error(LogError),
+    Erased {
+        deleted: u32,
+    },
     Done,
+}
+
+pub const fn erase_allowed(status: Status, armed: bool, outputs_enabled: bool) -> bool {
+    !armed && !outputs_enabled && matches!(status, Status::Disabled | Status::Managing)
+}
+
+pub fn erase_confirmation(deleted: u32) -> [u8; 50] {
+    use core::fmt::Write;
+
+    struct Text<'a>(&'a mut [u8]);
+    impl core::fmt::Write for Text<'_> {
+        fn write_str(&mut self, text: &str) -> core::fmt::Result {
+            if text.len() > self.0.len() {
+                return Err(core::fmt::Error);
+            }
+            let storage = core::mem::take(&mut self.0);
+            let (head, tail) = storage.split_at_mut(text.len());
+            head.copy_from_slice(text.as_bytes());
+            self.0 = tail;
+            Ok(())
+        }
+    }
+
+    let mut text = [0; 50];
+    write!(Text(&mut text), "Log erase complete: {deleted} files").expect("u32 erase text fits");
+    text
 }
 
 pub fn is_ulog_name(name: &[u8]) -> bool {
@@ -255,6 +285,38 @@ mod tests {
         assert_eq!(download_count(100, 10, 20), Ok(20));
         assert_eq!(download_count(100, 90, u32::MAX), Ok(10));
         assert_eq!(download_count(100, 100, 1), Err(LogError::Range));
+    }
+
+    #[test]
+    fn erase_requires_idle_logger_disarmed_and_outputs_disabled() {
+        for status in [
+            Status::Disabled,
+            Status::Initializing,
+            Status::Ready,
+            Status::Stopping,
+            Status::Error,
+            Status::Managing,
+        ] {
+            assert_eq!(
+                erase_allowed(status, false, false),
+                matches!(status, Status::Disabled | Status::Managing)
+            );
+            for (armed, outputs) in [(true, false), (false, true), (true, true)] {
+                assert!(!erase_allowed(status, armed, outputs));
+            }
+        }
+    }
+
+    #[test]
+    fn erase_confirmation_reports_zero_and_maximum_counts_without_truncation() {
+        for (count, expected) in [
+            (0, "Log erase complete: 0 files"),
+            (u32::MAX, "Log erase complete: 4294967295 files"),
+        ] {
+            let message = erase_confirmation(count);
+            assert_eq!(&message[..expected.len()], expected.as_bytes());
+            assert!(message[expected.len()..].iter().all(|byte| *byte == 0));
+        }
     }
 
     #[test]

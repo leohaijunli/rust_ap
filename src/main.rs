@@ -26,6 +26,7 @@ mod eth_led;
 mod fault;
 #[cfg(feature = "fault-dump")]
 mod fault_dump;
+mod fpu_context;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "storage/fram.rs"]
 mod fram;
@@ -35,6 +36,9 @@ mod imu;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/ina219.rs"]
 mod ina219;
+#[cfg(not(feature = "fault-dump"))]
+#[path = "storage/log_files.rs"]
+mod log_files;
 #[cfg(not(feature = "fault-dump"))]
 #[path = "drivers/logger_switch.rs"]
 mod logger_switch;

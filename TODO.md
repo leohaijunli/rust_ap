@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-08。**已授权回装 `da2bd6595cb3de1c`，修复浮点中断上下文保存缺失；60.5 s 板上对照保持 EKF Running/Filter 与有效磁融合，无 Numerics，227 项参数/历史故障保持。该数值失效已定位并针对性复测，外接切换、安装校准、M1 与完整 E7 未放行。**
+更新：2026-11-08。**当前已授权回装合并修复包 `81fd0d06601f9e2f`；FPU/偏角保护与日志分包/调度修复已交付，同一日志前缀只读校验一致，227 项参数/历史故障保持。180.6 kB/s 为指定主机接收缓冲下的实测，不等于 QGC GUI 保证速率；没有删除真实 SD 日志。GUI/真实删除、外接切换、安装校准、M1 与完整 E7 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -19,8 +19,9 @@
 - [x] 失败项/对称性阶段诊断：host 210 项、fmt/Clippy 与普通包通过；授权回装 `2de8a1b91a3d467d`、`95b1b57207604874`，分别观察到不对称、负方差及非有限协方差，未清故障或保存参数。[续测记录](docs/acceptance/magnetometer/20261108-bringup.md#失败项诊断续测)。
 - [x] 授权只读诊断回装 `3e8d1725a4f91020`：FPCCR=0 / ASPEN=false、Nearest、无 FZ/DN；开机更新 823 次后负方差。确认上下文保存配置缺陷，不归因于高 CPU。[记录](docs/acceptance/magnetometer/20261108-bringup.md#fpu-只读核对与修复准备)。
 - [x] FPU 修复对照：`da2bd6595cb3de1c` 启动设置 ASPEN=1/LSPEN=0；两种 Joseph 更新各 7 组 ARM 镜像指令同寄存器且无中间覆盖，host 210 项/Clippy/普通构建通过。授权 60.5 s 对照，updates 7684→13712、磁融合有效、fault/numerics=None；CPU 32.2–32.4%、step 峰值 1403 µs/2000 µs、漏期 0、栈余 25,592 B。[修复记录](docs/acceptance/magnetometer/20261108-bringup.md#fpu-修复板上对照通过)。
-- [ ] 同类审查待修：备用 fault-dump 入口未覆盖 FPU 初始化；偏角融合缺固定 PX4 的坏创新方差拒绝保护。两项为源码审查发现，尚未修改/上板，不与已验证 FPU 根因混为一谈。[审查](docs/acceptance/magnetometer/20261108-bringup.md#同类问题审查)。
-- [ ] 预防建议待落实：所有固件入口共用 FPU 初始化；启动/IRQ/执行器/工具链变更增加有界的真实浮点抢占回归，不能以 host 离线通过代替。尚未新增 CI 或额外硬件测试，当前通过窗口复用。[建议](docs/acceptance/magnetometer/20261108-bringup.md#后续预防建议)。
+- [x] 同类遗漏软件修复：普通/备用入口共用 `src/fpu_context.rs`，保留 P0 时钟和旧故障；偏角融合补固定 PX4 的 `S<R` 拒绝/故障位及恢复。212 项 host、1001 点固定参考状态/协方差/NIS 对拍、fmt/相关 Clippy 与两配置构建通过；普通 `3de26249db0a54d7`、dump `9243a9b7e1a154e9` 为日志修改前的软件验证包，本轮未回装。[软件记录](docs/acceptance/magnetometer/20261108-bringup.md#同类遗漏软件修复)。
+- [x] 防回归原则已写入 `.opencode/skills/rust-embedded/SKILL.md`：统一入口、ABI、真实浮点抢占验证、镜像单次计算及坏方差保护；仍受必要测试/工程师授权约束，不把离线通过当作硬件证明。
+- [x] 合并普通包 `81fd0d06601f9e2f` 经授权原 bootloader 回装；只读检查 ASPEN=true、Running/Filter、fault/numerics=None、step 峰值 1302 µs、漏期 0。备用 dump 新初始化未上板，自动化抢占测试未新增；不扩展为完整 E7。
 - [ ] 机体安装校准、外接磁驱动与真实切换、完整 E7/M1 仍待验；IMU/TIM8 时基差独立跟进，不由此次 Numerics 修复自动收口。
 
 ## 2026-11-07 状态检查与回装
@@ -172,7 +173,8 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 
 ## M1 后续
 
-- [ ] **PL-b / LOG-B01～02**：软件与有限 HIL 通过：QGC 协议列出 2 个日志，分块下载 306176 B 后 pyulog 无 corruption；MAVLink Console start/sync/stop 通过，restart 的直接证据待补录；心跳改 PX4 兼容后 QGC 下载应命名为 `.ulg`。待 QGC GUI Refresh/Download、断链与速率边界收口。[证据](docs/acceptance/pl-b/README.md)。依赖 M1、PL-a、P2。
+- [ ] **PL-b / LOG-B01～02**：日志修复包 `81fd0d06601f9e2f` 已回装；90 字节分包、事件唤醒、受保护根目录 `.ULG` 删除与落盘确认已实现，4 项内存 FAT/6 项 logger 用例通过。只读同段 262080 B：旧包 59.5 kB/s、2554 错位/7 非尾短包；新包 0/0、哈希一致，默认接收含补包 35.3 kB/s，指定 1 MiB 接收缓冲 180.6 kB/s（条件不同，不宣称 GUI 倍数）。未执行真实删除；QGC GUI/删除及完整链路门仍待验。[记录](docs/acceptance/pl-b/20261108-qgc-log-service.md)。依赖 M1、PL-a、P2。
+- [ ] 更快日志路径待工程师选定范围：仅保留 SD 页缓存/USB 合帧建议，均未实现/测量；工程师已要求不推进 MAVFTP burst，现有元数据 FTP 保持不变。
 - [x] **RTC-01 / TIME-01**：source=`81d6c1221048f08a` 实测 LSE `ticking=true counting=true`，30 s 增加 31 s，`!time set 1700000000` 回读 `ok=true`，`SYSTEM_TIME` 与 `LOG_ENTRY.time_utc=1700000004` 非零。根因是清 `RSF` 未解锁 WPR，且 `DR` 后再次读 `SSR` 会重新锁住影子寄存器；见[时间基准](docs/time-sync.md)。
 - [ ] **TIME-02**：H-RTK GNSS 授时待 P4b-g；3D fix 且样本新鲜才采纳，GNSS > 地面站 `SYSTEM_TIME` > 继承 RTC，偏差 ≥5 s 才写；LSI 后备额外周期校准。无 GPS 驱动前，时间来自继承 RTC 或入站 `SYSTEM_TIME`。
 - [ ] **P6a-e / EKF-01～03**：E1-H～E6-H 本地软件门已通过，[E6-H 证据](docs/acceptance/ekf2/20261104-e6-host.md)；实物/E7 仍依赖 M1、P6a、P4b-g、P2、PL-b。[方案](docs/ekf2-port.md)

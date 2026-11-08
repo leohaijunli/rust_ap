@@ -35,6 +35,10 @@ static_cell = "2.1.1"
 [target.'cfg(not(target_os = "none"))'.dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 
+[dev-dependencies]
+embedded-io-async = { version = "=0.7.0", default-features = false }
+embedded-fatfs = { git = "https://github.com/MabezDev/embedded-fatfs", rev = "518528cc111fcf65c48abbdeb80735a38eada112", default-features = false }
+
 [patch.crates-io]
 block-device-driver = { git = "https://github.com/MabezDev/embedded-fatfs", rev = "518528cc111fcf65c48abbdeb80735a38eada112" }
 

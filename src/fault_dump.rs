@@ -72,6 +72,8 @@ fn capture() -> Snapshot {
 }
 
 fn init_p0() -> Peripherals {
+    let mut core = cortex_m::Peripherals::take().expect("core peripherals taken once");
+    crate::fpu_context::init(&mut core.FPU);
     // Exact known-good P0 tree: HSI 64 MHz core, PLL3Q 48 MHz USB.
     let mut config = HalConfig::default();
     config.rcc.hsi48 = None;

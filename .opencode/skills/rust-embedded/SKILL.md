@@ -1,7 +1,7 @@
 ---
 name: rust-embedded
 license: Apache-2.0
-description: 为本项目编写、维护和审查纯 Rust/no_std/Embassy 嵌入式代码。涉及 STM32H753 启动、HAL/PAC、外设驱动、中断、DMA、共享状态、取消/超时、交叉编译或硬件验证时使用；不把 host 编译通过称为板上验收。
+description: 为本项目编写、维护和审查纯 Rust/no_std/Embassy 嵌入式代码。涉及 STM32H753 启动、FPU 上下文、中断抢占、HAL/PAC、外设驱动、DMA、共享状态、取消/超时、交叉编译或硬件验证时使用；不把 host 离线通过称为板上验收。
 ---
 
 # Rust Embedded — Pixhawk 6X 项目适配
@@ -11,6 +11,7 @@ description: 为本项目编写、维护和审查纯 Rust/no_std/Embassy 嵌入�
 Copyright 2026 PartMe.AI；许可保存在 [LICENSE](LICENSE)。
 **本文件于 2026-11-04 修改**：精简并转为中文项目约束，保留三份上游参考；
 不导入其他技能、示例 crate 或安装/刷写脚本。
+**2026-11-08 补充**：固化本项目实测形成的浮点上下文与数值防回归原则。
 
 ## 优先级与边界
 
@@ -64,6 +65,29 @@ Copyright 2026 PartMe.AI；许可保存在 [LICENSE](LICENSE)。
 
 驱动、中断或 Embassy 任务修改时，按需读
 [hal-and-concurrency.md](references/hal-and-concurrency.md)。
+
+#### 浮点上下文与数值防回归：必查
+
+- 所有固件入口（普通、fault-injection、fault-dump）共用独立 FPU 初始化，
+  在 HAL/执行器启动前设置并读回确认 `FPCCR.ASPEN=1/LSPEN=0`。
+  不继承 bootloader 的保存配置；CP10/11 可访问不等于上下文受到保护。
+  备用入口仍须保留自己的时钟树与故障证据，不直接套用普通平台初始化。
+- FPU 模式写入集中管理；修改时须屏蔽 IRQ、排除活动的延迟保存帧并使用屏障。
+  自动保存覆盖 S0–S15/FPSCR，其他浮点寄存器仍须遵守 ABI；手工返回的中断或
+  上下文切换必须审查完整保存/恢复义务，不能只检查 ASPEN。
+- 协方差镜像复用一次计算结果，保持固定参考的表达式次序；相关 host 用例逐位
+  核对，必要时检查实际 ARM 写入指令。两条相邻写指令仍可能被抢占，不能替代
+  FPU 保护，也不为此屏蔽整个 EKF；旋转矩阵不能被错误地强制对称。
+- 启动、IRQ 优先级、执行器或工具链变化后，把一次有界的真实浮点抢占回归列为
+  相关必要检查，按 `plan.md` 和工程师授权执行。核对保存配置、抢占后结果、
+  数值故障与 CPU/栈预算；无相关变化则复用通过结果，不增加固定长压测。
+- host 离线只验证数学/输入逻辑，不覆盖 Cortex-M 异常上下文。板上独有数值异常
+  须检查 FPU/ABI、单写者与共享数据保护，保留失败项及现场资源数据；不能仅凭
+  离线成功或低 CPU 占用排除上下文破坏。
+- 方差前置条件、坏条件拒绝和故障标志按固定 PX4 参考实现，并补相应失败用例；
+  不用放宽磁场检查、接受 NaN/Inf 或消除诊断来掩盖异常。
+
+根因与对照依据：[2026-11-08 FPU 修复记录](../../../docs/acceptance/magnetometer/20261108-bringup.md#fpu-修复板上对照通过)。
 
 ### 4. 保留故障和可恢复性
 

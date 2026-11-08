@@ -19,6 +19,7 @@ const MAG_3D: u64 = 1 << 5;
 const MAG_DEC: u64 = 1 << 6;
 const MAG_ALIGNED: u64 = 1 << 23;
 const MAG_CONSISTENT: u64 = 1 << 37;
+const BAD_MAG_DECL: u32 = 1 << 4;
 // AlphaFilter is initialized with dt=0.01s, tau=0.09s. Literal 0.1f differs
 // by one f32 ULP and can change a height reset by an altitude-sized ULP.
 const SENSOR_ALPHA: f32 = 0.01 / (0.09 + 0.01);
@@ -105,6 +106,60 @@ mod tests {
         for i in 18..21 {
             assert_eq!(filter.covariance[i][i], math::square(params.mag_noise));
         }
+    }
+
+    #[test]
+    fn declination_rejects_bad_variance_without_mutation_and_recovers_its_fault_bit() {
+        let mut filter =
+            ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0).unwrap();
+        filter.initialize_covariance();
+        let aids = filter.aiding.take().unwrap();
+        filter.control |= MAG | YAW;
+        filter.state[16..19].copy_from_slice(&[0.2, 0.1, 0.4]);
+        filter.covariance[15][15] = 0.0025;
+        filter.covariance[16][16] = 0.0025;
+        filter.px4_fault = 1 << 3; // an unrelated heading fault must survive
+
+        for correlation in [0.004, 0.02] {
+            filter.covariance[15][16] = correlation;
+            filter.covariance[16][15] = correlation;
+            let (_, variance, _) =
+                mag_generated::declination(&filter.state, &filter.covariance, 0.25, f32::EPSILON);
+            assert!(variance < 0.25);
+            assert!(filter.numerics_valid()); // finite, symmetric P can still be ill-conditioned
+            let state = filter.state;
+            let covariance = filter.covariance;
+            aids.fuse_declination(&mut filter, true, true);
+            assert_eq!(filter.state, state);
+            assert_eq!(filter.covariance, covariance);
+            assert_eq!(filter.px4_fault, (1 << 3) | BAD_MAG_DECL);
+            assert_eq!(filter.health().fault, None);
+        }
+
+        filter.covariance[15][16] = 0.0;
+        filter.covariance[16][15] = 0.0;
+        let state = filter.state;
+        aids.fuse_declination(&mut filter, true, true);
+        assert_ne!(filter.state, state);
+        assert_eq!(filter.px4_fault, 1 << 3);
+        assert!(filter.numerics_valid());
+    }
+
+    #[test]
+    fn declination_variance_equal_to_observation_noise_is_allowed() {
+        let mut filter =
+            ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0).unwrap();
+        let aids = filter.aiding.take().unwrap();
+        filter.control |= MAG | YAW;
+        filter.state[16..19].copy_from_slice(&[0.2, 0.1, 0.4]);
+        filter.px4_fault = BAD_MAG_DECL;
+        let (_, variance, _) =
+            mag_generated::declination(&filter.state, &filter.covariance, 0.25, f32::EPSILON);
+        assert_eq!(variance, 0.25);
+        aids.fuse_declination(&mut filter, true, true);
+        assert_eq!(filter.px4_fault, 0);
+        assert_eq!(filter.health().fault, None);
+        assert!(filter.numerics_valid());
     }
 }
 
@@ -680,31 +735,7 @@ impl Aids {
                 }
             }
             if filter.control & MAG_DEC != 0 {
-                let r_decl = if self.wmm.is_some() { 0.5 } else { 0.25 };
-                let (prediction, s, h) = mag_generated::declination(
-                    &filter.state,
-                    &filter.covariance,
-                    r_decl,
-                    f32::EPSILON,
-                );
-                let mut gain = filter.project_covariance(h).map(|v| v * (1.0 / s));
-                // With no WMM, a configured saved declination updates the
-                // active states; the zero fallback updates magnetic states only.
-                let saved = self.params.mag_declination_deg != 0.0 || self.wmm.is_some();
-                Self::limit_gains(&mut gain, saved && update_all, saved && update_tilt);
-                let observation = if let Some(wmm) = self.wmm {
-                    wmm.declination_deg.to_radians()
-                } else if saved {
-                    self.params.mag_declination_deg.to_radians()
-                } else {
-                    0.0
-                };
-                filter.measurement_update(
-                    gain,
-                    h,
-                    r_decl,
-                    math::wrap_pi_f32(prediction - observation),
-                );
+                self.fuse_declination(filter, update_all, update_tilt);
             }
             if filter.timed_out(self.last_mag_fuse, 7_000_000) {
                 if !filter.horizontal_aiding() {
@@ -764,6 +795,32 @@ impl Aids {
                 self.mag_status.fused = true;
             }
         }
+    }
+
+    fn fuse_declination(&self, filter: &mut ImuEkf, update_all: bool, update_tilt: bool) {
+        let r_decl = if self.wmm.is_some() { 0.5 } else { 0.25 };
+        let (prediction, s, h) =
+            mag_generated::declination(&filter.state, &filter.covariance, r_decl, f32::EPSILON);
+        // Pinned PX4 fuseDeclination rejects badly conditioned variance before
+        // calculating gains; equality is allowed. Keep the caller's timeout path.
+        if s < r_decl {
+            filter.px4_fault |= BAD_MAG_DECL;
+            return;
+        }
+        let mut gain = filter.project_covariance(h).map(|v| v * (1.0 / s));
+        // With no WMM, saved declination updates active states; the zero
+        // fallback updates magnetic states only.
+        let saved = self.params.mag_declination_deg != 0.0 || self.wmm.is_some();
+        Self::limit_gains(&mut gain, saved && update_all, saved && update_tilt);
+        let observation = if let Some(wmm) = self.wmm {
+            wmm.declination_deg.to_radians()
+        } else if saved {
+            self.params.mag_declination_deg.to_radians()
+        } else {
+            0.0
+        };
+        filter.measurement_update(gain, h, r_decl, math::wrap_pi_f32(prediction - observation));
+        filter.px4_fault &= !BAD_MAG_DECL;
     }
 
     fn limit_gains(gain: &mut [f32; 24], all: bool, tilt: bool) {

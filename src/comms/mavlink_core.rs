@@ -772,6 +772,11 @@ pub fn log_response(response: LogResponse) -> Option<MavMessage> {
             data,
         })),
         LogResponse::Error(error) => Some(parameter_warning(log_error_text(error))),
+        LogResponse::Erased { deleted } => Some(MavMessage::STATUSTEXT(STATUSTEXT_DATA {
+            severity: MavSeverity::MAV_SEVERITY_INFO,
+            text: v6x_rust_led::logger::erase_confirmation(deleted).into(),
+            ..Default::default()
+        })),
         LogResponse::Done => None,
     }
 }
@@ -784,7 +789,8 @@ fn log_error_text(error: LogError) -> &'static str {
         LogError::NotFound => "Log id not found",
         LogError::Range => "Log offset out of range",
         LogError::Read => "Log data read failed",
-        LogError::EraseDisabled => "Log erase disabled",
+        LogError::EraseDenied => "Log erase denied: disarm and stop logging",
+        LogError::Erase => "Log erase failed; refresh SD log list",
     }
 }
 

@@ -20,9 +20,9 @@ use embedded_partitions::mbr::Scheme;
 use v6x_rust_led::log_config::Group;
 use v6x_rust_led::log_queue::{Class, Logger};
 use v6x_rust_led::logger::{
-    accepts, download_count, is_ulog_name, list_bounds, write_failure_restarts_session, Command,
-    Config as LoggerConfig, ControlError, Link, LogError, LogRequest, LogResponse,
-    RoutedLogRequest, Snapshot, Status, SESSION_STAGE_RESTART,
+    accepts, download_count, erase_allowed, is_ulog_name, list_bounds,
+    write_failure_restarts_session, Command, Config as LoggerConfig, ControlError, Link, LogError,
+    LogRequest, LogResponse, RoutedLogRequest, Snapshot, Status, SESSION_STAGE_RESTART,
 };
 use v6x_rust_led::parameters::{Kind, REGISTRY};
 use v6x_rust_led::px4_messages::{
@@ -228,6 +228,15 @@ pub fn snapshot() -> Snapshot {
 
 pub fn request_logs(link: Link, request: LogRequest) -> Result<(), ControlError> {
     let current = current_status();
+    if matches!(request, LogRequest::Erase)
+        && !erase_allowed(
+            current,
+            crate::OUTPUT_STATE.armed,
+            crate::OUTPUT_STATE.outputs_enabled,
+        )
+    {
+        return Err(ControlError::InvalidState);
+    }
     let owner = MANAGEMENT_LINK.load(Ordering::Acquire);
     let starts_session = matches!(request, LogRequest::List { .. } | LogRequest::Erase);
     if current == Status::Managing {
@@ -278,6 +287,13 @@ pub fn try_next_log_response(link: Link) -> Option<LogResponse> {
         Link::Uart => UART_LOG_RESPONSES.try_receive(),
     }
     .ok()
+}
+
+pub async fn log_response_ready(link: Link) {
+    match link {
+        Link::Usb => USB_LOG_RESPONSES.ready_to_receive().await,
+        Link::Uart => UART_LOG_RESPONSES.ready_to_receive().await,
+    }
 }
 
 async fn send_log_response(link: Link, response: LogResponse) -> Result<(), ()> {
@@ -512,6 +528,9 @@ pub async fn run(
             }
             Either::First(_) => {}
             Either::Second(request) => {
+                // A LIST can already be queued behind END/ERASE when the prior
+                // session releases ownership; restore it for the new mount.
+                MANAGEMENT_LINK.store(request.link as u8, Ordering::Release);
                 STATE.set_status(Status::Managing, 20);
                 power.set_high();
                 Timer::after_millis(20).await;
@@ -668,7 +687,7 @@ where
     let link = first_request.link;
     let filesystem = with_timeout(
         INIT_TIMEOUT,
-        FileSystem::new(storage, FsOptions::new().time_provider(WallClock)),
+        FileSystem::new(&mut *storage, FsOptions::new().time_provider(WallClock)),
     )
     .await
     .map_err(|_| (link, LogError::Mount))?
@@ -778,21 +797,28 @@ where
                     .map_err(|_| (link, LogError::Read))?;
                 let mut sent = 0u32;
                 while sent < requested {
-                    let mut data = [0u8; 90];
-                    let length = usize::try_from((requested - sent).min(90)).unwrap();
-                    let read = file
-                        .read(&mut data[..length])
-                        .await
-                        .map_err(|_| (link, LogError::Read))?;
-                    if read == 0 {
-                        return Err((link, LogError::Read));
+                    if let Ok(request) = LOG_REQUESTS.try_receive() {
+                        if request.link == link {
+                            // Cancel/restart at a complete packet boundary. The
+                            // file handle leaves this arm before END/ERASE runs.
+                            clear_log_responses(link);
+                            next_request = Some(request);
+                            break;
+                        }
+                        let _ = send_log_response(request.link, LogResponse::Error(LogError::Busy))
+                            .await;
                     }
+                    let mut data = [0u8; 90];
+                    let read =
+                        crate::log_files::read_packet(&mut file, requested - sent, &mut data)
+                            .await
+                            .map_err(|_| (link, LogError::Read))?;
                     send_log_response(
                         link,
                         LogResponse::Data {
                             id,
                             offset: offset + sent,
-                            count: read as u8,
+                            count: read,
                             data,
                         },
                     )
@@ -811,12 +837,47 @@ where
                 return Ok(());
             }
             LogRequest::Erase => {
-                send_log_response(link, LogResponse::Error(LogError::EraseDisabled))
+                if !erase_allowed(
+                    current_status(),
+                    crate::OUTPUT_STATE.armed,
+                    crate::OUTPUT_STATE.outputs_enabled,
+                ) {
+                    send_log_response(link, LogResponse::Error(LogError::EraseDenied))
+                        .await
+                        .map_err(|_| (link, LogError::Busy))?;
+                    continue;
+                }
+                clear_log_responses(link);
+                let deleted = crate::log_files::erase_root_logs(&filesystem, is_ulog_name)
+                    .await
+                    .map_err(|_| (link, LogError::Erase))?;
+                drop(root);
+                filesystem
+                    .unmount()
+                    .await
+                    .map_err(|_| (link, LogError::Erase))?;
+                storage.flush().await.map_err(|_| (link, LogError::Erase))?;
+                // Confirm only after directory/FAT updates reached the backing
+                // device. QGC sends a new LIST immediately after LOG_ERASE.
+                send_log_response(link, LogResponse::Erased { deleted })
                     .await
                     .map_err(|_| (link, LogError::Busy))?;
+                send_log_response(
+                    link,
+                    LogResponse::Entry {
+                        id: 0,
+                        num_logs: 0,
+                        last_log_num: 0,
+                        size: 0,
+                        time_utc: 0,
+                    },
+                )
+                .await
+                .map_err(|_| (link, LogError::Busy))?;
                 send_log_response(link, LogResponse::Done)
                     .await
                     .map_err(|_| (link, LogError::Busy))?;
+                return Ok(());
             }
         }
     }
