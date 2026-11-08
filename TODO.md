@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-08。**最近已回装普通包仍为 `050461399e9cbd95`；板载 BMM150 驱动与四磁源区分/校准应用/健康选择软件已交付，最新待回装 source=`2c58e1faa86f4f72`。安装校准参数应用不等于实物校准；外接驱动和实物切换仍待验。CAN/GNSS、双链路、传感器及 IO 门按原依赖；M1 与完整 E7 未放行。**
+更新：2026-11-08。**已回装 `2c58e1faa86f4f72`，BMM150/BMP388 身份/有效读数/共享总线与磁日志/遥测通过；原参数/故障保持。真实磁融合触发 Numerics/Fatal，两次观察后停止重试，当前数据估计回退 Mahony；根因未定位、磁融合实物门未过。外接驱动/切换、安装校准、M1 与完整 E7 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -15,7 +15,8 @@
 
 - [x] BMM150/I²C4 驱动与主 EKF2 磁事件入口、标准地磁日志/遥测/诊断已接入；共用 BMP388 总线而不切断共享电源。host 196 项、256 组固定 PX4 补偿对拍、pyulog、Clippy/元数据与普通包通过，source=`cd136580311b4298`（RAM +292 B、入口帧不变）。[软件记录](docs/acceptance/magnetometer/20261107-bmm150.md)。
 - [x] 2026-11-08 磁源机制：四源 DeviceId/内外属性、CAL_MAG0～3 绑定与矩阵/旋转、优先级健康选择、失效回退/降级、只重置磁历史；209 项、双源 pyulog、Clippy 与普通包通过，source=`2c58e1faa86f4f72`。[记录](docs/acceptance/magnetometer/20261108-selection.md)。
-- [ ] 待工程师授权回装，验证板载身份/轴向/磁融合及 BMP388 共存；外接驱动/真实切换与安装校准另验，不提前放行 M1/E7。
+- [x] 已授权回装并实测 BMM150/BMP388 共存、227 项参数保持、短日志/磁遥测；驱动错误 0。[板载记录](docs/acceptance/magnetometer/20261108-bringup.md)。
+- [ ] 真实磁融合后 Numerics/Fatal 可重复（一次授权重试约 8.6 s 再现），停止板上重试、回退 Mahony。静态值离线探针未复现；需失败项/阶段诊断或真实失败前数据定位，不放宽检查。安装校准/外接切换与 M1/E7 仍待验。
 
 ## 2026-11-07 状态检查与回装
 
