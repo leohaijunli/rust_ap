@@ -16,8 +16,12 @@ use v6x_rust_ap::logger_switch::{self, Action, BeepSequence, ButtonEvent, Deboun
 const BUZZER_HZ: u32 = 4_000;
 
 static BUTTON_PRESSED: AtomicBool = AtomicBool::new(false);
+static BUTTON_RAW_HIGH: AtomicBool = AtomicBool::new(false);
 static LED_REQUESTED: AtomicBool = AtomicBool::new(false);
 static BUZZER_ON: AtomicBool = AtomicBool::new(false);
+static BUZZER_READY: AtomicBool = AtomicBool::new(false);
+static BUZZER_TEST_REQUESTED: AtomicBool = AtomicBool::new(false);
+static BUZZER_TESTS: AtomicU32 = AtomicU32::new(0);
 static PRESSES: AtomicU32 = AtomicU32::new(0);
 static SHORT_PRESSES: AtomicU32 = AtomicU32::new(0);
 static LONG_PRESSES: AtomicU32 = AtomicU32::new(0);
@@ -72,10 +76,12 @@ pub async fn run(
     // Enabled 0% PWM gives a defined low idle level, unlike a floating channel.
     buzzer.set_duty_cycle_fully_off();
     buzzer.enable();
+    BUZZER_READY.store(true, Ordering::Release);
 
     let initial_pressed = button.is_high();
     let mut debouncer = Debouncer::new(initial_pressed, Instant::now().as_millis());
     BUTTON_PRESSED.store(initial_pressed, Ordering::Release);
+    BUTTON_RAW_HIGH.store(initial_pressed, Ordering::Release);
     let started_at = Instant::now();
     let mut pending = None;
     let mut beeper = BeepSequence::new();
@@ -100,14 +106,10 @@ pub async fn run(
         }
 
         let pressed = button.is_high();
-        let button_event = if crate::px4io::ready() {
-            debouncer.update(pressed, now_ms)
-        } else {
-            // Communication/guard failure disables hardware actions. Require
-            // a new release/press cycle after reconnect; console remains usable.
-            debouncer = Debouncer::new(pressed, now_ms);
-            None
-        };
+        BUTTON_RAW_HIGH.store(pressed, Ordering::Release);
+        // PF5 and SD logging belong to FMU. IO readiness still protects IO
+        // outputs, but must not disable this independent data-only control.
+        let button_event = debouncer.update(pressed, now_ms, input_enabled());
         if let Some(event) = button_event {
             PRESSES.fetch_add(1, Ordering::Relaxed);
             match event {
@@ -124,6 +126,15 @@ pub async fn run(
             }
         }
         BUTTON_PRESSED.store(debouncer.is_pressed(), Ordering::Release);
+
+        if BUZZER_TEST_REQUESTED.swap(false, Ordering::AcqRel)
+            && input_enabled()
+            && status == Status::Disabled
+            && pending.is_none()
+        {
+            beeper.play_test(now_ms);
+            BUZZER_TESTS.fetch_add(1, Ordering::Relaxed);
+        }
 
         let elapsed_ms = started_at.elapsed().as_millis();
         let led_on = logger_switch::indicator_pattern(status).is_on(elapsed_ms);
@@ -144,6 +155,35 @@ pub async fn run(
 
         Timer::after_millis(logger_switch::SAMPLE_PERIOD_MS).await;
     }
+}
+
+fn input_enabled() -> bool {
+    logger_switch::input_enabled(
+        crate::OUTPUT_STATE.armed,
+        crate::OUTPUT_STATE.outputs_enabled,
+    )
+}
+
+pub fn request_buzzer_test() -> bool {
+    if !input_enabled()
+        || !BUZZER_READY.load(Ordering::Acquire)
+        || crate::sd_logger::snapshot().status != Status::Disabled
+        || PENDING.load(Ordering::Acquire) != 0
+    {
+        return false;
+    }
+    !BUZZER_TEST_REQUESTED.swap(true, Ordering::AcqRel)
+}
+
+pub fn write_buzzer_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
+    let timer = embassy_stm32::pac::TIM14;
+    let gpio = embassy_stm32::pac::GPIOF;
+    writeln!(output, "BUZZER schema=1 pin=PF9 timer=TIM14 frequency_hz={} ready={} on={} test_pending={} tests={} gpio_mode={:?} gpio_af={} timer_enabled={} channel_enabled={} psc={} arr={} ccr={}",
+        BUZZER_HZ, BUZZER_READY.load(Ordering::Acquire), BUZZER_ON.load(Ordering::Acquire),
+        BUZZER_TEST_REQUESTED.load(Ordering::Acquire), BUZZER_TESTS.load(Ordering::Acquire),
+        gpio.moder().read().moder(9), gpio.afr(1).read().afr(1),
+        timer.cr1().read().cen(), timer.ccer().read().cce(0),
+        timer.psc().read(), timer.arr().read().arr(), timer.ccr(0).read().ccr())
 }
 
 fn request_logger_action(
@@ -189,8 +229,10 @@ fn reject(beeper: &mut BeepSequence, now_ms: u64) {
 pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     writeln!(
         output,
-        "LOGGER_SWITCH schema=2 button=PF5 active_high=true enabled={} pressed={} presses={} short_presses={} long_presses={} long_press_ms={} led_owner=PX4IO led_override=false requested_on={} buzzer=PF9 timer=TIM14 push_pull=true frequency_hz={} on={} pending={} last_event={} start_requests={} stop_requests={} rejected={}",
+        "LOGGER_SWITCH schema=3 role=logger button=PF5 active_high=true enabled={} io_ready={} raw_high={} pressed={} presses={} short_presses={} long_presses={} long_press_ms={} led_owner=PX4IO led_override=false requested_on={} buzzer=PF9 timer=TIM14 push_pull=true frequency_hz={} on={} pending={} last_event={} start_requests={} stop_requests={} rejected={}",
+        input_enabled(),
         crate::px4io::ready(),
+        BUTTON_RAW_HIGH.load(Ordering::Acquire),
         BUTTON_PRESSED.load(Ordering::Acquire),
         PRESSES.load(Ordering::Relaxed),
         SHORT_PRESSES.load(Ordering::Relaxed),

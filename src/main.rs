@@ -66,6 +66,9 @@ mod platform;
 #[path = "drivers/px4io.rs"]
 mod px4io;
 #[cfg(not(feature = "fault-dump"))]
+#[path = "drivers/rgb_led.rs"]
+mod rgb_led;
+#[cfg(not(feature = "fault-dump"))]
 #[path = "comms/router.rs"]
 mod router;
 #[cfg(not(feature = "fault-dump"))]
@@ -335,6 +338,8 @@ async fn application(p: Peripherals, spawner: Spawner) {
     spawner
         .spawn(logger_switch::run(p.PF5, p.TIM14, p.PF9))
         .unwrap();
+    // Observed USL external RGB, independent of the IO-owned safety LED.
+    spawner.spawn(rgb_led::run(p.I2C1, p.PB8, p.PB9)).unwrap();
 
     // Standalone I2C connector: SCL3/SDA3 (PA8/PH8), not the GPS/POWER I2C buses.
     let mut i2c_config = I2cConfig::default();

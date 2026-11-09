@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**最近已记录授权回装为 `d21b326c3a753d15`：高度/静止数据链通过（正向保守机制），logger 已停止，未设参/保存、删除日志或启用输出。PX4 反向计时的 host 对照已通过，原软件包 `197fb10f367d6ae2` 未回装；本轮保留该实现并将 crate 改为 `v6x-rust-ap`，新普通包 `136329bb61f63100` 已构建、未烧录。工程师已确认固定基站＋CAN Rover，独立步骤已成文；水平/全球导航与控制护栏保持，RTK/外接磁实测、M1、完整 E7 与非零输出未放行。**
+更新：2026-11-09。**板载仍为 `d884e6ba1adf41b7`（USL 诊断版，含 PX4 反向计时）；按键启停有真实日志、RGB I²C1/0x39 有响应。蜂鸣短/长试音无声，工程师已暂停，未试驱 pin 7；日志停止、CCR=0。清理包 `094b08072d1267ac` 仅构建、未回装，原 bootloader/IO 与输出护栏保持。crate 改名/RTK 步骤已完成；完整 H-12、RTK/外接磁、M1/E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -30,7 +30,7 @@
 - [x] 工程师关闭 QGC 后授权静止日志核对（板上 `df8dcb8` 正向保守机制）：`00.ulg` 68.6 s，`VEHICLE_AT_REST` 在 341/341 快照置位，gyro z 偏置 −0.938 °/s 与原始均值 −0.936 °/s 相符；yaw 全窗变化 0.21°。未覆盖 0→1/实物扰动，不作绝对航向或飞行资格。[记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续授权静止日志与-yaw-核对同日)。
 - [x] 工程师质询"为何不取 PX4 设置"后查证固定 commit 源码：PX4 `at_rest` 来自 land detector 的反向计时（默认静止、角速度 >3°/s 或振动超限重置、disarmed 即 landed）。经工程师选择改为等价移植（比力模长差 >1 m/s² 作为振动指标简化替代）；首轮正向保守实现（1° 内收敛 2.448 s，慢 0.8 s）结果保留在验收记录中作对照。host 225 项、fmt/Clippy、release 与固件构建（source=`197fb10f367d6ae2`，栈 oversized=0）通过。[实现与对照记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#机制修正改为-px4-反向计时同日工程师确认)。
 - [x] 反向计时后同场景重跑：at_rest 首拍 8 ms 置位，tilt/yaw 对齐 0.576/1.648 s 与 PX4 地面标志参考逐项一致；偏置场景末值误差 +14.077°→+0.051°（参考 +0.100°），窗口均值/最大均略优。仍是合成输入结论，不用于绝对精度或飞行放行；未刷写、未设参。
-- [ ] 反向计时固件 `197fb10f367d6ae2` 未回装（板上 `d21b326c3a753d15` 仍为正向保守机制）；是否回装由工程师单独决定。
+- [x] 反向计时实现随后随 USL 诊断版 `d884e6ba1adf41b7` 授权回装；原包 `197fb10f367d6ae2` 未单独回装。本轮未专项复验静止判定，不借用 `00.ulg` 正向机制的实测作为新机制验收。
 
 ## ALTITUDE 与垂直有效性 — 2026-11-09
 
@@ -45,6 +45,14 @@
 - [x] 固定基站＋QGC＋单 CAN Rover 的[独立步骤](docs/rtk-can-validation.md)已细化：节点/普通定位、基站 Survey-In、RTCM 软件、地面站出站证据、Fixed/日志与中断恢复；本轮只成文，未执行或改写阶段依赖。
 - [x] Package/bin 改为 `v6x-rust-ap`，Rust 导入与 Windows/Linux/CI 产物路径同步；229 项 host、相关 Clippy/工具与普通包通过，source=`136329bb61f63100`，未回装，旧记录与 USB 身份保持。[改名记录](docs/acceptance/p1/20261109-crate-rename.md)。
 - [ ] 下一步先确认基站型号/固件、Rover CAN1 节点与真实 Fix2；RTCM 转发与专用诊断、必要的节点分配、RM3100 接收待另行授权实施，正式 RTK 验收仍依赖 M1/P2/P4b-g/H-10。
+
+## CUAV USL 日志控制 — 2026-11-09
+
+- [x] PF5 按键从 IO-ready 错误耦合中解开，按 disarmed/输出关闭接受；短按启停、长按仅事件，原 IO/安全 LED/PWM 护栏保持。9 项按键/试音及 2 项 RGB host、fmt、相关 Clippy/构建通过。[记录](docs/acceptance/pl-a/20261109-usl-logger-switch.md)。
+- [x] 授权回装试灯包 `2b7dd895b8cee3d3` 和长试音诊断版 `d884e6ba1adf41b7`：应用区上传/CRC、source与时序核对通过；RGB I2C1/0x39 协议响应，按键新日志 55296 B独立下载/解析无损坏/dropout，收尾 Logger Disabled、beeper off/CCR=0。
+- [x] 按工程师要求完成局部清理：RGB 仅保留实测路径、共享写入/错误处理，console 与试音常量简化；相关 host/Clippy、fmt/diff 和普通构建/布局/入口帧通过。新包 `094b08072d1267ac` 已独立保存、未回装；软件检查与板载失败分别记录。
+- [ ] 蜂鸣短/长试音均未听到，工程师已暂停；提供的 pin7 表与 Holybro标准GPS1资料冲突，后续只在可靠两端线序/供电/波形核实后另行授权继续，不盲驱 PD10/不解除 safety。
+- [ ] RGB 实际灯色/完整 H-12、PX4IO Timeout及原阶段依赖仍待验；协议响应和累计按键计数不冒充完整物理验收。
 
 ## 板载地磁 — 2026-11-07
 
@@ -194,7 +202,7 @@ P1 最终普通回装为 `a946a529360eac83`；P1 阶段最近实测板载为普�
 - [x] **参数分组元数据**：`MAV_CMD_REQUEST_MESSAGE`(397) → `COMPONENT_METADATA` + 只读 MAVFTP（`component_metadata/{general,parameters}.json`），9 个 `LOG_*` 归入 `SDLog`；板载下载与 CRC 校验通过（source=`c88f30f929842543`，raw/padded=`398000/398016 B`，static RAM=`236872 B`，栈未触达 36972 B）。[证据](docs/acceptance/p3a/README.md#参数分组元数据2026-11-03)。QGC 参数页 “SDLog” 分组呈列待工程师目视确认。
 - [x] **MSG-01 标准消息软件检查**：`sensor_accel` / `sensor_gyro`、`actuator_armed` 与固定 PX4 定义对齐；fmt/Clippy、4 项受影响核心用例、pyulog 与普通打包/布局通过，软件 source=`c2f3128aecc8a70b`。[记录](docs/acceptance/messages/README.md)；实物核对并入 P4 下一次必验记录。
 - [ ] **下一步 P4b-a / CAN-A01～04**：CAN-A01～03 软件门已通过；待 H-02/03 完成 ESC 映射/Status、零命令与一次断线恢复实测。[证据](docs/acceptance/p4b-a/README.md)；DNA 仅设备必需时加入。
-- [ ] **PL-a / LOG-A01～06**：LOG-A01～04 及 LoggerControl/MAVLink Console 软件门已通过；实物正常 start/stop、下载/解析已通过。LOG-A06 短按/长按保留事件和蜂鸣软件通过，IO 安全灯不覆盖，I²C RGB/左右灯待识别；旧 `473ffd4797e692f3` 包撤回。H-04 故障/时延、H-12 IO/按键/灯/蜂鸣与 restart 直接证据仍待验。[证据](docs/acceptance/pl-a/README.md)；不放行依赖阶段。
+- [ ] **PL-a / LOG-A01～06**：LOG-A01～04 及 LoggerControl/MAVLink Console 软件门已通过；实物正常 start/stop、下载/解析已通过。LOG-A06 按键/蜂鸣软件及 USL I²C1/0x39 RGB 驱动已接入，按键有新日志、RGB 有协议响应；实际灯色待验，蜂鸣无声且已暂停。IO 安全灯不覆盖，旧 `473ffd4797e692f3` 包撤回；H-12 IO/完整物理项与 restart 直接证据仍待验。[USL 记录](docs/acceptance/pl-a/20261109-usl-logger-switch.md)，不放行依赖阶段。
 - [x] **IO-H0 软件**：固定 PX4 v5 报文/CRC、USART6/DMA、零输出配置与回读、按钮锁存 ACK、`!px4io` 诊断；12 项相关 host 用例及隔离构建通过。[记录](docs/acceptance/px4io/20261104-host.md)。后来 H7 回装实测 Timeout，**IO 实物未通过**，见[回装记录](docs/acceptance/px4io/20261104-merged-flash.md)。
 - [ ] **IO-R0～R5（本次仅计划）**：Rust 模块拆分/协议共享/迁移与必要验收已记录；先 H-12/13 型号/灯归属/恢复，再独立 M3 启动与 LED/gesture，后续 PWM/RC、更新/恢复按 [重构计划](docs/px4io.md) 逐门放行。不开始 IO 刷写、不新增 M1 前置。
 - [ ] **P4b-g / GNSS-01～03**：GPS 已接 CAN1；软件已实现并刷入，待 H-10 与依赖门具备后验证 H-RTK Fix2/Auxiliary 实物数据、标准 `GPS_RAW_INT` 和 `sensor_gps` 日志。CAN2 桥不自动转发 CAN1。阶段依赖 P4b-a、PL-a、H-10。

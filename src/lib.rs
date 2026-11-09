@@ -63,6 +63,8 @@ pub mod parameters;
 pub mod px4_messages;
 #[path = "core/px4io.rs"]
 pub mod px4io;
+#[path = "core/rgb_led.rs"]
+pub mod rgb_led;
 #[path = "core/slcan.rs"]
 pub mod slcan;
 #[path = "core/telemetry.rs"]

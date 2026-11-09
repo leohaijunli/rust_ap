@@ -34,7 +34,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
     let _ = match command {
         Command::Help => writeln!(
             response,
-            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu baro mag ina219 px4io logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
+            "COMMANDS help status platform metrics fault fram params dronecan mavcan imu baro mag ina219 px4io rgb rgb test buzzer buzzer test logger logger start logger stop logger sync logger config <100..10000> time time set <unix|YYYY-MM-DDTHH:MM:SSZ>"
         ),
         Command::Platform => crate::platform::write_diagnostics(&mut response),
         Command::Metrics => crate::diagnostics::write_diagnostics(&mut response)
@@ -53,8 +53,15 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::Mag => crate::magnetometer::write_diagnostics(&mut response),
         Command::Estimator => crate::estimator::write_diagnostics(&mut response),
         Command::Px4io => crate::px4io::write_diagnostics(&mut response),
+        Command::Rgb => crate::rgb_led::write_diagnostics(&mut response),
+        Command::RgbTest => writeln!(response, "RGB_CONTROL operation=test accepted={}", crate::rgb_led::request_test())
+            .and_then(|()| crate::rgb_led::write_diagnostics(&mut response)),
+        Command::Buzzer => crate::logger_switch::write_buzzer_diagnostics(&mut response),
+        Command::BuzzerTest => writeln!(response, "BUZZER_CONTROL operation=test accepted={}", crate::logger_switch::request_buzzer_test())
+            .and_then(|()| crate::logger_switch::write_buzzer_diagnostics(&mut response)),
         Command::Logger => crate::sd_logger::write_diagnostics(&mut response)
-            .and_then(|()| crate::logger_switch::write_diagnostics(&mut response)),
+            .and_then(|()| crate::logger_switch::write_diagnostics(&mut response))
+            .and_then(|()| crate::rgb_led::write_diagnostics(&mut response)),
         Command::LoggerStart => {
             logger_result(&mut response, "start", crate::sd_logger::request_start())
         }
@@ -297,6 +304,10 @@ pub(crate) enum Command {
     EstimatorStart,
     EstimatorStop,
     Px4io,
+    Rgb,
+    RgbTest,
+    Buzzer,
+    BuzzerTest,
     Logger,
     LoggerStart,
     LoggerStop,
@@ -360,6 +371,10 @@ impl CommandLine {
                     b"!ekf2 start" | b"ekf2 start" => Some(Command::EstimatorStart),
                     b"!ekf2 stop" | b"ekf2 stop" => Some(Command::EstimatorStop),
                     b"!px4io" | b"px4io" => Some(Command::Px4io),
+                    b"!rgb" | b"rgb" => Some(Command::Rgb),
+                    b"!rgb test" | b"rgb test" => Some(Command::RgbTest),
+                    b"!buzzer" | b"buzzer" => Some(Command::Buzzer),
+                    b"!buzzer test" | b"buzzer test" => Some(Command::BuzzerTest),
                     b"!time" | b"time" => Some(Command::Time),
                     #[cfg(feature = "fault-injection")]
                     b"!panic" => Some(Command::Panic),

@@ -19,6 +19,7 @@
 - **E7 当前范围（2026-11-06 工程师确认）**：保留一个主 EKF2/Mahony 产品运行时，删除独立无 GNSS 实例及 component 197 输出。IMU 按固定 PX4 的 FIFO 均值与 MCU 批次时间积分，单调时钟切换 TIM8，FIFO 时间戳使用 `16 × 32/30` 换算；[实现与时基调查](docs/imu-timebase.md)。`EST_EN` 默认关闭，真实 IMU/baro/GNSS 输入、标准输出/日志和回退已接入；新版本实物周期/栈及真实日志待验，缺失 mag/range 不填零，导航保持未资格化。
 - **2026-11-09 追加授权**：工程师授权含 `df8dcb8/186709b` 的回装及静止日志验证，随后新增共享 PX4 `ALTITUDE` 映射、MAVLink 流和 ULog 高度 topic。高度有效性按核心 aid 与运行时选择/新鲜度发布；水平/全球导航与控制资格护栏保持。必要验收为相关 host 正常/失效门、普通构建及一次授权短时 USB＋SD 核对，不扩展外设门或非零输出。
 - **2026-11-09 接入方案与命名**：工程师确认固定基站接地面站、H-RTK ZED-F9P CAN Rover 接飞控，要求将 [RTK/CAN/地面站步骤](docs/rtk-can-validation.md)写入独立文档，并将 crate/bin 改为 `v6x-rust-ap`。本轮只做文档与改名，不实施 RTK 功能或自主刷写/验证；原阶段依赖与输出门保持。
+- **2026-11-09 USL 追加授权**：工程师选择 GPS1 CUAV 按键用于日志启停，要求 USL RGB/蜂鸣反馈并授权应用区回装/实体核对。按键与指示不作为安全许可，IO 固件/PD10 共线安全灯/PWM 护栏不改；相关 host 与普通构建后只做有界功能核对，结果见 TODO。蜂鸣试音无声后工程师已暂停，不再试音/扫频或直接驱动 pin 7。清理阶段只做软件检查/构建；工程师随后追加 push/flash，允许同一合格普通包应用区回装及启动只读核对，未验物理项不放行。
 
 ## 2. 固定工程边界
 
@@ -155,7 +156,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 2. **LOG-A03/04**：SDMMC2/PLL1Q、PC13 显式启动、固定 FAT 栈、MBR/superfloppy、新文件与 32 KiB 对齐写入已构建。
 3. **LOG-A05 待验**：实物正常 start/stop、MAVLink 下载和 pyulog 解析已通过；H-04 仍需受控断电、缺卡/拔卡和时延边界。一次旧日志断电后的 corruption/dropout 保留为失败记录，不能按通过收口。
 4. **控制 API**：start/stop/sync/status/apply_config 共用单一状态机；QGC MAVLink Console 与标准 logging commands 已接入。正常 stop 后 Disabled 与解析已验证；restart 的通过标记尚缺直接证据引用，先补录已有结果。
-5. **LOG-A06 部分软件完成、实物待验**：CUAV USL 接 GPS1；PF5 40 ms 消抖，短按释放后复用同一 logger 状态机切换 start/stop，1.5 s 长按仅保留事件；PF9/TIM14 MCU 推挽音调反馈结果。PD10 保持输入，IO 安全灯不伪造解锁来显示日志；GPS1 I²C RGB/左右小灯需识别后再接入已核实可控的灯。旧直接驱动 PD10/开漏 PF9 包已撤回，见 [PX4IO 记录](docs/acceptance/px4io/20261104-host.md)。
+5. **LOG-A06 软件接入、完整实物待验**：CUAV USL 接 GPS1；PF5 40 ms 消抖，短按释放复用 logger 状态机启停，仅受 disarmed/输出关闭许可门控制，1.5 s 长按只记事件。RGB 固定实测 I²C1 PB8/PB9、0x39 NCP5623-compatible，用日志状态显示；PF9/TIM14 反馈/有界试音与诊断已接入，但短/长试音无声，工程师已暂停。PD10 保持输入，IO 安全灯不伪造解锁来显示日志，实际灯色/其他灯归属仍待验。[USL 记录](docs/acceptance/pl-a/20261109-usl-logger-switch.md)；旧直接驱动 PD10/开漏 PF9 包已撤回。
 
 详情和精确产物见 [PL-a 记录](docs/acceptance/pl-a/README.md)。
 

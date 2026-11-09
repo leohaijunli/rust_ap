@@ -7,6 +7,15 @@ pub const LONG_PRESS_MS: u64 = 1_500;
 pub const DEBOUNCE_MS: u64 = 40;
 const BEEP_TONE_MS: u64 = 100;
 const BEEP_GAP_MS: u64 = 80;
+const TEST_DELAY_MS: u64 = 500;
+const TEST_TONE_MS: u64 = 700;
+const TEST_GAP_MS: u64 = 400;
+
+/// Logging input is independent of PX4IO communication, but must not change
+/// the recording state while the vehicle is armed or outputs are enabled.
+pub const fn input_enabled(armed: bool, outputs_enabled: bool) -> bool {
+    !armed && !outputs_enabled
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -62,7 +71,11 @@ impl Debouncer {
 
     /// Emits a short press on release or one long press after the hold time.
     /// An initially held button emits nothing until first released.
-    pub fn update(&mut self, pressed: bool, now_ms: u64) -> Option<ButtonEvent> {
+    pub fn update(&mut self, pressed: bool, now_ms: u64, permitted: bool) -> Option<ButtonEvent> {
+        if !permitted {
+            *self = Self::new(pressed, now_ms);
+            return None;
+        }
         if pressed != self.candidate_pressed {
             self.candidate_pressed = pressed;
             self.candidate_since_ms = now_ms;
@@ -117,6 +130,8 @@ impl Debouncer {
 pub struct BeepSequence {
     started_ms: u64,
     pulses: u8,
+    tone_ms: u64,
+    gap_ms: u64,
 }
 
 impl BeepSequence {
@@ -124,12 +139,24 @@ impl BeepSequence {
         Self {
             started_ms: 0,
             pulses: 0,
+            tone_ms: BEEP_TONE_MS,
+            gap_ms: BEEP_GAP_MS,
         }
     }
 
     pub fn play(&mut self, pulses: u8, now_ms: u64) {
         self.started_ms = now_ms;
         self.pulses = pulses;
+        self.tone_ms = BEEP_TONE_MS;
+        self.gap_ms = BEEP_GAP_MS;
+    }
+
+    /// Audible, bounded test independent of SD requests; starts after 500 ms.
+    pub fn play_test(&mut self, now_ms: u64) {
+        self.started_ms = now_ms.saturating_add(TEST_DELAY_MS);
+        self.pulses = 3;
+        self.tone_ms = TEST_TONE_MS;
+        self.gap_ms = TEST_GAP_MS;
     }
 
     pub fn is_on(&self, now_ms: u64) -> bool {
@@ -137,8 +164,8 @@ impl BeepSequence {
             return false;
         }
         let elapsed_ms = now_ms - self.started_ms;
-        let period_ms = BEEP_TONE_MS + BEEP_GAP_MS;
-        elapsed_ms / period_ms < u64::from(self.pulses) && elapsed_ms % period_ms < BEEP_TONE_MS
+        let period_ms = self.tone_ms + self.gap_ms;
+        elapsed_ms / period_ms < u64::from(self.pulses) && elapsed_ms % period_ms < self.tone_ms
     }
 }
 
@@ -174,19 +201,19 @@ mod tests {
     use super::*;
 
     fn settle(debouncer: &mut Debouncer, pressed: bool, now_ms: u64) -> Option<ButtonEvent> {
-        let first = debouncer.update(pressed, now_ms);
-        first.or(debouncer.update(pressed, now_ms + DEBOUNCE_MS))
+        let first = debouncer.update(pressed, now_ms, true);
+        first.or(debouncer.update(pressed, now_ms + DEBOUNCE_MS, true))
     }
 
     #[test]
     fn press_is_debounced_and_emitted_once() {
         let mut debouncer = Debouncer::new(false, 0);
 
-        assert_eq!(debouncer.update(true, 0), None);
-        assert_eq!(debouncer.update(false, 10), None);
+        assert_eq!(debouncer.update(true, 0, true), None);
+        assert_eq!(debouncer.update(false, 10, true), None);
         assert_eq!(settle(&mut debouncer, true, 20), None);
         assert!(debouncer.is_pressed());
-        assert_eq!(debouncer.update(true, 70), None);
+        assert_eq!(debouncer.update(true, 70, true), None);
 
         assert_eq!(
             settle(&mut debouncer, false, 80),
@@ -201,7 +228,7 @@ mod tests {
         let mut debouncer = Debouncer::new(true, 0);
 
         assert_eq!(settle(&mut debouncer, true, 0), None);
-        assert_eq!(debouncer.update(true, LONG_PRESS_MS), None);
+        assert_eq!(debouncer.update(true, LONG_PRESS_MS, true), None);
         assert_eq!(settle(&mut debouncer, false, LONG_PRESS_MS + 10), None);
         assert_eq!(settle(&mut debouncer, true, LONG_PRESS_MS + 60), None);
         assert_eq!(
@@ -214,12 +241,12 @@ mod tests {
     fn long_press_is_emitted_once_and_suppresses_short_press() {
         let mut debouncer = Debouncer::new(false, 0);
         assert_eq!(settle(&mut debouncer, true, 0), None);
-        assert_eq!(debouncer.update(true, LONG_PRESS_MS - 1), None);
+        assert_eq!(debouncer.update(true, LONG_PRESS_MS - 1, true), None);
         assert_eq!(
-            debouncer.update(true, LONG_PRESS_MS),
+            debouncer.update(true, LONG_PRESS_MS, true),
             Some(ButtonEvent::LongPress)
         );
-        assert_eq!(debouncer.update(true, LONG_PRESS_MS + 10), None);
+        assert_eq!(debouncer.update(true, LONG_PRESS_MS + 10, true), None);
         assert_eq!(settle(&mut debouncer, false, LONG_PRESS_MS + 20), None);
     }
 
@@ -234,6 +261,28 @@ mod tests {
     }
 
     #[test]
+    fn logger_input_requires_disarmed_and_outputs_disabled() {
+        assert!(input_enabled(false, false));
+        assert!(!input_enabled(true, false));
+        assert!(!input_enabled(false, true));
+        assert!(!input_enabled(true, true));
+    }
+
+    #[test]
+    fn withdrawing_permission_requires_a_new_release_and_press() {
+        let mut debouncer = Debouncer::new(false, 0);
+        assert_eq!(settle(&mut debouncer, true, 10), None);
+        assert_eq!(debouncer.update(true, 100, false), None);
+        assert_eq!(debouncer.update(true, 2_000, true), None);
+        assert_eq!(settle(&mut debouncer, false, 2_010), None);
+        assert_eq!(settle(&mut debouncer, true, 2_060), None);
+        assert_eq!(
+            settle(&mut debouncer, false, 2_140),
+            Some(ButtonEvent::ShortPress)
+        );
+    }
+
+    #[test]
     fn tone_envelope_is_bounded_and_does_not_catch_up_after_delays() {
         let mut beeps = BeepSequence::new();
         assert!(!beeps.is_on(0));
@@ -243,6 +292,21 @@ mod tests {
         assert!(beeps.is_on(190));
         assert!(!beeps.is_on(290));
         assert!(!beeps.is_on(5_000));
+    }
+
+    #[test]
+    fn independent_buzzer_test_ends_and_normal_feedback_restores_short_tones() {
+        let mut beeps = BeepSequence::new();
+        beeps.play_test(100);
+        assert!(!beeps.is_on(599));
+        assert!(beeps.is_on(600));
+        assert!(!beeps.is_on(1_300));
+        assert!(beeps.is_on(1_700));
+        assert!(beeps.is_on(2_800));
+        assert!(!beeps.is_on(3_900));
+        beeps.play(1, 4_000);
+        assert!(beeps.is_on(4_000));
+        assert!(!beeps.is_on(4_100));
     }
 
     #[test]
