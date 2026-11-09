@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**板载仍为 `d884e6ba1adf41b7`（USL 诊断版，含 PX4 反向计时）；按键启停有真实日志、RGB I²C1/0x39 有响应。蜂鸣短/长试音无声，工程师已暂停，未试驱 pin 7；日志停止、CCR=0。清理包 `094b08072d1267ac` 仅构建、未回装，原 bootloader/IO 与输出护栏保持。crate 改名/RTK 步骤已完成；完整 H-12、RTK/外接磁、M1/E7 与非零输出未放行。**
+更新：2026-11-09。**清理代码 `736d4aa` 已推送，工程师随后授权回装普通包 `094b08072d1267ac`：原 bootloader 上传/CRC、source/3 条 disarmed 心跳与平台核对通过。Logger Disabled、蜂鸣 tests=0/CCR=0；RGB I²C1/0x39 schema=2 正常响应，EKF Running/Filter、fault/numerics=None。蜂鸣此前短/长试音无声仍暂停，未试驱 pin 7；PX4IO 仍 Timeout，IO/输出护栏保持。crate 改名/RTK 步骤已完成，完整 H-12、RTK/外接磁、M1/E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -50,7 +50,8 @@
 
 - [x] PF5 按键从 IO-ready 错误耦合中解开，按 disarmed/输出关闭接受；短按启停、长按仅事件，原 IO/安全 LED/PWM 护栏保持。9 项按键/试音及 2 项 RGB host、fmt、相关 Clippy/构建通过。[记录](docs/acceptance/pl-a/20261109-usl-logger-switch.md)。
 - [x] 授权回装试灯包 `2b7dd895b8cee3d3` 和长试音诊断版 `d884e6ba1adf41b7`：应用区上传/CRC、source与时序核对通过；RGB I2C1/0x39 协议响应，按键新日志 55296 B独立下载/解析无损坏/dropout，收尾 Logger Disabled、beeper off/CCR=0。
-- [x] 按工程师要求完成局部清理：RGB 仅保留实测路径、共享写入/错误处理，console 与试音常量简化；相关 host/Clippy、fmt/diff 和普通构建/布局/入口帧通过。新包 `094b08072d1267ac` 已独立保存、未回装；软件检查与板载失败分别记录。
+- [x] 按工程师要求完成局部清理：RGB 仅保留实测路径、共享写入/错误处理，console 与试音常量简化；相关 host/Clippy、fmt/diff 和普通构建/布局/入口帧通过。新包 `094b08072d1267ac` 先独立保存，软件检查与板载失败分别记录。
+- [x] 工程师追加 push/flash：代码 `736d4aa` 先推送，再经原 board 53/v5 bootloader 回装 `094b08072d1267ac`（25 s 上传/CRC）；source/3 条 disarmed 心跳、VTOR/FPU/时钟与备份域核对通过。Logger Disabled、RGB schema=2/errors=0、蜂鸣 off/tests=0/CCR=0；未试音/设参/日志或非零输出操作，不作完整实物验收。
 - [ ] 蜂鸣短/长试音均未听到，工程师已暂停；提供的 pin7 表与 Holybro标准GPS1资料冲突，后续只在可靠两端线序/供电/波形核实后另行授权继续，不盲驱 PD10/不解除 safety。
 - [ ] RGB 实际灯色/完整 H-12、PX4IO Timeout及原阶段依赖仍待验；协议响应和累计按键计数不冒充完整物理验收。
 

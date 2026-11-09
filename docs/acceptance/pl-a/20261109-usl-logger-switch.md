@@ -33,7 +33,7 @@
 - console 测试回包沿用 `.and_then` 传播格式错误；独立蜂鸣测试时序改为命名常量，仍是 0.5 s 延迟、三次 0.7 s/间隔 0.4 s。一次局部 `code-simplifier` 审视完成，不扩展接口或改估计数学/输出护栏。
 - 清理后实际运行 RGB 2 项 host、host 库/测试与普通 H753 Clippy，均通过；按键/蜂鸣 9 项沿用本轮清理前通过结果，时序仅等值常量命名变化。未重跑全库数学测试，不把过滤掉的用例写成通过。
 - 最终普通 release source=`094b08072d1267ac`（构建时 git 基线 `8a586f1…`，含待提交 USL 清理）：构建/打包/分区/入口帧通过，board ID=53、应用入口 `0x08020000`；raw/padded=1227200/1227200 B、静态 RAM 374680 B（余 83048 B）、入口帧最大 11528 B、oversized=0。相比已回装 `d884…`，Flash 减少 3960 B、静态 RAM 减少 40 B；入口帧不是完整调用链或板载栈水位证明。
-- fmt/diff 检查通过；109 项构建源码 SHA-256 与当前文件、4 个产物 SHA-256 与报告逐项一致。ELF/bin/map/px4、构建报告、入口帧与原始构建输出保存于 `target/usl-20261109/094b08072d1267ac/`；px4 SHA-256=`ca3e3dec79d55cf5a50cad527d9f74a43a154c7e623651d0de39f91a82222af3`。**仅构建、未回装**，不添加硬件通过结论。
+- fmt/diff 检查通过；109 项构建源码 SHA-256 与当前文件、4 个产物 SHA-256 与报告逐项一致。ELF/bin/map/px4、构建报告、入口帧与原始构建输出保存于 `target/usl-20261109/094b08072d1267ac/`；px4 SHA-256=`ca3e3dec79d55cf5a50cad527d9f74a43a154c7e623651d0de39f91a82222af3`。**此时仅构建、未回装；随后独立授权回装见下文**。
 - 全文件链接检查发现基线已有多处历史文档缺失（如 `docs/acceptance/pl-a/README.md`）；本轮不恢复或删除未知历史文件，仅检查本次新增引用，移除修改行中的失效引用。此项不写成全仓链接通过。
 
 ## 首次回装与只读证据
@@ -60,6 +60,17 @@
 - 收尾只读：Logger Disabled、file_index=6、bytes=55296、errors=0、normal/event dropped=0；按键 short=6、start/stop各3、rejected=0。RGB仍为 I2C1/0x39、ready=true、errors=0、请求 OFF；buzzer on=false、test_pending=false、CCR=0。
 - 工程师自行短按产生的最近日志 id6 下载到独立 `logs/06.ulg`（55296 B，5.4 s），source与新固件一致，pyulog 无损坏/dropout；243 个 accel/gyro、7 个高度/估计快照，证明按键会话产生真实可解析日志，不作为 60 s 或 M1 验收。SHA-256 `82fc2d52946ee68b565c505829f53aeec42c65cbc62920a581addcca467ddcea`，`log-summary.json`保存 topic 计数；未覆盖原 `e7-log` 或删除旧 SD 文件。
 - EKF收尾 Running/Filter、fault/numerics=None、deadline_misses/发布 missed=0、max_update=1476 µs/2000 µs、积分0 ppm；PX4IO仍Timeout，未更新其固件。`final-readonly.json`保存收尾查询，未执行输出或参数变更。
+
+## 后续授权回装与只读核对
+
+- 工程师随后追加要求 push/flash。代码提交 `736d4aa` 已先推送 `origin/main`，再回装原样保存的合格普通包 `094b08072d1267ac`；不恢复试音/扫频/pin 7 试驱。构建时的 `git=8a586f1…` 标签保留，新 source 对应提交 `736d4aa` 的源码内容，不是重刷旧源码。
+- 109 项工作树源码 SHA-256 仍与构建报告逐项一致。Git 归档的原始字节比较初次发现 51 项不同，核实为 `core.autocrlf=true` 下的 CRLF/LF 行尾差异；仅在比较时归一化后，109 项源码内容全部与 `736d4aa` 一致。未改源码/固件，`commit-source-compare.json` 保留差异与结果，不宣称 Git blob 原始 SHA-256 全同。
+- 回装前 COM26 只读确认旧 source=`d884…`、Logger Disabled、buzzer off/CCR=0，串口已释放；`pre-flash-readonly.json` 保存原始字节。经固定哈希上传器与原 board 53/protocol v5 bootloader（COM12），应用区上传/CRC 100%（25 s）；`upload.txt` 保存完整输出，未修改 bootloader 或 IO 固件。
+- 首次主机只读采集在导入 `check_mavlink` 时因 Python 3.10 缺少 `tomllib` 失败，尚未打开串口；沿用现有 `tomli` 兼容导入后通过，未因此重建/重刷固件或安装依赖。
+- 回到 COM26（`1209:0001 / V6X-RUST-001`），3 条 Quadrotor/PX4 心跳均 disarmed；平台 source=`094b08072d1267ac`、fault_injection=false、VTOR=`08020000`，时钟寄存器匹配、TIM8 PSC=239/ARR=65535，FPU ASPEN=true/LSPEN=false，备份域 config/bkp_preserved=true。
+- Logger Disabled/stage=0、bytes/flushes/errors=0，按键 start/stop/rejected=0、pending=none；RGB schema=2、I²C1/0x39、ready=true、probes=1、transfers=20、errors=0，启动试灯结束（tests=1）、请求 OFF。仅确认总线/软件状态，仍非实际三色验收。
+- Buzzer on=false/test_pending=false、tests=0、CCR=0；本轮没有试音命令。EKF Running/Filter、fault/numerics=None、updates=15030、max_update=1477 µs/2000 µs、deadline_misses/发布 missed=0、积分误差 0 ppm。PX4IO 仍 ready=false/Timeout，不称其问题收口。
+- `post-flash-readonly.json` 保存心跳、6 项查询及原始字节；未设参/保存、启停/删除日志或发送非零输出。这是普通回装/启动核对，不是完整 H-12、E7/M1 或蜂鸣实物验收。
 
 ## 边界与来源
 
