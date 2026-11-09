@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**清理代码 `736d4aa` 已推送，工程师随后授权回装普通包 `094b08072d1267ac`：原 bootloader 上传/CRC、source/3 条 disarmed 心跳与平台核对通过。Logger Disabled、蜂鸣 tests=0/CCR=0；RGB I²C1/0x39 schema=2 正常响应，EKF Running/Filter、fault/numerics=None。蜂鸣此前短/长试音无声仍暂停，未试驱 pin 7；PX4IO 仍 Timeout，IO/输出护栏保持。crate 改名/RTK 步骤已完成，完整 H-12、RTK/外接磁、M1/E7 与非零输出未放行。**
+更新：2026-11-09。**板载仍为 `094b08072d1267ac`；CAN2 自动握手正常，但本次约 3 s 诊断接收 2985 帧、USB 仅转发 21 帧，已定位 USB Router 调度瓶颈。工程师已授权最小修复、提交推送、回装与有界复核，尚未替换固件。此前 USL 启动核对通过，蜂鸣无声仍暂停、PX4IO 仍 Timeout；IO/输出护栏保持，完整 H-12、RTK/外接磁、M1/E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -11,6 +11,12 @@
 - 工程师已确认基站/CAN Rover 连接方案；H-10 的固件/节点/数据与 RTK 实测仍待验，H-02/03 等未验项保持。除明确授权外，不自主设参、刷写、采集或执行实体操作。
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
+
+## CAN2 GUI 转发回归 — 2026-11-09
+
+- [x] 与原 GUI 通过版本比对：CAN 帧/总线/引脚/租约代码除 crate 改名外一致；Rust 6 项 MAVCAN、Python 5 项协议检查通过。授权 3 s 实测却发现接收 2985/USB 21/丢弃 2821、队列满 64，保留失败，不把 host 通过当作硬件通过。[记录](docs/acceptance/mavcan/20261109-can2-router-regression.md)。
+- [x] 最小调度修复已实现：CAN 到帧及 USB 可写唤醒，每轮最多 4 帧；控制/正常遥测优先，100 ms 帧寿命/租约/过滤和原输出门不变。fmt/H753 Clippy 与一次局部审视通过。
+- [ ] 完成普通构建/布局、提交推送、授权应用区回装与同样 3 s 转发/启动复核；GUI 节点身份/显示仍需工程师确认。不改 GPS 参数或分配节点，不恢复蜂鸣测试。
 
 ## 当前纯软件工作 — 2026-11-08
 
@@ -163,7 +169,7 @@ MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门�
 - [x] **E6-H 标准输出/日志 host 门**：独立无 GPS 输入类型、状态隔离、标准姿态/角速度/局部/全球/诊断 schema、MAVLink 编码与 pyulog/pymavlink 独立解析通过；无 GPS 只发独立 `ODOMETRY` / 健康状态，水平无界协方差明确，全球位置禁发。未启用固件 estimator 日志注册表或输出任务。[证据](docs/acceptance/ekf2/20261104-e6-host.md)。
 - [ ] **E7 真实输出/日志**：165 项统一参数（142 个 EKF2）、`!ekf2 start/stop`、气压输入、回退与双链路/日志分发已接入；旧包 `f5756b75d6ed78bf` 主实例板载 Running。新单实例/TIM8 积分版须核对启停、周期、共享栈、真实输出及日志；此前失败保留为历史结果。完整资格仍依赖 M1、P6a、P4b-g、P2、PL-b。
 
-### MAVCAN（已完成）
+### MAVCAN（历史已完成，本次回归待复核）
 
 - [x] 固定并核对 VimDrones `7bfe9963` / pydronecan `092d09cb` 协议：经典 DroneCAN 用 `CAN_FRAME`（386）、`MAV_CMD_CAN_FORWARD`（32000）握手，ID bit31=扩展、bit30=RTR。
 - [x] 修正 CAN2/FDCAN2（PB12/PB13）桥接，补全总线/目标/长度校验、转发租约、过滤、固定队列、超时取消及 USB 会话清理。[证据](docs/acceptance/mavcan/README.md)

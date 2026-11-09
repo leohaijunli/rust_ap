@@ -8,10 +8,10 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
-use embassy_futures::select::select3;
+use embassy_futures::select::select4;
 use embassy_stm32::gpio::Output;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{Instant, Timer};
 use mavlink::{common::*, MavHeader};
 use v6x_rust_ap::{
     logger::{erase_allowed, Link, LogError, LogRequest, LogResponse},
@@ -84,6 +84,7 @@ pub static USB_RX: Channel<CriticalSectionRawMutex, Packet, 4> = Channel::new();
 pub static UART_RX: Channel<CriticalSectionRawMutex, Packet, 4> = Channel::new();
 pub static USB_TX: Channel<CriticalSectionRawMutex, Transfer, 4> = Channel::new();
 pub static UART_TX: Channel<CriticalSectionRawMutex, Transfer, 4> = Channel::new();
+const MAVCAN_BATCH_LIMIT: usize = 4;
 
 static USB_GENERATION: AtomicU32 = AtomicU32::new(0);
 static USB_CONNECTED: AtomicBool = AtomicBool::new(false);
@@ -158,6 +159,18 @@ async fn log_work_ready(link: Link, connected: bool) {
     // instead of repeatedly waking on the already nonempty response queue.
     if tx(link).is_full() {
         poll_fn(|context| tx(link).poll_ready_to_send(context)).await;
+    }
+}
+
+async fn mavcan_work_ready(connected: bool) {
+    if !connected {
+        pending::<()>().await;
+        return;
+    }
+    // Readiness must not consume a frame: select may cancel this waiter.
+    poll_fn(|context| crate::mavcan::OUTBOUND.poll_ready_to_receive(context)).await;
+    if USB_TX.is_full() {
+        poll_fn(|context| USB_TX.poll_ready_to_send(context)).await;
     }
 }
 
@@ -625,8 +638,15 @@ pub async fn run(
                 }
             }
         }
-        if states[0].connected && !USB_TX.is_full() {
-            if let Ok(queued) = crate::mavcan::OUTBOUND.try_receive() {
+        if states[0].connected {
+            // Control/telemetry was pumped first; only fill a bounded CAN batch.
+            for _ in 0..MAVCAN_BATCH_LIMIT {
+                if USB_TX.is_full() {
+                    break;
+                }
+                let Ok(queued) = crate::mavcan::OUTBOUND.try_receive() else {
+                    break;
+                };
                 if let Some(message) = crate::mavcan::outbound_message(queued) {
                     states[0].queue(
                         Outgoing {
@@ -638,10 +658,12 @@ pub async fn run(
                 }
             }
         }
-        select3(
-            Timer::at(now + Duration::from_millis(5)),
+        select4(
+            // An expired loop-start deadline must not bypass TX backpressure.
+            Timer::after_millis(5),
             log_work_ready(Link::Usb, states[0].connected),
             log_work_ready(Link::Uart, states[1].connected),
+            mavcan_work_ready(states[0].connected),
         )
         .await;
     }
