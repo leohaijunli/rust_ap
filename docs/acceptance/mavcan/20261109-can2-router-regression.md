@@ -51,5 +51,16 @@
 - 工程师明确授权 CAN 接收优先级/丢帧诊断、普通回装及有界完整性/浮点抢占/资源复核；未授权放开水平/全球发布，本轮保持该门。
 - `TIM6_DAC` CAN 执行器 P4→P3，仍低于 FDCAN P2，能及时抢占 EKF P4 排空 3 槽 FIFO；不改帧数据、CRC、过滤、队列或 100 ms 寿命，也不分配节点/设参。
 - `CAN_RX_FIFO` 读回实际深度/占用/Message Lost，CAN1/2 共用同一诊断实现；`CAN_SCHED` 记录 CAN IRQ 进入时 TIM5 活动的实际抢占次数，不把仅提高优先级等同于已发生抢占。
-- fmt/H753 Clippy 与一次局部审视通过；锁定 Cortex-M NVIC API、非缓冲 HAL/优先级和原 FPU 保存模式不改，纯核心/协议测试结果复用。普通包/回装/实测尚待补录。
+- fmt/H753 Clippy 与一次局部审视通过；锁定 Cortex-M NVIC API，非缓冲 HAL 与原 FPU 保存模式不改，纯核心/协议测试结果复用。修复提交 `8cddb79` 已推送，普通包/回装/实测尚待补录。
 - 预定有界复核：真实 CAN1 输入下 CRC 增量 0、FIFO lost=false，CAN/EKF 优先级读回 48/64且实际抢占增量 >0；FPU ASPEN=true/LSPEN=false、Filter Running/numerics=None、漏期 0、峰值 ≤2000 µs、栈余 ≥16 KiB/guard=true、CPU <50%。保持日志停止、蜂鸣 off/CCR=0，不写位置/RTK或飞行放行结论。
+
+### 新包与 CAN1 有界复核通过
+
+- 普通包 source=`32269dec1d8137b4` / git=`8cddb79…` 构建/分区/向量/入口帧通过：raw/padded=1228576/1228576 B，静态 RAM 374688 B（余 83040 B）、入口帧 11528 B、oversized=0；相对 `620…` Flash +1216 B、RAM +8 B，入口帧不变。
+- 109 项工作树源码与 4 个产物 SHA-256 均匹配报告，embedded git 对应修复提交；px4 SHA-256=`9dde90f803b1cd5e526dd057f97ed9dfd6b72c96780e8342f4f2cf3558e20500`。包/ELF/bin/map/构建及入口帧报告/程序保存于 `target/mavcan-20261109/32269dec1d8137b4/`。
+- 回装前 `620…` 为 Logger Disabled、蜂鸣 off/CCR=0。经原 board 53/protocol v5 bootloader 应用区上传/CRC（25 s）通过；`pre-flash-readonly.json` / `upload.txt` 保存原始结果，不改 bootloader/IO 或模块配置。
+- 实际 CAN1 3.000 s：GPS_RAW_INT 15 条（5 Hz，DGPS、32 星），姿态/四元数/ALTITUDE/ESTIMATOR_STATUS 各 30 条（10 Hz），LOCAL/GLOBAL_POSITION 各 0，符合保留发布护栏的范围。`MAV_RATE_GPS/EST=5/10` 原值不改。
+- CAN1 CRC 0→0、tid_gaps/timeouts/软件队列丢弃 0，FIFO0/1 lost=false；CAN 执行器/EKF 优先级读回 48/64，前/后指标间实际抢占增量 1744（6894→8638，指标采样不严格与 3 s 同窗）。不是只看配置或 host 结果。
+- FPU ASPEN=true/LSPEN=false；EKF Running/Filter、fault/numerics=None、max_update=1677 µs/2000 µs、漏期/发布 missed=0；CPU 35.3%、栈余 32584 B/guard=true。通过本次有界真实 IRQ 抢占、数值故障与资源复核，不替代完整 EKF 数学/飞行资格。
+- 收尾 Logger Disabled、蜂鸣 on=false/tests=0/CCR=0、串口释放；RGB Nack/此前 PX4IO Timeout 保留。CAN1 对未知传感器类型的 rejected/codec 与 GetNodeInfo service_errors 不冒称全零，不因已知类型 CRC 0 将所有服务路径写成通过。
+- 原始消息、CAN/FPU/抢占/资源与检查结果：`target/mavcan-20261109/32269dec1d8137b4/can1-20261109T234001.396567Z/capture.json`。工程师当前把 GPS 留在 CAN1，原 CAN2 GUI 场景的后续 CRC 全消除尚未再次目视复核；不改写之前 GUI 异常。位置数据-only发布仍未授权，本轮未解除其门。
