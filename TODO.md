@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**工程师单独授权回装 `49b3552f38510053`，原 bootloader 上传/CRC 与启动核对通过；227 项参数及历史故障保持，主 EKF Running/Filter、无 Numerics/漏期。本次未设参/保存、启停/删除日志或启用输出。工程师仍只有飞控本体，后续以软件为主，外设门暂停；yaw 根因调查停止，另按追加要求完成启动 yaw 的宿主合成对照（未改算法/参数/门限），M1、完整 E7 与非零输出未放行。**
+更新：2026-11-09。**工程师单独授权回装 `49b3552f38510053`，原 bootloader 上传/CRC 与启动核对通过；227 项参数及历史故障保持，主 EKF Running/Filter、无 Numerics/漏期。本次未设参/保存、启停/删除日志或启用输出。工程师仍只有飞控本体，后续以软件为主，外设门暂停；启动 yaw 对照后已按工程师同意实现保守静止检测 + ZVU/ZGU（纯软件、未刷写），M1、完整 E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -24,7 +24,9 @@
 
 - [x] 工程师追加要求比较本项目与 PX4 原生的地磁/yaw 收敛。用同一合成静止场景（水平、磁航向 60°、IMU 250 Hz、aid 20 Hz、60 s）跑 Rust 宿主 EKF 与固定 PX4 参考的四个变体；Rust 与 PX4 默认 `control_status` 0 差异、yaw 最大差 6×10⁻⁹°，核心数值一致。[记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md)。
 - [x] 地面标志（`at_rest=true,in_air=false`）使 tilt 对齐 7.032→0.576 s、yaw/mag 锁定 8.104→1.648 s；带陀螺偏置场景末值误差 +14.08°→+0.10°。重力融合不改变收敛时间，也不修复偏置漂移。差异定位为 Rust 缺少 land-detected/at_rest 与 ZVU/ZGU 通路；未改代码、参数或磁检查门限。
-- [ ] 是否实现保守静止检测 + ZVU/ZGU 待工程师决定；本机无真实航向基准，合成结论不用于绝对精度、安装校准或飞行放行。
+- [x] 工程师同意实现保守静止检测 + ZVU/ZGU（纯软件）：新增 `at_rest.rs`（陀螺 ≤0.05 rad/s、比力差 ≤1 m/s²、连续 1 s、许可=disarmed 且无输出），`ImuEkf` 置 `VEHICLE_AT_REST` 并按 PX4 顺序在航向更新后执行 ZVU/ZGU，宿主例程加 `--at-rest`。host 225 项（新增 7）、fmt/Clippy、release 与固件构建（source=`76dd5804fdfb9bf2`，栈 oversized=0）通过。[实现与对照记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续实现保守静止检测--zvuzgu同日)。
+- [x] 实现后同场景重跑：1° 内收敛 8.104→2.448 s（PX4 地面标志参考 1.648 s）；偏置场景末值误差 +14.077°→+0.130°（参考 +0.100°），漂移被抑制。比 PX4 慢 0.8 s 是保守静止判定的 1 s 保持窗口，属设计取舍。仍是合成输入结论，不用于绝对精度或飞行放行；未刷写、未设参。
+- [ ] 板载静止日志核对 at_rest 位与 ZGU 偏置学习待工程师授权刷写后进行；是否回装 `76dd5804fdfb9bf2` 由工程师单独决定。
 
 ## 板载地磁 — 2026-11-07
 

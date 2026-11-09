@@ -51,7 +51,7 @@
 
 - 传感器时间残差 −3.24%（PX4 `32/30` 换算后）：不进入积分（`integration_error_ppm=0`），归因需保留 FIFO tick 分布与批次时间序列证据；仅在需要传感器时间诊断精度时再投入。
 - 气压日志新鲜度门控与 6 项测试告警修复的软件检查已通过，合并普通包 `49b3552f38510053` 随后单独授权回装；不重复 host/PX4 对拍，不由启动快照放行真实日志异常输入或完整 E7。[软件记录](acceptance/pl-a/20261108-baro-log-freshness.md) / [回装记录](acceptance/p1/20261109-log-guard-flash.md)。
-- 启动 yaw 慢：宿主合成对照已完成，Rust 与 PX4 默认核心数值一致，差异在缺少 land-detected/at_rest 与 ZVU/ZGU；是否实现保守静止检测待工程师决定。不改磁检查门限，合成结果不宣称绝对精度。[记录](acceptance/ekf2/20261109-startup-yaw-compare.md)。
+- 启动 yaw 慢：宿主合成对照已完成，Rust 与 PX4 默认核心数值一致，差异在缺少 land-detected/at_rest 与 ZVU/ZGU。已按工程师同意实现保守静止检测 + ZVU/ZGU（纯软件）：1° 内收敛 8.104→2.448 s（PX4 地面标志参考 1.648 s），偏置场景末值 +14.077°→+0.130°（参考 +0.100°）；host 225 项、Clippy/构建通过，固件 `76dd5804fdfb9bf2` 未回装。不改磁检查门限，合成结果不宣称绝对精度。[记录](acceptance/ekf2/20261109-startup-yaw-compare.md#后续实现保守静止检测--zvuzgu同日)。
 
 ### P4 — 优化类（门后才做）
 

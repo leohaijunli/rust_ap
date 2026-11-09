@@ -53,3 +53,34 @@
 - 生成、汇总、对拍脚本和两场景 CSV 在 `target/startup-20261109/`（`generate.py`、`metrics.py`、`compare.py`、`cpp/harness.cpp`、`cpp_gravity/` 等）。该目录被 `.gitignore` 忽略，仅作本轮实验档案，不入库；仓库既有 golden 参考与基线未改。
 - PX4 变体在 WSL 中用固定源码树重新编译；地面标志 CSV 由同一 IMU 时间戳逐行生成，`timestamp_us,at_rest,in_air`。
 - 本轮只新增文档；未运行会改变固件或板载状态的命令，未刷写、未采集、未设参。
+
+## 后续实现：保守静止检测 + ZVU/ZGU（同日）
+
+按工程师确认实现“保守静止检测 + ZeroVelocityUpdate/ZeroGyroUpdate”，纯软件，不刷写。要点：
+
+- 新增 `src/core/estimator/at_rest.rs`：陀螺模长 ≤ 0.05 rad/s、比力模长与重力差 ≤ 1.0 m/s²、外部许可保持连续 1 s 才置静止；任一条件破坏立即释放。外部许可 = `!armed && !outputs_enabled`（`src/drivers/estimator.rs`，当前产品常量下恒为真，保留门控以备未来接入）。
+- `ImuEkf` 新增 `VEHICLE_AT_REST`（1<<26，对齐 PX4 位）并在每个延迟历元更新；`control_fusion` 在零创新航向更新后按 PX4 顺序执行 ZVU（200 ms 间隔、两历元均静止、tilt 对齐后观测方差 0.2²，否则 0.001²）与 ZGU（受 `EKF2_IMU_CTRL & 1` 控制、累计 ≥0.2 s、观测方差 `EKF2_GYR_NOISE²`），均复用 `fuse_direct` 并置 `constrain_variances`。静止时加速度计偏置视为可观测（对齐 `updateIMUBiasInhibit`）。
+- 宿主例程新增 `--at-rest` 许可开关；静止检测使用延迟 EKF 同源样本，检测置位比 PX4 的实时 land detector 晚约 1.2 s（1 s 保持 + 延迟路径），这是保守设计的选择。
+- 单元测试：at_rest 检测 4 个、`imu_ekf` 集成 3 个（许可/运动控制位、ZGU 只在许可时学偏置、ZVU 消除水平速度）；`cargo test --target x86_64-pc-windows-msvc --lib` 225 通过 0 失败。host/H753 fmt、Clippy `-D warnings`、release example 与固件构建（`build_firmware.ps1`）全部通过，栈预算 oversized=0。
+
+### 实现后宿主对照（同一场景 CSV 复用，Rust 带 `--at-rest` 重跑）
+
+| 场景 | 输入 | tilt_align | mag/yaw_align | 1° 内收敛 | 30–60 s 均值 | 窗口最大 | 末值 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| A | Rust（上轮，无 at_rest） | 7.032 s | 8.104 s | 8.104 s | 0.000° | 0.000° | 0.000° |
+| A | Rust（本轮 at_rest） | 1.384 s | 2.448 s | 2.448 s | 0.000° | 0.000° | 0.000° |
+| A | PX4 地面标志（参考） | 0.576 s | 1.648 s | 1.648 s | 0.000° | 0.000° | 0.000° |
+| B | Rust（上轮，无 at_rest） | 7.032 s | 8.104 s | 8.104 s | +10.204° | 14.077° | +14.077° |
+| B | Rust（本轮 at_rest） | 1.384 s | 2.448 s | 2.448 s | +0.138° | 0.222° | +0.130° |
+| B | PX4 地面标志（参考） | 0.576 s | 1.648 s | 1.648 s | +0.092° | 0.187° | +0.100° |
+
+- at_rest 位首次置位于 1.16 s（1 s 保持 + 延迟路径），其后 14711/15000 行保持静止；上轮 dump 无该位。
+- 场景 B 末值误差 +14.077° → +0.130°（-98.7%），与 PX4 地面标志参考同量级（+0.100°）；窗口均值 +0.138° vs +0.092°，差异来自静止判定起始更晚（ZGU 学习偏置晚约 0.8 s）。
+- 收敛仍比 PX4 地面标志慢 0.8 s（2.448 vs 1.648 s）：PX4 实验变体由外部直接喂 `at_rest=true`，Rust 的保守检测需要自身确认静止。这是设计取舍，不是缺陷。
+- 本轮 `compare.py` 逐样本 `control_status` 不再可比：Rust 与 PX4 的位布局本就不同（Rust 自有 1<<35/1<<37 等位），且 at_rest 引入后两侧控制序列按各自时序推进；有效对照是时间线与误差指标。
+- 上轮“Rust 与 PX4 默认在相同控制位下核心数值一致”的对拍结论不受本轮影响：默认路径（无 `--at-rest`）代码行为未变，既有 218 项测试与本次新增 7 项均通过。
+
+### 边界
+
+- 仍是合成输入对照：真实 IMU 噪声、振动、磁干扰与安装误差未覆盖，不能当作绝对航向精度、磁校准或飞行资格。
+- 板上验证待工程师授权刷写后进行（如 60 s 静止日志核对 at_rest 位与 ZGU 后陀螺偏置），本轮未刷写、未设参、未采集。

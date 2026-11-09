@@ -4,6 +4,7 @@
 //! generated PX4 EKF2 parameter catalog. No HAL, transport or allocator
 //! dependency, so firmware and host tests share one contract.
 
+mod at_rest;
 pub mod bias_estimator;
 pub mod config_stage;
 mod covariance_generated;
@@ -293,6 +294,9 @@ pub trait NavFilter {
     fn step(&mut self, now: Timestamp) -> StepReport;
     fn output(&self) -> NavOutput;
     fn health(&self) -> FilterHealth;
+    /// External safety gate for stationary-aid updates (zero velocity and
+    /// zero gyro). Filters without such aids may ignore it.
+    fn set_stationary_permitted(&mut self, _permitted: bool) {}
 }
 
 /// Supervisor state shared with aid sources; it also decides which sources may

@@ -483,6 +483,9 @@ async fn task(main: &'static mut ProductRuntime, _timer: Peri<'static, periphera
         timing
             .attitude
             .record(cycles_us(DWT::cycle_count().wrapping_sub(started)));
+        main.set_stationary_permitted(
+            !crate::OUTPUT_STATE.armed && !crate::OUTPUT_STATE.outputs_enabled,
+        );
         service(main, now, &mut timing.main);
         let now = Instant::now();
         let started = DWT::cycle_count();

@@ -49,6 +49,12 @@ impl HostFilter {
             Self::Main(filter) => filter.core(),
         }
     }
+    fn set_stationary_permitted(&mut self, permitted: bool) {
+        match self {
+            Self::Basic(filter) => filter.set_stationary_permitted(permitted),
+            Self::Main(filter) => filter.set_stationary_permitted(permitted),
+        }
+    }
     fn update(
         &mut self,
         imu: &ImuDelta,
@@ -197,6 +203,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let baro_reset = flags.iter().any(|flag| flag == "--baro-reset");
     let gsf_yaw = flags.iter().any(|flag| flag == "--gsf-yaw");
     let lever_arm = flags.iter().any(|flag| flag == "--lever-arm");
+    let at_rest = flags.iter().any(|flag| flag == "--at-rest");
     if !(2..=6).contains(&args.len())
         || flags.iter().any(|flag| {
             ![
@@ -206,6 +213,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 "--resets",
                 "--baro-reset",
                 "--gsf-yaw",
+                "--at-rest",
             ]
             .contains(&flag.as_str())
         })
@@ -385,6 +393,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             basic.map_err(|fault| format!("EKF parameters: {fault:?}"))?,
         ))
     };
+    if at_rest {
+        filter.set_stationary_permitted(true);
+    }
     let mut output = if args.len() >= 3 {
         Some(BufWriter::new(File::create_new(&args[2])?))
     } else {

@@ -6,6 +6,7 @@
 //! Source mapping and license: docs/provenance.md, tools/px4_msgs/LICENSE.
 
 use super::{
+    at_rest::AtRestDetector,
     covariance_generated::predict_covariance,
     ekf2_parameter,
     imu_downsampler::{DownSampler, ImuBuffer, MAX_IMU_BUFFER},
@@ -26,6 +27,8 @@ use range::{RangeAids, RangeParams};
 
 const TILT_ALIGN: u64 = 1;
 const IN_AIR: u64 = 1 << 7;
+/// PX4 `filter_control_status_s::vehicle_at_rest`.
+const VEHICLE_AT_REST: u64 = 1 << 26;
 const DEAD_RECKONING: u64 = 1 << 29;
 const FAKE_POS: u64 = 1 << 32;
 const FAKE_HGT: u64 = 1 << 33;
@@ -259,6 +262,11 @@ pub struct ImuEkf {
     vertical_velocity_dead_reckoning: bool,
     last_vertical_velocity_aiding: Timestamp,
     pub(super) mag_alignment_start: Timestamp,
+    at_rest: AtRestDetector,
+    stationary_permitted: bool,
+    last_zero_velocity_fuse: Timestamp,
+    zero_gyro_delta_angle: [f32; 3],
+    zero_gyro_delta_angle_dt_s: f32,
 }
 
 impl ImuEkf {
@@ -364,12 +372,18 @@ impl ImuEkf {
             vertical_velocity_dead_reckoning: true,
             last_vertical_velocity_aiding: 0,
             mag_alignment_start: 0,
+            at_rest: AtRestDetector::new(),
+            stationary_permitted: false,
+            last_zero_velocity_fuse: 0,
+            zero_gyro_delta_angle: [0.0; 3],
+            zero_gyro_delta_angle_dt_s: 0.0,
         }
     }
 
     /// Explicit recovery. No automatic acceptance of samples after a fault.
     pub fn reset(&mut self, t0: Timestamp) -> Result<(), FilterFault> {
         let output_params = self.output_params;
+        let stationary_permitted = self.stationary_permitted;
         let (params, aids, range) = (self.params, self.aiding_params, self.range_params);
         self.initialize(&params, t0)?;
         if let Some(aids) = aids {
@@ -379,6 +393,7 @@ impl ImuEkf {
             self.enable_range(range)?;
         }
         self.configure_output(output_params)?;
+        self.stationary_permitted = stationary_permitted;
         Ok(())
     }
 
@@ -505,6 +520,11 @@ impl ImuEkf {
     }
     pub fn control_status(&self) -> u64 {
         self.control
+    }
+    /// Permit stationary-aiding while the vehicle is disarmed and outputs are
+    /// disabled. Withdrawing permission clears rest without a hold window.
+    pub fn set_stationary_permitted(&mut self, permitted: bool) {
+        self.stationary_permitted = permitted;
     }
     pub fn fault_status(&self) -> u32 {
         self.px4_fault
@@ -1050,8 +1070,9 @@ impl ImuEkf {
         let rotation = math::rotation(self.quaternion());
         for (axis, vertical_projection) in rotation[2].iter().enumerate() {
             self.gyro_bias_inhibit[axis] = self.params.imu_ctrl & 1 == 0;
-            let observable = self.control & FAKE_HGT == 0
-                && (self.control & FAKE_POS == 0 || vertical_projection.abs() > 0.966);
+            let observable = self.control & VEHICLE_AT_REST != 0
+                || (self.control & FAKE_HGT == 0
+                    && (self.control & FAKE_POS == 0 || vertical_projection.abs() > 0.966));
             self.accel_bias_inhibit[axis] = self.params.imu_ctrl & 2 == 0
                 || high_manoeuvre
                 || self.px4_fault & (1 << 10) != 0
@@ -1178,6 +1199,7 @@ impl ImuEkf {
         extension: &mut X,
     ) -> Result<(), FilterFault> {
         self.previous_control = self.control;
+        self.update_at_rest(sample);
         self.resets.begin_update();
         self.altitude_delta = 0.0;
         let mut aiding = self.aiding.take();
@@ -1238,8 +1260,6 @@ impl ImuEkf {
                 ],
                 warning[2] || bad_clipping,
             );
-            // With all external aids compiled out there is no falling-likelihood
-            // evidence, and no at_rest system flag to enable zero gyro/velocity.
             if let Some(aiding) = &mut aiding {
                 aiding.control_baro(self)?;
             }
@@ -1297,6 +1317,12 @@ impl ImuEkf {
                     }
                 }
             }
+            // PX4 control.cpp: zero-velocity, then optional zero-gyro bias,
+            // after the zero-innovation heading update and before fake aids.
+            self.zero_velocity_update(sample);
+            if self.params.imu_ctrl & 1 != 0 {
+                self.zero_gyro_update(sample);
+            }
             self.control_fake_position();
             self.control_fake_height();
             if (self.control & (1 << 2) != 0
@@ -1343,6 +1369,74 @@ impl ImuEkf {
         self.aiding = aiding;
         self.range = range;
         result
+    }
+
+    fn update_at_rest(&mut self, sample: &ImuDelta) {
+        let gyro = sample
+            .delta_angle_rad
+            .map(|value| value / sample.delta_angle_dt_s);
+        let accel = sample
+            .delta_velocity_m_s
+            .map(|value| value / sample.delta_velocity_dt_s);
+        if self
+            .at_rest
+            .update(sample.timestamp, gyro, accel, self.stationary_permitted)
+        {
+            self.control |= VEHICLE_AT_REST;
+        } else {
+            self.control &= !VEHICLE_AT_REST;
+        }
+    }
+
+    /// PX4 `ZeroVelocityUpdate::update`: fuse zero velocity every 200 ms while
+    /// at rest on two consecutive epochs.
+    fn zero_velocity_update(&mut self, sample: &ImuDelta) {
+        if self.last_zero_velocity_fuse.saturating_add(200_000) >= sample.timestamp {
+            return;
+        }
+        let continuing = self.control & VEHICLE_AT_REST != 0
+            && self.previous_control & VEHICLE_AT_REST != 0
+            && (!self.vertical_velocity_aiding() || self.control & TILT_ALIGN == 0);
+        if !continuing {
+            return;
+        }
+        let obs_var = if self.control & TILT_ALIGN != 0 {
+            square(0.2)
+        } else {
+            square(0.001)
+        };
+        for axis in 0..3 {
+            let innovation = self.state[4 + axis];
+            let innovation_variance = self.covariance[3 + axis][3 + axis] + obs_var;
+            self.fuse_direct(innovation, innovation_variance, obs_var, 3 + axis, true);
+        }
+        self.last_zero_velocity_fuse = sample.timestamp;
+    }
+
+    /// PX4 `ZeroGyroUpdate::update`: at rest, fuse the mean gyro rate over at
+    /// least 0.2 s as a direct gyro-bias observation.
+    fn zero_gyro_update(&mut self, sample: &ImuDelta) {
+        if self.control & VEHICLE_AT_REST != 0 {
+            for axis in 0..3 {
+                self.zero_gyro_delta_angle[axis] += sample.delta_angle_rad[axis];
+            }
+            self.zero_gyro_delta_angle_dt_s += sample.delta_angle_dt_s;
+            if self.zero_gyro_delta_angle_dt_s >= 0.2 {
+                let dt = self.zero_gyro_delta_angle_dt_s;
+                let gyro_bias = self.zero_gyro_delta_angle.map(|value| value / dt);
+                let obs_var = square(self.params.gyro_noise);
+                for (axis, observed) in gyro_bias.iter().enumerate() {
+                    let innovation = self.state[10 + axis] - observed;
+                    let innovation_variance = self.covariance[9 + axis][9 + axis] + obs_var;
+                    self.fuse_direct(innovation, innovation_variance, obs_var, 9 + axis, true);
+                }
+                self.zero_gyro_delta_angle = [0.0; 3];
+                self.zero_gyro_delta_angle_dt_s = 0.0;
+            }
+        } else if self.previous_control & VEHICLE_AT_REST != 0 {
+            self.zero_gyro_delta_angle = [0.0; 3];
+            self.zero_gyro_delta_angle_dt_s = 0.0;
+        }
     }
 
     fn reset_fake_position(&mut self) {
@@ -1921,6 +2015,79 @@ mod tests {
         let innovation_variance = filter.covariance[3][3] + 0.5;
         filter.fuse_direct(-1.0, innovation_variance, 0.5, 3, true);
         check_mirrors(&filter);
+        assert!(filter.numerics_valid());
+    }
+
+    #[test]
+    fn stationary_permission_and_motion_control_the_at_rest_bit() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        let mut timestamp = 0;
+        // 2 s unpermitted: the bit must stay off even though the IMU is still.
+        for _ in 0..800 {
+            timestamp += 2500;
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        assert_eq!(filter.control_status() & VEHICLE_AT_REST, 0);
+
+        // 1.5 s permitted: covers the 1 s hold window plus the delayed path.
+        filter.set_stationary_permitted(true);
+        for _ in 0..600 {
+            timestamp += 2500;
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        assert_ne!(filter.control_status() & VEHICLE_AT_REST, 0);
+
+        // The delayed EKF epoch trails the newest IMU sample by the configured
+        // buffer, so hold motion long enough for it to reach the delayed path.
+        for _ in 0..100 {
+            timestamp += 2500;
+            let mut moved = stationary(timestamp);
+            moved.delta_angle_rad = [0.00025, 0.0, 0.0];
+            filter.update(&moved).unwrap();
+        }
+        assert_eq!(filter.control_status() & VEHICLE_AT_REST, 0);
+    }
+
+    #[test]
+    fn zero_gyro_update_learns_startup_bias_only_when_permitted() {
+        let bias = 0.005_f32;
+        let run = |permitted: bool| {
+            let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+            filter.set_stationary_permitted(permitted);
+            for step in 1..=2000 {
+                let mut sample = stationary(step * 2500);
+                sample.delta_angle_rad = [bias * sample.delta_angle_dt_s, 0.0, 0.0];
+                filter.update(&sample).unwrap();
+            }
+            assert!(filter.numerics_valid());
+            assert_eq!(filter.control_status() & VEHICLE_AT_REST != 0, permitted);
+            (filter.state[10] - bias).abs()
+        };
+        let assisted = run(true);
+        let unassisted = run(false);
+        assert!(assisted < 1e-3, "{assisted}");
+        assert!(assisted < unassisted);
+    }
+
+    #[test]
+    fn zero_velocity_update_removes_horizontal_velocity_at_rest() {
+        let mut filter = ImuEkf::new(&ImuEkfParams::default(), 0).unwrap();
+        filter.set_stationary_permitted(true);
+        let mut timestamp = 0;
+        for _ in 0..1000 {
+            timestamp += 2500;
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        assert_ne!(filter.control_status() & VEHICLE_AT_REST, 0);
+        // Inject 0.5 m/s northward; zero-velocity fusion must pull it out.
+        filter.state[4] = 0.5;
+        filter.covariance[3][3] = 0.25;
+        // One second spans several 200 ms zero-velocity updates.
+        for _ in 0..400 {
+            timestamp += 2500;
+            filter.update(&stationary(timestamp)).unwrap();
+        }
+        assert!(filter.state[4].abs() < 0.05, "{}", filter.state[4]);
         assert!(filter.numerics_valid());
     }
 

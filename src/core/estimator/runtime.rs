@@ -212,6 +212,11 @@ impl<F: NavFilter> Runtime<F> {
         self.pending.fill(None);
     }
 
+    /// External safety gate for stationary aiding: disarmed and outputs off.
+    pub fn set_stationary_permitted(&mut self, permitted: bool) {
+        self.filter.set_stationary_permitted(permitted);
+    }
+
     pub fn ingest_imu(&mut self, delta: ImuDelta, now: u64) -> Result<(), Fault> {
         if !self.enabled {
             return Ok(());

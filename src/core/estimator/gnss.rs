@@ -385,6 +385,10 @@ impl super::NavFilter for GnssEkf {
     fn health(&self) -> super::FilterHealth {
         self.core.health()
     }
+
+    fn set_stationary_permitted(&mut self, permitted: bool) {
+        self.core.set_stationary_permitted(permitted);
+    }
 }
 
 impl GnssEkf {
