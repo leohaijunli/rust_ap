@@ -58,6 +58,7 @@ pub fn build(kind: Kind, now: u64, gps_no_fix_due: &mut u64, on_demand: bool) ->
                 Kind::AttitudeQuaternion => EstimatorMessage::AttitudeQuaternion,
                 Kind::LocalPosition => EstimatorMessage::LocalPosition,
                 Kind::GlobalPosition => EstimatorMessage::GlobalPosition,
+                Kind::Altitude => EstimatorMessage::Altitude,
                 Kind::EstimatorStatus => EstimatorMessage::Status,
                 _ => unreachable!(),
             };

@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**工程师单独授权回装 `49b3552f38510053`，原 bootloader 上传/CRC 与启动核对通过；227 项参数及历史故障保持，主 EKF Running/Filter、无 Numerics/漏期。本次未设参/保存、启停/删除日志或启用输出。工程师仍只有飞控本体，后续以软件为主，外设门暂停；启动 yaw 对照后已按工程师同意实现保守静止检测 + ZVU/ZGU（纯软件、未刷写），M1、完整 E7 与非零输出未放行。**
+更新：2026-11-09。**最新授权回装为 `d21b326c3a753d15`（基于 `186709b`，含 at_rest/ZVU/ZGU 与 ALTITUDE）：原 bootloader 上传/CRC、USB 高度和同次 SD 73 条有效高度通过；此前 68.6 s 静止/ZGU 日志已核对。主 EKF Running/Filter、无 Numerics/漏期，logger 已停止，未设参/保存、删除日志或启用输出。水平/全球导航与控制护栏保持；工程师仍只有飞控本体，外设门暂停，M1、完整 E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -27,7 +27,15 @@
 - [x] 工程师同意实现保守静止检测 + ZVU/ZGU（纯软件）：新增 `at_rest.rs`（陀螺 ≤0.05 rad/s、比力差 ≤1 m/s²、连续 1 s、许可=disarmed 且无输出），`ImuEkf` 置 `VEHICLE_AT_REST` 并按 PX4 顺序在航向更新后执行 ZVU/ZGU，宿主例程加 `--at-rest`。host 225 项（新增 7）、fmt/Clippy、release 与固件构建（source=`76dd5804fdfb9bf2`，栈 oversized=0）通过。[实现与对照记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续实现保守静止检测--zvuzgu同日)。
 - [x] 实现后同场景重跑：1° 内收敛 8.104→2.448 s（PX4 地面标志参考 1.648 s）；偏置场景末值误差 +14.077°→+0.130°（参考 +0.100°），漂移被抑制。比 PX4 慢 0.8 s 是保守静止判定的 1 s 保持窗口，属设计取舍。仍是合成输入结论，不用于绝对精度或飞行放行；未刷写、未设参。
 - [x] 2026-11-09 工程师授权回装最新提交 `df8dcb8`（source=`ecc872b86f6a2e98`）：原 PX4 bootloader 上传/CRC 25 s；COM26（`1209:0001 / V6X-RUST-001`）启动，`!platform` 返回 `git=df8dcb84…`、TIM8 `psc=239 arr=65535`、备份域保留；`!ekf2` 为 `Filter/Running`、fault=None、updates 6312、`max_update_us=1467`（预算 2000）、`deadline_misses=0`、`integration_error_ppm=0`、发布 `missed=0`。本次未设参/保存、启停/删除日志或启用输出。[回装记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#板上回装2026-11-09)。
-- [ ] 板载 60 s 静止日志核对 `VEHICLE_AT_REST` 位与 ZGU 偏置学习仍未做：`!ekf2` 不暴露控制位，需读 SD 日志；本次验证后 COM26 被其他程序占用，待工程师安排。
+- [x] 工程师关闭 QGC 后授权静止日志核对：`00.ulg` 68.6 s，`VEHICLE_AT_REST` 在 341/341 快照置位，gyro z 偏置 −0.938 °/s 与原始均值 −0.936 °/s 相符；yaw 全窗变化 0.21°。未覆盖 0→1/实物扰动，不作绝对航向或飞行资格。[记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续授权静止日志与-yaw-核对同日)。
+
+## ALTITUDE 与垂直有效性 — 2026-11-09
+
+- [x] 共享 PX4 ALTITUDE 映射、MAVLink #141/component 1 与 ULog `vehicle_altitude`（ID 43、32 B）已实现；复用 `MAV_RATE_EST` 与 `LOG_EN_EST/LOG_EST_HZ`，未知保持 NaN。[记录](docs/acceptance/ekf2/20261109-altitude-output.md)。
+- [x] 根因确认：baro 已融合时核心垂直 dead-reckoning 正常清除，但 `product::snapshot` 的 E7 资格护栏强制清零高度有效位。仅修正高度发布门，保留回退/陈旧/停用与水平/全球/控制护栏；新增回归先失败后通过。相关 host 72/7/3 项、fmt、host/H753 Clippy 通过，核心融合逻辑未改。
+- [x] 普通包 `d21b326c3a753d15` 构建/布局/入口帧与原 bootloader 上传/CRC 25 s 通过；RAM 374464 B，入口帧 11528 B、0 超限。USB 145 条/15.08 s ALTITUDE 前四字段全有限；同次 SD `02.ulg` 73 条、`z_valid/v_z_valid` 全有效、逐字段关系/独立解析通过，无损坏/dropout。
+- [x] 收尾 Filter/Running、fault/numerics=None、step 峰值 1488 µs/2000 µs、漏期/发布 missed=0、积分 0 ppm，logger 已停止；未设参/保存、删除日志或启用输出。[板载证据](docs/acceptance/ekf2/20261109-altitude-output.md#板载验证)。
+- [ ] TELEM1、独立高度精度与实物 aid 失效/恢复、完整 E7/M1 仍按原阶段门待验，不由高度数据链放行。
 
 ## 板载地磁 — 2026-11-07
 

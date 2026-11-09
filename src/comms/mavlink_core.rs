@@ -430,6 +430,7 @@ pub enum EstimatorMessage {
     AttitudeQuaternion,
     LocalPosition,
     GlobalPosition,
+    Altitude,
     Status,
 }
 
@@ -454,6 +455,15 @@ pub fn estimator_message(kind: EstimatorMessage) -> Option<MavMessage> {
         EstimatorMessage::GlobalPosition => snapshot.global_position.and_then(|global| {
             v6x_rust_led::mavlink_estimator::global_position(global, snapshot.local_position, None)
         }),
+        EstimatorMessage::Altitude => {
+            let baro = crate::barometer::latest();
+            let value = v6x_rust_led::estimator::standard_output::altitude(
+                snapshot.local_position,
+                baro.map(|sample| sample.pressure_altitude_m()),
+                embassy_time::Instant::now().as_micros(),
+            )?;
+            Some(v6x_rust_led::mavlink_estimator::altitude(value))
+        }
         EstimatorMessage::Status => Some(v6x_rust_led::mavlink_estimator::estimator_status(
             snapshot.status,
         )),

@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控实施计划
 
-更新：2026-11-08。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
+更新：2026-11-09。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
 状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)。
 
 ## 1. 当前进度与执行原则
@@ -17,6 +17,7 @@
 - 每个问题修复后只运行相关检查；已有检查通过且没有相关代码变化时直接继续交付。文档修改只检查内容、链接及差异。
 - **E 系列拆门（工程师确认）**：E1-H～E5-H 已通过（E5 CI 正确性由工程师确认）；E6-H 独立无 GPS 与标准输出/编码/独立解析本地通过，见[记录](docs/acceptance/ekf2/20261104-e6-host.md)，新增 CI 待执行。随后经工程师授权回装普通合并包，但未接入/启用板载 EKF；实物/E7 仍依赖 M1、P6a、P4b-g、P2、PL-b，不虚构硬件资格。
 - **E7 当前范围（2026-11-06 工程师确认）**：保留一个主 EKF2/Mahony 产品运行时，删除独立无 GNSS 实例及 component 197 输出。IMU 按固定 PX4 的 FIFO 均值与 MCU 批次时间积分，单调时钟切换 TIM8，FIFO 时间戳使用 `16 × 32/30` 换算；[实现与时基调查](docs/imu-timebase.md)。`EST_EN` 默认关闭，真实 IMU/baro/GNSS 输入、标准输出/日志和回退已接入；新版本实物周期/栈及真实日志待验，缺失 mag/range 不填零，导航保持未资格化。
+- **2026-11-09 追加授权**：工程师授权含 `df8dcb8/186709b` 的回装及静止日志验证，随后新增共享 PX4 `ALTITUDE` 映射、MAVLink 流和 ULog 高度 topic。高度有效性按核心 aid 与运行时选择/新鲜度发布；水平/全球导航与控制资格护栏保持。必要验收为相关 host 正常/失效门、普通构建及一次授权短时 USB＋SD 核对，不扩展外设门或非零输出。
 
 ## 2. 固定工程边界
 

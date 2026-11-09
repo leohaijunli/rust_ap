@@ -329,6 +329,69 @@ fn product_publication_keeps_reset_metadata_and_revokes_stale_attitudes() {
     assert_eq!(stale.status.solution_status_flags & 1, 0);
 }
 
+#[cfg(not(feature = "estimator-mahony"))]
+#[test]
+fn product_height_follows_baro_validity_without_qualifying_navigation_or_fallback() {
+    use crate::estimator::{publication_reset::PublicationReset, standard_output::altitude};
+
+    let mut main = product::main_storage();
+    main.reconfigure(params(), 0, true).unwrap();
+    let mut time = 1_000_000;
+    for index in 1..=3_000 {
+        time += 1_000;
+        main.ingest_imu(imu(time), time).unwrap();
+        if index % 50 == 0 {
+            main.apply_measurement(
+                Measurement::Baro(BaroAltitude {
+                    timestamp: time,
+                    altitude_m: 25.0,
+                }),
+                time,
+            )
+            .unwrap();
+        }
+        main.maintain(time);
+    }
+    let core = main.filter().core();
+    assert!(core.aid_status().unwrap().0.fused);
+    assert!(core.local_position_validity()[1]);
+    assert_ne!(core.last_height_fuse, 0);
+    assert_eq!(main.status().selection, Selection::Filter);
+    let raw = main.filter_mut().standard_output(time);
+    assert!(raw.local_position.z_valid && raw.local_position.v_z_valid);
+
+    let mut resets = PublicationReset::default();
+    let output = product::snapshot(&mut main, time, &mut resets);
+    let local = output.local_position;
+    assert!(local.z_valid && local.v_z_valid);
+    assert!(!local.xy_valid && !local.v_xy_valid && !local.heading_good_for_control);
+    assert!(output.global_position.is_none());
+    assert_eq!(output.status.solution_status_flags & 0x24, 0x24);
+    assert_eq!(output.status.solution_status_flags & 0x1a, 0);
+    let height = altitude(local, Some(25.0), time).unwrap();
+    assert_eq!(height.altitude_local, -local.z);
+    assert_eq!(height.altitude_relative, -local.z);
+    assert_eq!(height.altitude_amsl, 25.0);
+    assert!(crate::mavlink_estimator::local_position(local).is_none());
+
+    let stale = product::snapshot(&mut main, time + 5_001, &mut resets);
+    assert!(!stale.local_position.z_valid && !stale.local_position.v_z_valid);
+    assert_eq!(stale.status.solution_status_flags & 0x7f, 0);
+    for _ in 0..3 {
+        main.record_duration(DEADLINE_US + 1);
+    }
+    assert_eq!(main.status().selection, Selection::Mahony);
+    assert!(main.filter().core().local_position_validity()[1]);
+    let fallback = product::snapshot(&mut main, time, &mut resets);
+    assert!(fallback.attitude.is_some());
+    assert!(!fallback.local_position.z_valid && !fallback.local_position.v_z_valid);
+    assert_eq!(fallback.status.solution_status_flags & 0x7e, 0);
+    main.disable();
+    let disabled = product::snapshot(&mut main, time, &mut resets);
+    assert!(!disabled.local_position.z_valid && !disabled.local_position.v_z_valid);
+    assert_eq!(disabled.status.solution_status_flags & 0x7f, 0);
+}
+
 #[test]
 fn sequence_gap_resynchronizes_shared_input_and_recovers_the_filter() {
     let mut shared = SharedImu::default();

@@ -40,6 +40,7 @@ stream_table! {
     AttitudeQuaternion: ATTITUDE_QUATERNION_DATA, MAIN_COMPONENT, MavRateEstimator;
     LocalPosition: LOCAL_POSITION_NED_DATA, MAIN_COMPONENT, MavRateEstimator;
     GlobalPosition: GLOBAL_POSITION_INT_DATA, MAIN_COMPONENT, MavRateEstimator;
+    Altitude: ALTITUDE_DATA, MAIN_COMPONENT, MavRateEstimator;
     EstimatorStatus: ESTIMATOR_STATUS_DATA, MAIN_COMPONENT, MavRateEstimator;
 }
 

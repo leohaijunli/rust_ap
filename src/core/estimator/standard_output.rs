@@ -138,6 +138,66 @@ pub struct GlobalPosition {
     pub dead_reckoning: bool,
 }
 
+/// PX4 `ALTITUDE` semantics shared by the MAVLink stream and the ULog topic.
+/// Unknown values stay NaN instead of being replaced with zero.
+#[derive(Clone, Copy, Debug)]
+pub struct Altitude {
+    pub timestamp: u64,
+    pub altitude_monotonic: f32,
+    pub altitude_amsl: f32,
+    pub altitude_local: f32,
+    pub altitude_relative: f32,
+    pub altitude_terrain: f32,
+    pub bottom_clearance: f32,
+}
+
+/// Barometric altitude is the monotonic source; local/relative/terrain need a
+/// valid EKF vertical state. Without a global origin, AMSL falls back to the
+/// barometer exactly like PX4's `MavlinkStreamAltitude`. No home position is
+/// available, so relative altitude uses the local origin. Timestamp is the
+/// publication time, not the barometer's sample time.
+pub fn altitude(
+    local: LocalPosition,
+    baro_altitude_m: Option<f32>,
+    timestamp: u64,
+) -> Option<Altitude> {
+    let monotonic = baro_altitude_m
+        .filter(|value| value.is_finite())
+        .unwrap_or(f32::NAN);
+    let valid_local = local.z_valid && local.z.is_finite();
+    if !valid_local && monotonic.is_nan() {
+        return None;
+    }
+    let mut value = Altitude {
+        timestamp,
+        altitude_monotonic: monotonic,
+        altitude_amsl: f32::NAN,
+        altitude_local: f32::NAN,
+        altitude_relative: f32::NAN,
+        altitude_terrain: f32::NAN,
+        bottom_clearance: f32::NAN,
+    };
+    if valid_local {
+        let up = -local.z;
+        value.altitude_local = up;
+        value.altitude_relative = up;
+        value.altitude_amsl = if local.z_global {
+            if local.ref_alt.is_finite() {
+                up + local.ref_alt
+            } else {
+                f32::NAN
+            }
+        } else {
+            monotonic
+        };
+        if local.dist_bottom_valid && local.dist_bottom.is_finite() {
+            value.altitude_terrain = up - local.dist_bottom;
+            value.bottom_clearance = local.dist_bottom;
+        }
+    }
+    Some(value)
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EstimatorStatus {
     pub timestamp: u64,

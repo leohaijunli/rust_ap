@@ -101,6 +101,18 @@ pub fn global_position(
     }))
 }
 
+pub fn altitude(value: crate::estimator::standard_output::Altitude) -> MavMessage {
+    MavMessage::ALTITUDE(ALTITUDE_DATA {
+        time_usec: value.timestamp,
+        altitude_monotonic: value.altitude_monotonic,
+        altitude_amsl: value.altitude_amsl,
+        altitude_local: value.altitude_local,
+        altitude_relative: value.altitude_relative,
+        altitude_terrain: value.altitude_terrain,
+        bottom_clearance: value.bottom_clearance,
+    })
+}
+
 pub fn estimator_status(value: EstimatorStatus) -> MavMessage {
     MavMessage::ESTIMATOR_STATUS(ESTIMATOR_STATUS_DATA {
         time_usec: value.timestamp,
@@ -145,6 +157,59 @@ pub fn encode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::estimator::standard_output::altitude;
+
+    #[test]
+    fn altitude_prefers_local_height_and_keeps_unknowns_nan() {
+        let mut local = LocalPosition::default();
+        assert!(altitude(local, None, 0).is_none());
+        let value = altitude(local, Some(123.5), 42).expect("baro-only altitude");
+        assert_eq!(value.timestamp, 42);
+        assert_eq!(value.altitude_monotonic, 123.5);
+        assert!(value.altitude_local.is_nan());
+        assert!(value.altitude_amsl.is_nan());
+
+        local.z_valid = true;
+        local.z = -10.25;
+        let value = altitude(local, Some(123.5), 99).expect("local altitude");
+        assert_eq!(value.timestamp, 99);
+        assert_eq!(value.altitude_local, 10.25);
+        assert_eq!(value.altitude_relative, 10.25);
+        assert_eq!(value.altitude_amsl, 123.5);
+
+        local.z_global = true;
+        local.ref_alt = 500.0;
+        assert_eq!(
+            altitude(local, Some(123.5), 42).unwrap().altitude_amsl,
+            510.25
+        );
+        local.dist_bottom_valid = true;
+        local.dist_bottom = 1.5;
+        let value = altitude(local, None, 0).expect("terrain altitude");
+        assert_eq!(value.altitude_terrain, 8.75);
+        assert_eq!(value.bottom_clearance, 1.5);
+        let MavMessage::ALTITUDE(message) = super::altitude(value) else {
+            panic!("missing ALTITUDE message");
+        };
+        assert_eq!(message.time_usec, value.timestamp);
+        assert_eq!(message.altitude_amsl, 510.25);
+        assert_eq!(message.altitude_local, 10.25);
+        assert_eq!(message.altitude_relative, 10.25);
+        assert_eq!(message.altitude_terrain, 8.75);
+        assert_eq!(message.bottom_clearance, 1.5);
+        assert!(message.altitude_monotonic.is_nan());
+
+        local.ref_alt = f32::NAN;
+        assert!(altitude(local, Some(123.5), 100)
+            .unwrap()
+            .altitude_amsl
+            .is_nan());
+        local.z = f32::NAN;
+        let invalid = altitude(local, Some(123.5), 101).unwrap();
+        assert_eq!(invalid.timestamp, 101);
+        assert!(invalid.altitude_local.is_nan() && invalid.altitude_amsl.is_nan());
+        assert!(altitude(local, Some(f32::INFINITY), 102).is_none());
+    }
 
     #[test]
     fn global_units_home_altitude_and_invalid_local_suppression_match_px4() {

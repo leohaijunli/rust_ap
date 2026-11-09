@@ -1892,6 +1892,55 @@ mod tests {
     }
 
     #[test]
+    fn baro_clears_vertical_position_dead_reckoning_and_uses_last_fuse_for_expiry() {
+        let params = ImuEkfParams::default();
+        let mut filter = ImuEkf::with_baro_mag(&params, BaroMagParams::default(), 0).unwrap();
+        filter.set_stationary_permitted(true);
+        assert!(filter.vertical_position_dead_reckoning);
+        for timestamp in (2_500..=3_000_000).step_by(2_500) {
+            let baro = (timestamp % 50_000 == 0).then_some(baro_mag::BaroAltitude {
+                timestamp,
+                altitude_m: 25.0,
+            });
+            filter
+                .update_baro(&stationary(timestamp), baro, None)
+                .unwrap();
+        }
+        assert!(filter.aid_status().unwrap().0.fused);
+        assert!(filter.vertical_position_aiding());
+        assert!(!filter.vertical_position_dead_reckoning);
+        assert!(filter.vertical_velocity_dead_reckoning); // no GNSS velocity aid
+        assert_ne!(filter.last_height_fuse, 0);
+        assert!(!filter.timed_out(filter.last_height_fuse, 100_000));
+        assert_eq!(
+            filter.last_vertical_position_aiding,
+            filter.last_height_fuse
+        );
+
+        // Drain delayed baro observations and let the 400-ms input timeout stop
+        // the source. Fake height updates must not extend real-aiding validity.
+        for timestamp in (3_002_500..=3_600_000).step_by(2_500) {
+            filter
+                .update_baro(&stationary(timestamp), None, None)
+                .unwrap();
+        }
+        assert!(!filter.vertical_position_aiding());
+        assert!(!filter.vertical_position_dead_reckoning);
+        let last_aiding = filter.last_vertical_position_aiding;
+        assert_ne!(last_aiding, 0);
+        let boundary = last_aiding + params.no_aid_timeout_us;
+        for (timestamp, expired) in [(boundary, false), (boundary + 1, true)] {
+            filter.delayed_us = timestamp;
+            filter.latest_us = timestamp + 200_000;
+            filter
+                .control_fusion(&stationary(timestamp), &mut NoExtension)
+                .unwrap();
+            assert_eq!(filter.last_vertical_position_aiding, last_aiding);
+            assert_eq!(filter.vertical_position_dead_reckoning, expired);
+        }
+    }
+
+    #[test]
     fn aided_input_rejects_invalid_or_future_measurement_and_reset_preserves_profile() {
         let mut filter =
             ImuEkf::with_baro_mag(&ImuEkfParams::default(), BaroMagParams::default(), 0).unwrap();

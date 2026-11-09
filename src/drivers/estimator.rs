@@ -19,7 +19,7 @@ use v6x_rust_led::{
         product::{self, ClockReport, Params, ProductRuntime, SharedImu},
         publication_reset::PublicationReset,
         runtime::{self, AttitudeEstimate, Fault, Runtime, Selection, Status},
-        standard_output::{EulerAttitude, Snapshot},
+        standard_output::{altitude, EulerAttitude, Snapshot},
         standard_ulog::DataEncoder,
         timing::{Timing, TimingReport},
         FilterFault, ImuDelta, Measurement, NavFilter,
@@ -611,6 +611,20 @@ pub async fn log_task() {
         }
         if let Some(euler) = output.euler {
             let record = ulog::attitude_euler_record(euler).expect("fixed Euler schema");
+            if crate::sd_logger::LOGGER
+                .try_record(Class::Normal, timestamp, record)
+                .is_err()
+            {
+                LOG_ERRORS.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        let baro = crate::barometer::latest();
+        if let Some(value) = altitude(
+            output.snapshot.local_position,
+            baro.map(|sample| sample.pressure_altitude_m()),
+            timestamp,
+        ) {
+            let record = ulog::altitude_record(value).expect("fixed altitude schema");
             if crate::sd_logger::LOGGER
                 .try_record(Class::Normal, timestamp, record)
                 .is_err()

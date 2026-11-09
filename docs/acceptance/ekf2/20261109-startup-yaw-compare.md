@@ -91,3 +91,11 @@
 - 原 PX4 bootloader 上传/CRC 25 s；启动后 COM26 枚举为 `1209:0001 / V6X-RUST-001`。`!platform`：`source=ecc872b86f6a2e98`、`git=df8dcb84…`、TIM8 `psc=239 arr=65535`、备份域保留。
 - `!ekf2`：`Filter/Running`、fault=None、updates 6312、`max_update_us=1467`（预算 2000）、`deadline_misses=0`、`EKF2_CLOCK integration_error_ppm=0`（61 窗口）、`EKF2_PUBLISH missed=0`。含 at_rest/ZVU/ZGU 的新主路径未引入漏期或时基回归。
 - 限制：`!ekf2`/MAVLink 不暴露 `control_status`，本次未读 SD 日志确认 `VEHICLE_AT_REST` 置位与 ZGU 偏置学习；验证后 COM26 被其他程序占用，60 s 静止日志核对留待工程师安排。本次未设参/保存、未启停或删除日志、未启用输出。
+
+### 后续授权静止日志与 yaw 核对（同日）
+
+- 工程师关闭 QGC 后授权验证；运行 `ecc872b86f6a2e98`，临时 `!logger start/stop`，通过 MAVLink 下载 SD `target/e7-log/00.ulg`（1856000 B，68.6 s，无损坏，SHA-256 `d6359348cb69d2eded34db5f5c80d1be800aef60048001c8273a248754b684e1`）。未设参/保存、删除旧日志或启用输出。
+- `estimator_status.control_mode_flags=0x28248002e3`，`VEHICLE_AT_REST`（bit 26）在 **341/341 个发布快照**中置位；陀螺 z 偏置状态学习到约 **−0.938 °/s**，与原始 gyro z 均值 **−0.936 °/s** 相符，确认静止/ZGU 通路工作。日志开始时已静止，未观察 0→1 跃变，也未做实物扰动释放测试。
+- 磁 aid 的 341 个发布快照均 `fused=true`、`innovation_rejected=false`，创新模长均值 0.0047 G、最大 0.0113 G。这是抽样诊断，不等同于逐量测融合成功率。
+- EKF yaw 与倾角补偿磁航向偏差均值 −0.33°、标准差 0.79°、范围 −2.48…+1.92°；yaw 全窗变化 0.21°。该静止窗口未见持续偏置积分漂移，但同源磁航向不是独立真值，不宣称绝对航向精度或长期/强磁干扰性能。
+- 随后的 altitude 功能与垂直有效性调查另见[输出记录](20261109-altitude-output.md)；本节真实静止结果不放行 M1、完整 E7 或飞行资格。

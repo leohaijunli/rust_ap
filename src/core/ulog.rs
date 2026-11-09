@@ -2,7 +2,7 @@
 
 use core::mem::size_of;
 
-use crate::estimator::standard_output::EulerAttitude;
+use crate::estimator::standard_output::{Altitude, EulerAttitude};
 use crate::ina219::Measurement;
 use crate::px4_messages::{
     ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro, SensorMag, VehicleMagnetometer,
@@ -10,7 +10,7 @@ use crate::px4_messages::{
 
 pub const FILE_HEADER_LEN: usize = 16;
 pub const MAX_RECORD_LEN: usize = 800;
-pub const TOPIC_COUNT: usize = 18;
+pub const TOPIC_COUNT: usize = 19;
 
 const MAGIC: [u8; 7] = [0x55, 0x4c, 0x6f, 0x67, 0x01, 0x12, 0x35];
 const FORMAT_VERSION: u8 = 1;
@@ -41,6 +41,7 @@ pub enum TopicId {
     SensorMag1 = 40,
     SensorMag2 = 41,
     SensorMag3 = 42,
+    VehicleAltitude = 43,
 }
 
 pub struct Topic {
@@ -144,6 +145,12 @@ pub const TOPICS: [Topic; TOPIC_COUNT] = [
     Topic { id: TopicId::SensorMag1, name: "sensor_mag", format: SENSOR_MAG_FORMAT, payload_len: 40 },
     Topic { id: TopicId::SensorMag2, name: "sensor_mag", format: SENSOR_MAG_FORMAT, payload_len: 40 },
     Topic { id: TopicId::SensorMag3, name: "sensor_mag", format: SENSOR_MAG_FORMAT, payload_len: 40 },
+    Topic {
+        id: TopicId::VehicleAltitude,
+        name: "vehicle_altitude",
+        format: "vehicle_altitude:uint64_t timestamp;float altitude_monotonic;float altitude_amsl;float altitude_local;float altitude_relative;float altitude_terrain;float bottom_clearance;",
+        payload_len: 32,
+    },
 ];
 
 impl TopicId {
@@ -157,6 +164,7 @@ impl TopicId {
             Self::SensorMag1 => 15,
             Self::SensorMag2 => 16,
             Self::SensorMag3 => 17,
+            Self::VehicleAltitude => 18,
             _ => self as usize,
         }
     }
@@ -310,6 +318,22 @@ pub fn attitude_euler_record(value: EulerAttitude) -> Result<Record, Error> {
     }
     fields.push_u8(value.quat_reset_counter)?;
     fields.push_u8(u8::from(value.relative_yaw))?;
+    data_record(id, value.timestamp, fields.as_bytes())
+}
+
+pub fn altitude_record(value: Altitude) -> Result<Record, Error> {
+    let id = TopicId::VehicleAltitude as u16;
+    let mut fields = Payload::new();
+    for field in [
+        value.altitude_monotonic,
+        value.altitude_amsl,
+        value.altitude_local,
+        value.altitude_relative,
+        value.altitude_terrain,
+        value.bottom_clearance,
+    ] {
+        fields.push_f32(field)?;
+    }
     data_record(id, value.timestamp, fields.as_bytes())
 }
 
@@ -809,6 +833,31 @@ mod tests {
             encoder.encode(topic, 101, &[0; 6]),
             Err(Error::InvalidLength)
         );
+    }
+
+    #[test]
+    fn altitude_record_preserves_timestamp_field_order_units_and_unknowns() {
+        let fields = [123.5, 510.25, 10.25, 10.25, f32::NAN, f32::NAN];
+        let record = altitude_record(Altitude {
+            timestamp: 1_234_567,
+            altitude_monotonic: fields[0],
+            altitude_amsl: fields[1],
+            altitude_local: fields[2],
+            altitude_relative: fields[3],
+            altitude_terrain: fields[4],
+            bottom_clearance: fields[5],
+        })
+        .unwrap();
+        let bytes = record.as_bytes();
+        assert_eq!(
+            bytes.len(),
+            TopicId::VehicleAltitude.definition().payload_len + 5
+        );
+        assert_eq!(&bytes[..5], &[34, 0, b'D', 43, 0]);
+        assert_eq!(&bytes[5..13], &1_234_567_u64.to_le_bytes());
+        for (bytes, field) in bytes[13..].as_chunks::<4>().0.iter().zip(fields) {
+            assert_eq!(bytes, &field.to_le_bytes());
+        }
     }
 
     #[test]

@@ -49,14 +49,21 @@ pub fn snapshot(runtime: &mut ProductRuntime, now: u64, resets: &mut Publication
             snapshot.local_position.heading_var = f32::INFINITY;
         }
     }
-    // E7 bring-up has not qualified navigation. Preserve numeric diagnostics
-    // with explicit invalidity until the existing hardware gates are passed.
+    // Height telemetry follows the core's aiding validity, but never borrows
+    // EKF height while the runtime is disabled, stale or using Mahony fallback.
+    let vertical_available = status.selection == Selection::Filter && attitude.is_some();
+    snapshot.local_position.z_valid &= vertical_available;
+    snapshot.local_position.v_z_valid &= vertical_available;
+    snapshot.local_position.dist_bottom_valid &= vertical_available;
+    if !vertical_available {
+        snapshot.status.solution_status_flags &= !((1 << 2) | (1 << 5) | (1 << 6));
+    }
+    // E7 navigation/control remain unqualified. Reporting measured height does
+    // not authorize horizontal/global navigation or heading-based control.
     snapshot.local_position.xy_valid = false;
     snapshot.local_position.v_xy_valid = false;
-    snapshot.local_position.z_valid = false;
-    snapshot.local_position.v_z_valid = false;
     snapshot.local_position.heading_good_for_control = false;
     snapshot.global_position = None;
-    snapshot.status.solution_status_flags &= !0x7e;
+    snapshot.status.solution_status_flags &= !((1 << 1) | (1 << 3) | (1 << 4));
     snapshot
 }
