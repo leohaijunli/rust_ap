@@ -2078,9 +2078,10 @@ mod tests {
         }
         assert_eq!(filter.control_status() & VEHICLE_AT_REST, 0);
 
-        // 1.5 s permitted: covers the 1 s hold window plus the delayed path.
+        // PX4 reverse timer: rest starts with the clock already elapsed, so the
+        // first delayed epochs after granting permission must set the bit.
         filter.set_stationary_permitted(true);
-        for _ in 0..600 {
+        for _ in 0..8 {
             timestamp += 2500;
             filter.update(&stationary(timestamp)).unwrap();
         }

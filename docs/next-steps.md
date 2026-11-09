@@ -10,7 +10,7 @@
 
 2026-11-08 增量：当时板载为合并包 `81fd0d06601f9e2f`，工程师确认日志文件删除正常；只读复测保持 Running/Filter、无 Numerics/漏期，yaw 根因调查按要求停止。[复测记录](acceptance/magnetometer/20261108-bringup.md#yaw-只读复测与调查停止) / [日志记录](acceptance/pl-b/20261108-qgc-log-service.md)。
 
-2026-11-09 工程师单独授权回装，**当前板载 source=`49b3552f38510053`**：原 bootloader 上传/CRC 和启动保持核对通过，227 项参数/历史故障不变，主 EKF Running/Filter、无 Numerics/漏期。[回装记录](acceptance/p1/20261109-log-guard-flash.md)。
+2026-11-09 工程师单独授权回装，**当前板载 source=`ecc872b86f6a2e98`（提交 `df8dcb8`，首轮正向保守 at_rest + ZVU/ZGU）**：原 bootloader 上传/CRC 和启动保持核对通过，主 EKF Running/Filter、无 Numerics/漏期；60 s 静止日志核对待工程师安排。[回装记录](acceptance/ekf2/20261109-startup-yaw-compare.md#板上回装2026-11-09)。
 
 **后续仍以软件为主**：工程师只有飞控本体，没有外接设备。H-02/03/10 等外设门暂停；本次仅授权上述回装及启动查询，不自主追加采集、刷写或日志/输出动作。不推进 burst、非零输出或门后优化，硬件未验项不放行。
 
@@ -51,7 +51,7 @@
 
 - 传感器时间残差 −3.24%（PX4 `32/30` 换算后）：不进入积分（`integration_error_ppm=0`），归因需保留 FIFO tick 分布与批次时间序列证据；仅在需要传感器时间诊断精度时再投入。
 - 气压日志新鲜度门控与 6 项测试告警修复的软件检查已通过，合并普通包 `49b3552f38510053` 随后单独授权回装；不重复 host/PX4 对拍，不由启动快照放行真实日志异常输入或完整 E7。[软件记录](acceptance/pl-a/20261108-baro-log-freshness.md) / [回装记录](acceptance/p1/20261109-log-guard-flash.md)。
-- 启动 yaw 慢：宿主合成对照已完成，Rust 与 PX4 默认核心数值一致，差异在缺少 land-detected/at_rest 与 ZVU/ZGU。已按工程师同意实现保守静止检测 + ZVU/ZGU（纯软件）：1° 内收敛 8.104→2.448 s（PX4 地面标志参考 1.648 s），偏置场景末值 +14.077°→+0.130°（参考 +0.100°）；host 225 项、Clippy/构建通过，固件 `76dd5804fdfb9bf2` 未回装。不改磁检查门限，合成结果不宣称绝对精度。[记录](acceptance/ekf2/20261109-startup-yaw-compare.md#后续实现保守静止检测--zvuzgu同日)。
+- 启动 yaw 慢：宿主合成对照已完成，Rust 与 PX4 默认核心数值一致，差异在缺少 land-detected/at_rest 与 ZVU/ZGU。已按工程师确认移植 PX4 反向计时机制实现 at_rest + ZVU/ZGU（纯软件）：at_rest 首拍置位，1° 内收敛 8.104→1.648 s（与 PX4 地面标志参考逐项一致），偏置场景末值 +14.077°→+0.051°（参考 +0.100°）；host 225 项、Clippy/构建通过，固件 `197fb10f367d6ae2` 未回装。不改磁检查门限，合成结果不宣称绝对精度。[记录](acceptance/ekf2/20261109-startup-yaw-compare.md#机制修正改为-px4-反向计时同日工程师确认)。
 
 ### P4 — 优化类（门后才做）
 

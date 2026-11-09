@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**最新授权回装为 `d21b326c3a753d15`（基于 `186709b`，含 at_rest/ZVU/ZGU 与 ALTITUDE）：原 bootloader 上传/CRC、USB 高度和同次 SD 73 条有效高度通过；此前 68.6 s 静止/ZGU 日志已核对。主 EKF Running/Filter、无 Numerics/漏期，logger 已停止，未设参/保存、删除日志或启用输出。水平/全球导航与控制护栏保持；工程师仍只有飞控本体，外设门暂停，M1、完整 E7 与非零输出未放行。**
+更新：2026-11-09。**最新授权回装为 `d21b326c3a753d15`（基于 `186709b`，含 at_rest/ZVU/ZGU 与 ALTITUDE）：原 bootloader 上传/CRC、USB 高度和同次 SD 73 条有效高度通过；此前 68.6 s 静止/ZGU 日志已核对（正向保守机制）。主 EKF Running/Filter、无 Numerics/漏期，logger 已停止，未设参/保存、删除日志或启用输出。at_rest 判定已按工程师确认改为 PX4 反向计时（host 对照与 PX4 参考逐项一致，source=`197fb10f367d6ae2` 未回装）。水平/全球导航与控制护栏保持；工程师仍只有飞控本体，外设门暂停，M1、完整 E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -27,7 +27,10 @@
 - [x] 工程师同意实现保守静止检测 + ZVU/ZGU（纯软件）：新增 `at_rest.rs`（陀螺 ≤0.05 rad/s、比力差 ≤1 m/s²、连续 1 s、许可=disarmed 且无输出），`ImuEkf` 置 `VEHICLE_AT_REST` 并按 PX4 顺序在航向更新后执行 ZVU/ZGU，宿主例程加 `--at-rest`。host 225 项（新增 7）、fmt/Clippy、release 与固件构建（source=`76dd5804fdfb9bf2`，栈 oversized=0）通过。[实现与对照记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续实现保守静止检测--zvuzgu同日)。
 - [x] 实现后同场景重跑：1° 内收敛 8.104→2.448 s（PX4 地面标志参考 1.648 s）；偏置场景末值误差 +14.077°→+0.130°（参考 +0.100°），漂移被抑制。比 PX4 慢 0.8 s 是保守静止判定的 1 s 保持窗口，属设计取舍。仍是合成输入结论，不用于绝对精度或飞行放行；未刷写、未设参。
 - [x] 2026-11-09 工程师授权回装最新提交 `df8dcb8`（source=`ecc872b86f6a2e98`）：原 PX4 bootloader 上传/CRC 25 s；COM26（`1209:0001 / V6X-RUST-001`）启动，`!platform` 返回 `git=df8dcb84…`、TIM8 `psc=239 arr=65535`、备份域保留；`!ekf2` 为 `Filter/Running`、fault=None、updates 6312、`max_update_us=1467`（预算 2000）、`deadline_misses=0`、`integration_error_ppm=0`、发布 `missed=0`。本次未设参/保存、启停/删除日志或启用输出。[回装记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#板上回装2026-11-09)。
-- [x] 工程师关闭 QGC 后授权静止日志核对：`00.ulg` 68.6 s，`VEHICLE_AT_REST` 在 341/341 快照置位，gyro z 偏置 −0.938 °/s 与原始均值 −0.936 °/s 相符；yaw 全窗变化 0.21°。未覆盖 0→1/实物扰动，不作绝对航向或飞行资格。[记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续授权静止日志与-yaw-核对同日)。
+- [x] 工程师关闭 QGC 后授权静止日志核对（板上 `df8dcb8` 正向保守机制）：`00.ulg` 68.6 s，`VEHICLE_AT_REST` 在 341/341 快照置位，gyro z 偏置 −0.938 °/s 与原始均值 −0.936 °/s 相符；yaw 全窗变化 0.21°。未覆盖 0→1/实物扰动，不作绝对航向或飞行资格。[记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续授权静止日志与-yaw-核对同日)。
+- [x] 工程师质询"为何不取 PX4 设置"后查证固定 commit 源码：PX4 `at_rest` 来自 land detector 的反向计时（默认静止、角速度 >3°/s 或振动超限重置、disarmed 即 landed）。经工程师选择改为等价移植（比力模长差 >1 m/s² 作为振动指标简化替代）；首轮正向保守实现（1° 内收敛 2.448 s，慢 0.8 s）结果保留在验收记录中作对照。host 225 项、fmt/Clippy、release 与固件构建（source=`197fb10f367d6ae2`，栈 oversized=0）通过。[实现与对照记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#机制修正改为-px4-反向计时同日工程师确认)。
+- [x] 反向计时后同场景重跑：at_rest 首拍 8 ms 置位，tilt/yaw 对齐 0.576/1.648 s 与 PX4 地面标志参考逐项一致；偏置场景末值误差 +14.077°→+0.051°（参考 +0.100°），窗口均值/最大均略优。仍是合成输入结论，不用于绝对精度或飞行放行；未刷写、未设参。
+- [ ] 反向计时固件 `197fb10f367d6ae2` 未回装（板上 `d21b326c3a753d15` 仍为正向保守机制）；是否回装由工程师单独决定。
 
 ## ALTITUDE 与垂直有效性 — 2026-11-09
 
