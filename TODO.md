@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-08。**工程师当前只有飞控本体，没有外接硬件；仅做软件修复、host 测试与构建，外设硬件门暂停。板载仍为 `81fd0d06601f9e2f`，工程师确认日志删除正常；yaw 调查停止。本轮气压日志门控与 6 项测试告警已修复，218 项 host、相关 Clippy 和合并包 `49b3552f38510053` 构建通过；未刷写，M1、完整 E7 与非零输出未放行。**
+更新：2026-11-09。**工程师单独授权回装 `49b3552f38510053`，原 bootloader 上传/CRC 与启动核对通过；227 项参数及历史故障保持，主 EKF Running/Filter、无 Numerics/漏期。本次未设参/保存、启停/删除日志或启用输出。工程师仍只有飞控本体，后续以软件为主，外设门暂停；yaw 调查停止，M1、完整 E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -8,7 +8,7 @@
 - 只做[必要测试](plan.md#4-仅保留必要测试)，复用已有通过结果；相关实现变化或新失败才补测。
 - `[x]` 有证据；阶段通过后放行依赖阶段。工程师负责实体操作，agent 负责实现和记录。
 - 保持纯 Rust/Embassy、原 PX4 bootloader、`0x08020000` 入口和 QGC 恢复能力。
-- 当前无外接设备，H-02/03/10 等硬件项暂停；只做软件，不要求接线、不自动刷写。
+- 当前无外接设备，H-02/03/10 等硬件项暂停；除工程师明确授权的单次回装外以软件为主，不要求接线、不自主追加刷写。
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
@@ -17,7 +17,8 @@
 - [x] 气压日志新鲜度前置：陈旧/未来时间样本不消耗限流名额；原补偿、200 ms 新鲜度、参数/ULog 字段与 EKF 输入不变。旧顺序回归失败已保留，修后 4 项相关 host、fmt、普通 H753/host 库 Clippy 通过。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
 - [x] 气压修复初始候选 `2a2b272fcd059412` 构建/打包/入口帧检查通过，未回装；此包不含随后追加的 Clippy 清理。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
 - [x] 工程师追加要求清理 6 项测试 Clippy 告警：定长数组分块、精确 `0.7071f` 位值、条目顺序与编译期断言已修复；fmt、host 库/测试 Clippy `-D warnings` 与全套 218 项 host 通过，未改生产门限或算法。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
-- [x] 合并普通候选 `49b3552f38510053` 的 H753 Clippy、构建/打包/入口帧检查通过；RAM 与最大入口帧不变，未回装。板载仍为 `81fd0d06601f9e2f`。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
+- [x] 合并普通包 `49b3552f38510053` 的 H753 Clippy、构建/打包/入口帧检查通过；RAM 与最大入口帧不变。软件结果与后续回装分别记录。[软件记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
+- [x] 2026-11-09 单独授权回装 `49b3552f38510053`：原 bootloader board 53/v5 上传/CRC（25 s）、COM4/source/3 个 disarmed 心跳与平台/FPU 核对通过；227 项参数/历史故障保持，EKF Running/Filter、step 峰值 1223 µs、漏期 0。无日志/输出动作，不扩展为完整 E7。[回装记录](docs/acceptance/p1/20261109-log-guard-flash.md)。
 
 ## 板载地磁 — 2026-11-07
 
