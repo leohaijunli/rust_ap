@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**工程师单独授权回装 `49b3552f38510053`，原 bootloader 上传/CRC 与启动核对通过；227 项参数及历史故障保持，主 EKF Running/Filter、无 Numerics/漏期。本次未设参/保存、启停/删除日志或启用输出。工程师仍只有飞控本体，后续以软件为主，外设门暂停；yaw 调查停止，M1、完整 E7 与非零输出未放行。**
+更新：2026-11-09。**工程师单独授权回装 `49b3552f38510053`，原 bootloader 上传/CRC 与启动核对通过；227 项参数及历史故障保持，主 EKF Running/Filter、无 Numerics/漏期。本次未设参/保存、启停/删除日志或启用输出。工程师仍只有飞控本体，后续以软件为主，外设门暂停；yaw 根因调查停止，另按追加要求完成启动 yaw 的宿主合成对照（未改算法/参数/门限），M1、完整 E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -19,6 +19,12 @@
 - [x] 工程师追加要求清理 6 项测试 Clippy 告警：定长数组分块、精确 `0.7071f` 位值、条目顺序与编译期断言已修复；fmt、host 库/测试 Clippy `-D warnings` 与全套 218 项 host 通过，未改生产门限或算法。[记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
 - [x] 合并普通包 `49b3552f38510053` 的 H753 Clippy、构建/打包/入口帧检查通过；RAM 与最大入口帧不变。软件结果与后续回装分别记录。[软件记录](docs/acceptance/pl-a/20261108-baro-log-freshness.md)。
 - [x] 2026-11-09 单独授权回装 `49b3552f38510053`：原 bootloader board 53/v5 上传/CRC（25 s）、COM4/source/3 个 disarmed 心跳与平台/FPU 核对通过；227 项参数/历史故障保持，EKF Running/Filter、step 峰值 1223 µs、漏期 0。无日志/输出动作，不扩展为完整 E7。[回装记录](docs/acceptance/p1/20261109-log-guard-flash.md)。
+
+## 启动 yaw 合成对照 — 2026-11-09
+
+- [x] 工程师追加要求比较本项目与 PX4 原生的地磁/yaw 收敛。用同一合成静止场景（水平、磁航向 60°、IMU 250 Hz、aid 20 Hz、60 s）跑 Rust 宿主 EKF 与固定 PX4 参考的四个变体；Rust 与 PX4 默认 `control_status` 0 差异、yaw 最大差 6×10⁻⁹°，核心数值一致。[记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md)。
+- [x] 地面标志（`at_rest=true,in_air=false`）使 tilt 对齐 7.032→0.576 s、yaw/mag 锁定 8.104→1.648 s；带陀螺偏置场景末值误差 +14.08°→+0.10°。重力融合不改变收敛时间，也不修复偏置漂移。差异定位为 Rust 缺少 land-detected/at_rest 与 ZVU/ZGU 通路；未改代码、参数或磁检查门限。
+- [ ] 是否实现保守静止检测 + ZVU/ZGU 待工程师决定；本机无真实航向基准，合成结论不用于绝对精度、安装校准或飞行放行。
 
 ## 板载地磁 — 2026-11-07
 
