@@ -154,6 +154,7 @@ impl State {
             transport.rejected,
             transport.capacity_errors,
         )?;
+        crate::diagnostics::write_can_rx_fifo(output, 1, FDCAN1)?;
 
         let now_us = Instant::now().as_micros();
         let esc = self.esc.borrow();

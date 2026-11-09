@@ -475,5 +475,6 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
         FDCAN2.txbrp().read().0,
         FDCAN2.psr().read().0,
         FDCAN2.ecr().read().0
-    )
+    )?;
+    crate::diagnostics::write_can_rx_fifo(output, 2, FDCAN2)
 }

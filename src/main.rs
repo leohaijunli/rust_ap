@@ -161,6 +161,7 @@ static CAN_EXECUTOR: InterruptExecutor = InterruptExecutor::new();
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
 unsafe extern "C" fn TIM6_DAC() {
+    diagnostics::record_can_executor_entry();
     unsafe { CAN_EXECUTOR.on_interrupt() }
 }
 

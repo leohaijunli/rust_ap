@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**板载仍为 `094b08072d1267ac`；CAN2 自动握手正常，但本次约 3 s 诊断接收 2985 帧、USB 仅转发 21 帧，已定位 USB Router 调度瓶颈。工程师已授权最小修复、提交推送、回装与有界复核，尚未替换固件。此前 USL 启动核对通过，蜂鸣无声仍暂停、PX4IO 仍 Timeout；IO/输出护栏保持，完整 H-12、RTK/外接磁、M1/E7 与非零输出未放行。**
+更新：2026-11-09。**板载已为 `620736ef4e52c4d2` /代码 `f24b138`：USB Router 吞吐修复回装通过，CAN2 约 3 s 从 USB 21→2896 帧、软件丢弃 0，GUI 节点 125 可见，但 CRC/toggle 与硬件 FIFO 丢帧仍未收口。工程师随后移到 CAN1：原始 GPS 约 5 Hz 正常，位置类输出被既有发布护栏屏蔽，未解除。蜂鸣暂停，RGB 当前 Nack、PX4IO Timeout；IO/输出门及 M1/E7/RTK 未验依赖保持。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -16,7 +16,9 @@
 
 - [x] 与原 GUI 通过版本比对：CAN 帧/总线/引脚/租约代码除 crate 改名外一致；Rust 6 项 MAVCAN、Python 5 项协议检查通过。授权 3 s 实测却发现接收 2985/USB 21/丢弃 2821、队列满 64，保留失败，不把 host 通过当作硬件通过。[记录](docs/acceptance/mavcan/20261109-can2-router-regression.md)。
 - [x] 最小调度修复已实现：CAN 到帧及 USB 可写唤醒，每轮最多 4 帧；控制/正常遥测优先，100 ms 帧寿命/租约/过滤和原输出门不变。fmt/H753 Clippy 与一次局部审视通过。
-- [ ] 完成普通构建/布局、提交推送、授权应用区回装与同样 3 s 转发/启动复核；GUI 节点身份/显示仍需工程师确认。不改 GPS 参数或分配节点，不恢复蜂鸣测试。
+- [x] `f24b138` 已提交推送；普通包 `620736ef4e52c4d2` 构建/布局与原 bootloader 上传/CRC（25 s）、启动核对通过。3.016 s RX/USB=2996/2896、软件丢弃 0、队列末值 1，GUI 节点 125/身份已确认。
+- [ ] 数据完整性未通过：GUI CRC/toggle 错误，离线捕获也有 RawIMU 尾标/缺帧异常、硬件 FIFO Message Lost。工程师已选择先修 CRC：CAN 执行器 P4→P3、FIFO 丢帧与实际抢占诊断已实现，fmt/H753 Clippy/局部审视通过，待普通包/回装/有界复核；不用软件丢弃 0 冒充端到端无损。
+- [x] 后续 CAN1/GPS 只读：GPS_RAW_INT 15/3.016 s（DGPS/29 星），姿态/高度/健康各 29 条，位置类 0；已确认 `product::snapshot` 的水平/全球发布护栏原因，未解除。CAN1 CRC 仍有新增错误，GNSS 融合/数据-only位置发布与 RTK/输出门不自动放行。
 
 ## 当前纯软件工作 — 2026-11-08
 

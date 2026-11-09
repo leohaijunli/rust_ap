@@ -5,7 +5,7 @@ use core::fmt;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use cortex_m::interrupt::{free, Mutex};
-use cortex_m::peripheral::DWT;
+use cortex_m::peripheral::{DWT, NVIC};
 use embassy_executor::{InterruptExecutor, SendSpawner};
 use embassy_stm32::{interrupt, peripherals, Peri};
 use embassy_time::{Instant, Timer};
@@ -17,6 +17,7 @@ static IDLE_CALLS: AtomicU32 = AtomicU32::new(0);
 static IDLE_EXIT_MAX_CYCLES: AtomicU32 = AtomicU32::new(0);
 static MIN_MSP: AtomicU32 = AtomicU32::new(u32::MAX);
 static RESET_REQUEST: AtomicBool = AtomicBool::new(false);
+static CAN_PREEMPTIONS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy)]
 struct IrqStats {
@@ -80,6 +81,24 @@ pub fn start(timer: Peri<'static, peripherals::TIM7>) -> SendSpawner {
     let spawner = FAST_EXECUTOR.start(interrupt::TIM7);
     spawner.spawn(periodic(timer)).unwrap();
     spawner
+}
+
+/// Count actual CAN task entries while the lower-priority EKF IRQ is active.
+pub fn record_can_executor_entry() {
+    if NVIC::is_active(interrupt::TIM5) {
+        CAN_PREEMPTIONS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+pub fn write_can_rx_fifo(
+    out: &mut impl fmt::Write,
+    bus: u8,
+    can: embassy_stm32::pac::can::Fdcan,
+) -> fmt::Result {
+    let fifo0 = can.rxfs(0).read();
+    let fifo1 = can.rxfs(1).read();
+    writeln!(out, "CAN_RX_FIFO schema=1 bus={bus} depth={} fifo0_level={} fifo1_level={} fifo0_lost={} fifo1_lost={}",
+        can.rxfc(0).read().fs(), fifo0.ffl(), fifo1.ffl(), fifo0.rfl(), fifo1.rfl())
 }
 
 #[interrupt]
@@ -255,6 +274,9 @@ pub fn write_diagnostics(out: &mut impl fmt::Write) -> fmt::Result {
     writeln!(out, "EXEC body_min_cycles={} body_max_cycles={} body_sum_cycles={} invalid_cycles={} irq_count={} irq_max_cycles={} irq_sum_cycles={}",
         if s.samples == 0 { 0 } else { s.body_min_cycles }, s.body_max_cycles, s.body_sum_cycles,
         s.invalid_cycles, irq.count, irq.max_cycles, irq.sum_cycles)?;
+    writeln!(out, "CAN_SCHED schema=1 executor_irq_priority={} estimator_irq_priority={} preemptions_of_estimator={}",
+        NVIC::get_priority(interrupt::TIM6_DAC), NVIC::get_priority(interrupt::TIM5),
+        CAN_PREEMPTIONS.load(Ordering::Relaxed))?;
     writeln!(out, "CPU mode=masked-wfe valid={} window_us={} idle_us={} idle_calls={} busy_permille={} exit_bookkeeping_max_cycles={}",
         c.valid, c.wall_us, c.idle_us, c.idle_calls, c.busy_permille, IDLE_EXIT_MAX_CYCLES.load(Ordering::Relaxed))?;
     writeln!(
