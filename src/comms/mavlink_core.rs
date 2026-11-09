@@ -3,20 +3,20 @@
 use mavlink::common::*;
 use mavlink::MavHeader;
 
-use v6x_rust_led::mavftp;
-use v6x_rust_led::parameters::{Id, Kind, COUNT};
-use v6x_rust_led::px4_messages::SensorGps;
+use v6x_rust_ap::mavftp;
+use v6x_rust_ap::parameters::{Id, Kind, COUNT};
+use v6x_rust_ap::px4_messages::SensorGps;
 
 use crate::parameter_manager::ParameterManager;
 use crate::telemetry;
-use v6x_rust_led::logger::{LogError, LogRequest, LogResponse};
-use v6x_rust_led::{
+use v6x_rust_ap::logger::{LogError, LogRequest, LogResponse};
+use v6x_rust_ap::{
     mavlink_protocol::addressed_to_vehicle,
     telemetry::{message_id, requested_kind, IntervalError, Scheduler},
 };
 
 pub const SYSTEM_ID: u8 = Id::MavSysId.definition().default as u8;
-pub const COMPONENT_ID: u8 = v6x_rust_led::telemetry::MAIN_COMPONENT;
+pub const COMPONENT_ID: u8 = v6x_rust_ap::telemetry::MAIN_COMPONENT;
 
 /// Replies produced for one inbound request, plus whether a reboot is pending
 /// or a full parameter download was requested.
@@ -299,7 +299,7 @@ pub async fn handle(
 }
 
 pub fn heartbeat() -> MavMessage {
-    v6x_rust_led::mavlink_vehicle::heartbeat(crate::OUTPUT_STATE.armed)
+    v6x_rust_ap::mavlink_vehicle::heartbeat(crate::OUTPUT_STATE.armed)
 }
 
 /// Periodic status line. It carries the estimator's actual state so a ground
@@ -325,7 +325,7 @@ pub fn status_text() -> MavMessage {
 }
 
 pub fn system_status() -> MavMessage {
-    use v6x_rust_led::mavlink_vehicle::{self, SensorState, Sensors};
+    use v6x_rust_ap::mavlink_vehicle::{self, SensorState, Sensors};
 
     let (gyro, accel) = crate::imu::health();
     let barometer = crate::barometer::health();
@@ -369,7 +369,7 @@ pub fn system_time() -> MavMessage {
 pub fn highres_imu() -> Option<MavMessage> {
     let sample = crate::imu::latest()?;
     let now = embassy_time::Instant::now().as_micros();
-    if sample.is_stale(now, v6x_rust_led::icm42688::Config::DEFAULT) {
+    if sample.is_stale(now, v6x_rust_ap::icm42688::Config::DEFAULT) {
         return None;
     }
     let accel_frd = sample.accel_frd();
@@ -399,10 +399,10 @@ pub fn highres_imu() -> Option<MavMessage> {
         diff_pressure: f32::NAN,
         pressure_alt: baro.map_or(f32::NAN, |value| value.pressure_altitude_m()),
         fields_updated,
-        id: v6x_rust_led::icm42688::SOURCE_ID,
+        id: v6x_rust_ap::icm42688::SOURCE_ID,
         ..Default::default()
     };
-    v6x_rust_led::mavlink_magnetometer::update_highres_imu(
+    v6x_rust_ap::mavlink_magnetometer::update_highres_imu(
         &mut data,
         crate::magnetometer::latest(),
         now,
@@ -444,27 +444,27 @@ pub fn estimator_message(kind: EstimatorMessage) -> Option<MavMessage> {
         EstimatorMessage::AttitudeEuler => output
             .euler
             .zip(snapshot.angular_velocity)
-            .map(|(angles, gyro)| v6x_rust_led::mavlink_estimator::attitude_euler(angles, gyro)),
+            .map(|(angles, gyro)| v6x_rust_ap::mavlink_estimator::attitude_euler(angles, gyro)),
         EstimatorMessage::AttitudeQuaternion => snapshot
             .attitude
             .zip(snapshot.angular_velocity)
-            .map(|(attitude, gyro)| v6x_rust_led::mavlink_estimator::attitude(attitude, gyro)),
+            .map(|(attitude, gyro)| v6x_rust_ap::mavlink_estimator::attitude(attitude, gyro)),
         EstimatorMessage::LocalPosition => {
-            v6x_rust_led::mavlink_estimator::local_position(snapshot.local_position)
+            v6x_rust_ap::mavlink_estimator::local_position(snapshot.local_position)
         }
         EstimatorMessage::GlobalPosition => snapshot.global_position.and_then(|global| {
-            v6x_rust_led::mavlink_estimator::global_position(global, snapshot.local_position, None)
+            v6x_rust_ap::mavlink_estimator::global_position(global, snapshot.local_position, None)
         }),
         EstimatorMessage::Altitude => {
             let baro = crate::barometer::latest();
-            let value = v6x_rust_led::estimator::standard_output::altitude(
+            let value = v6x_rust_ap::estimator::standard_output::altitude(
                 snapshot.local_position,
                 baro.map(|sample| sample.pressure_altitude_m()),
                 embassy_time::Instant::now().as_micros(),
             )?;
-            Some(v6x_rust_led::mavlink_estimator::altitude(value))
+            Some(v6x_rust_ap::mavlink_estimator::altitude(value))
         }
-        EstimatorMessage::Status => Some(v6x_rust_led::mavlink_estimator::estimator_status(
+        EstimatorMessage::Status => Some(v6x_rust_ap::mavlink_estimator::estimator_status(
             snapshot.status,
         )),
     }
@@ -475,7 +475,7 @@ pub fn estimator_message(kind: EstimatorMessage) -> Option<MavMessage> {
 /// capacity stay unknown instead of being fabricated.
 pub fn battery_status() -> Option<MavMessage> {
     let measurement = crate::ina219::latest()?;
-    v6x_rust_led::mavlink_power::battery_status(
+    v6x_rust_ap::mavlink_power::battery_status(
         measurement,
         embassy_time::Instant::now().as_micros(),
     )
@@ -486,9 +486,9 @@ pub fn autopilot_version() -> MavMessage {
     let mut uid2 = [0u8; 18];
     uid2[..uid.len()].copy_from_slice(&uid);
     MavMessage::AUTOPILOT_VERSION(AUTOPILOT_VERSION_DATA {
-        capabilities: v6x_rust_led::mavlink_vehicle::CAPABILITIES,
-        flight_sw_version: v6x_rust_led::build_info::FLIGHT_SW_VERSION,
-        flight_custom_version: v6x_rust_led::build_info::SOURCE_ID.to_le_bytes(),
+        capabilities: v6x_rust_ap::mavlink_vehicle::CAPABILITIES,
+        flight_sw_version: v6x_rust_ap::build_info::FLIGHT_SW_VERSION,
+        flight_custom_version: v6x_rust_ap::build_info::SOURCE_ID.to_le_bytes(),
         vendor_id: 0x1209,
         product_id: 0x0001,
         uid: u64::from_le_bytes(uid[..8].try_into().unwrap()),
@@ -514,7 +514,7 @@ pub fn ina219_status() -> Option<MavMessage> {
 pub fn gps_raw_int() -> Option<MavMessage> {
     let gps = crate::dronecan_can::latest_gps()?;
     let now = embassy_time::Instant::now().as_micros();
-    if now.saturating_sub(gps.timestamp) > v6x_rust_led::gps::GPS_FRESH_US {
+    if now.saturating_sub(gps.timestamp) > v6x_rust_ap::gps::GPS_FRESH_US {
         return None;
     }
     Some(gps_raw_int_from(&gps))
@@ -677,8 +677,8 @@ pub fn file_transfer(header: MavHeader, frame: &mavftp::Frame) -> MavMessage {
 pub fn component_metadata() -> MavMessage {
     MavMessage::COMPONENT_METADATA(COMPONENT_METADATA_DATA {
         time_boot_ms: embassy_time::Instant::now().as_millis() as u32,
-        file_crc: v6x_rust_led::component_metadata::GENERAL_CRC,
-        uri: v6x_rust_led::component_metadata::GENERAL_URI.into(),
+        file_crc: v6x_rust_ap::component_metadata::GENERAL_CRC,
+        uri: v6x_rust_ap::component_metadata::GENERAL_URI.into(),
     })
 }
 
@@ -692,10 +692,10 @@ pub fn command_ack(header: &MavHeader, command: MavCmd, result: MavResult) -> Ma
     })
 }
 
-fn logger_result(result: Result<(), v6x_rust_led::logger::ControlError>) -> MavResult {
+fn logger_result(result: Result<(), v6x_rust_ap::logger::ControlError>) -> MavResult {
     match result {
         Ok(()) => MavResult::MAV_RESULT_ACCEPTED,
-        Err(v6x_rust_led::logger::ControlError::InvalidState) => {
+        Err(v6x_rust_ap::logger::ControlError::InvalidState) => {
             MavResult::MAV_RESULT_TEMPORARILY_REJECTED
         }
         Err(_) => MavResult::MAV_RESULT_FAILED,
@@ -784,7 +784,7 @@ pub fn log_response(response: LogResponse) -> Option<MavMessage> {
         LogResponse::Error(error) => Some(parameter_warning(log_error_text(error))),
         LogResponse::Erased { deleted } => Some(MavMessage::STATUSTEXT(STATUSTEXT_DATA {
             severity: MavSeverity::MAV_SEVERITY_INFO,
-            text: v6x_rust_led::logger::erase_confirmation(deleted).into(),
+            text: v6x_rust_ap::logger::erase_confirmation(deleted).into(),
             ..Default::default()
         })),
         LogResponse::Done => None,
@@ -816,5 +816,5 @@ pub fn encode_from(
         sequence: *sequence,
     };
     *sequence = sequence.wrapping_add(1);
-    v6x_rust_led::mavlink_estimator::encode(header, message, out)
+    v6x_rust_ap::mavlink_estimator::encode(header, message, out)
 }

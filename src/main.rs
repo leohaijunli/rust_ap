@@ -119,9 +119,9 @@ use static_cell::StaticCell;
 use eth_led::Lan8742;
 
 #[cfg(not(feature = "fault-dump"))]
-use v6x_rust_led::parameter_store::OutputState;
+use v6x_rust_ap::parameter_store::OutputState;
 #[cfg(not(feature = "fault-dump"))]
-use v6x_rust_led::parameters::Id;
+use v6x_rust_ap::parameters::Id;
 
 #[cfg(not(feature = "fault-dump"))]
 pub(crate) const OUTPUT_STATE: OutputState = OutputState {

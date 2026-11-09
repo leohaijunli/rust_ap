@@ -274,11 +274,11 @@ def main():
     except ImportError:
         parser.error('Install the optional host dependency unicorn==2.1.4')
     require(unicorn.__version__ == '2.1.4', 'Replay requires the pinned Unicorn 2.1.4')
-    report = json.loads((args.release / 'v6x-rust-led.build.json').read_text())
-    for name in ('v6x-rust-led', 'v6x-rust-led.bin', 'v6x-rust-led.px4'):
+    report = json.loads((args.release / 'v6x-rust-ap.build.json').read_text())
+    for name in ('v6x-rust-ap', 'v6x-rust-ap.bin', 'v6x-rust-ap.px4'):
         require(sha256(args.release / name) == report['artifacts'][name]['sha256'], f'Artifact hash mismatch: {name}')
-    elf = Elf32((args.release / 'v6x-rust-led').read_bytes())
-    image = (args.release / 'v6x-rust-led.bin').read_bytes()
+    elf = Elf32((args.release / 'v6x-rust-ap').read_bytes())
+    image = (args.release / 'v6x-rust-ap.bin').read_bytes()
     results = []
     print(f"Unicorn {unicorn.__version__} Cortex-M7; source={report['source_id']} features={report['features']}")
     print('Actual compiled caller + full HAL init; synthetic MMIO, not hardware/timing evidence')

@@ -13,7 +13,7 @@ use embassy_stm32::gpio::Output;
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, Timer};
 use mavlink::{common::*, MavHeader};
-use v6x_rust_led::{
+use v6x_rust_ap::{
     logger::{erase_allowed, Link, LogError, LogRequest, LogResponse},
     mavftp,
     mavlink_protocol::{addressed_to_vehicle, Decoded, FrameParser, ParamStream},
@@ -254,7 +254,7 @@ impl State {
         }
         // Stop an owned download on disconnect, but never cancel the other link.
         if self.connected
-            && crate::sd_logger::snapshot().status == v6x_rust_led::logger::Status::Managing
+            && crate::sd_logger::snapshot().status == v6x_rust_ap::logger::Status::Managing
         {
             let _ = crate::sd_logger::request_logs(self.link, LogRequest::End);
         }
@@ -359,7 +359,7 @@ impl State {
             }
             let mut produced = false;
             // Missing sensor data skips a beat, never causes a busy wait.
-            for _ in 0..v6x_rust_led::telemetry::COUNT {
+            for _ in 0..v6x_rust_ap::telemetry::COUNT {
                 let Some(kind) = self.scheduler.take_due(now) else {
                     break;
                 };

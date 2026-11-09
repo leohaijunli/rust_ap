@@ -22,7 +22,7 @@ use embassy_time::{Duration, Instant, Timer};
 use embedded_can::Id as CanId;
 use mavlink::common::*;
 use mavlink::MavHeader;
-use v6x_rust_led::mavcan::{
+use v6x_rust_ap::mavcan::{
     FilterOperation, Frame, Peer, Session, SessionError, BITRATE, BUS_NUMBER, EXTENDED_FLAG,
     FRAME_BUS, RTR_FLAG,
 };

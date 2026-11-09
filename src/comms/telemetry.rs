@@ -2,7 +2,7 @@
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use mavlink::common::MavMessage;
-use v6x_rust_led::telemetry::Kind;
+use v6x_rust_ap::telemetry::Kind;
 
 use crate::mavlink_core::{self, EstimatorMessage};
 

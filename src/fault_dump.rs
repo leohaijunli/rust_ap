@@ -21,7 +21,7 @@ use embassy_usb::class::cdc_acm::{CdcAcmClass, Receiver, Sender, State};
 use embassy_usb::driver::{Driver as UsbDriver, EndpointError};
 use embassy_usb::{Builder, Config as UsbConfig};
 use static_cell::StaticCell;
-use v6x_rust_led::fault_record::{self, FaultRecord, WORDS};
+use v6x_rust_ap::fault_record::{self, FaultRecord, WORDS};
 
 const BOOTLOADER_REQUEST: u32 = 0xb007_b007;
 const RCC_WORDS: usize = 11;

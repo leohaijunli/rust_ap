@@ -10,19 +10,19 @@ $python = if (Test-Path $venv) { $venv } else { 'py' }
 [string[]]$pythonArgs = if ($python -eq 'py') { @('-3') } else { @() }
 
 try {
-cargo build --release --locked --target thumbv7em-none-eabihf --bin v6x-rust-led
+cargo build --release --locked --target thumbv7em-none-eabihf --bin v6x-rust-ap
 if ($LASTEXITCODE -ne 0) { throw 'cargo build failed' }
 
 $host_target = (rustc -vV) | Select-String -Pattern '^host: ' | ForEach-Object { $_.Line -replace '^host: ', '' }
 $llvm = Join-Path (rustc --print sysroot) "lib/rustlib/$host_target/bin"
-& (Join-Path $llvm 'llvm-objcopy.exe') -O binary (Join-Path $release 'v6x-rust-led') (Join-Path $release 'v6x-rust-led.bin')
+& (Join-Path $llvm 'llvm-objcopy.exe') -O binary (Join-Path $release 'v6x-rust-ap') (Join-Path $release 'v6x-rust-ap.bin')
 if ($LASTEXITCODE -ne 0) { throw 'llvm-objcopy failed' }
 
-& $python @pythonArgs tools/package.py --binary (Join-Path $release 'v6x-rust-led.bin') --output (Join-Path $release 'v6x-rust-led.px4')
+& $python @pythonArgs tools/package.py --binary (Join-Path $release 'v6x-rust-ap.bin') --output (Join-Path $release 'v6x-rust-ap.px4')
 if ($LASTEXITCODE -ne 0) { throw 'package.py failed' }
 
 & $python @pythonArgs tools/run_host_tool.py tools/build_report.py --release $release
 if ($LASTEXITCODE -ne 0) { throw 'build_report.py failed' }
-& $python @pythonArgs tools/check_stack_frames.py --elf (Join-Path $release 'v6x-rust-led')
+& $python @pythonArgs tools/check_stack_frames.py --elf (Join-Path $release 'v6x-rust-ap')
 if ($LASTEXITCODE -ne 0) { throw 'ARM stack-frame budget failed' }
 } finally { Pop-Location }

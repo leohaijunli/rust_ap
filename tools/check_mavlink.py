@@ -392,7 +392,7 @@ def main(argv=None):
             diagnostics.update(outcome="invalid-arguments", error="--raw is only supported for a Dump device")
             parser.error("--raw is only supported for a Dump device")
         if args.monitor is None:
-            report = target / "thumbv7em-none-eabihf/release/v6x-rust-led.build.json"
+            report = target / "thumbv7em-none-eabihf/release/v6x-rust-ap.build.json"
             args.source_id = expected_source_id(args.expected_version, args.source_id, report)
         link = mavutil.mavlink_connection(
             port.device, baud=115200, source_system=255, source_component=190,

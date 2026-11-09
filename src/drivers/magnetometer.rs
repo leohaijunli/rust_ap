@@ -7,7 +7,7 @@ use core::{
 use embassy_futures::select::{select, Either};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, watch::Watch};
 use embassy_time::{Instant, Timer};
-use v6x_rust_led::{
+use v6x_rust_ap::{
     magnetometer::{Config, Selector, SourceStatus},
     mavlink_vehicle::SensorState,
     parameters::{self, Snapshot},
@@ -64,12 +64,12 @@ pub fn health() -> SensorState {
     let has_bmm = state.is_some_and(|s| {
         s.sources
             .iter()
-            .any(|s| s.device_id == v6x_rust_led::bmm150::DEVICE_ID)
+            .any(|s| s.device_id == v6x_rust_ap::bmm150::DEVICE_ID)
     });
     let bmm_priority = CONFIG
         .try_get()
         .unwrap_or_default()
-        .priority(v6x_rust_led::bmm150::DEVICE_ID)
+        .priority(v6x_rust_ap::bmm150::DEVICE_ID)
         .unwrap_or(0);
     SensorState {
         present: raw.present || state.is_some_and(|s| s.sources.iter().any(|s| s.device_id != 0)),

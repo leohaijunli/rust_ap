@@ -1,6 +1,6 @@
 //! Synthetic two-source fixture, never hardware acceptance.
 use std::{env, fs};
-use v6x_rust_led::{
+use v6x_rust_ap::{
     magnetometer::{Calibration, Config, Selector},
     px4_messages::SensorMag,
     ulog::{self, DataEncoder, TopicId},
@@ -23,7 +23,7 @@ fn main() {
     let output = env::args()
         .nth(1)
         .expect("magnetometer_selection <output.ulg>");
-    let internal = v6x_rust_led::bmm150::DEVICE_ID;
+    let internal = v6x_rust_ap::bmm150::DEVICE_ID;
     let external = 0x431009;
     let mut config = Config::default();
     config.slots[2] = Calibration {

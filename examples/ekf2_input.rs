@@ -9,8 +9,8 @@ use std::{
     path::Path,
 };
 
-use v6x_rust_led::estimator::imu_ekf::baro_mag::{BaroMagParams, BaroMagSample};
-use v6x_rust_led::estimator::{
+use v6x_rust_ap::estimator::imu_ekf::baro_mag::{BaroMagParams, BaroMagSample};
+use v6x_rust_ap::estimator::{
     gnss::{GnssEkf, GnssObservation, GnssParams},
     imu_ekf::range::RangeParams,
     imu_ekf::{ImuEkf, ImuEkfParams},
@@ -60,13 +60,13 @@ impl HostFilter {
         imu: &ImuDelta,
         aiding: Option<AidInput>,
         split: bool,
-    ) -> Result<bool, v6x_rust_led::estimator::FilterFault> {
+    ) -> Result<bool, v6x_rust_ap::estimator::FilterFault> {
         if split {
             let events = aiding
                 .map(|v| {
                     [
                         Some(Measurement::Baro(
-                            v6x_rust_led::estimator::imu_ekf::baro_mag::BaroAltitude {
+                            v6x_rust_ap::estimator::imu_ekf::baro_mag::BaroAltitude {
                                 timestamp: v.baro_mag.timestamp,
                                 altitude_m: v.baro_mag.altitude_m,
                             },

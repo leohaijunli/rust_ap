@@ -17,20 +17,20 @@ use embedded_fatfs::{
 };
 use embedded_io_async::{Read, Seek, SeekFrom, Write};
 use embedded_partitions::mbr::Scheme;
-use v6x_rust_led::log_config::Group;
-use v6x_rust_led::log_queue::{Class, Logger};
-use v6x_rust_led::logger::{
+use v6x_rust_ap::log_config::Group;
+use v6x_rust_ap::log_queue::{Class, Logger};
+use v6x_rust_ap::logger::{
     accepts, download_count, erase_allowed, is_ulog_name, list_bounds,
     write_failure_restarts_session, Command, Config as LoggerConfig, ControlError, Link, LogError,
     LogRequest, LogResponse, RoutedLogRequest, Snapshot, Status, SESSION_STAGE_RESTART,
 };
-use v6x_rust_led::parameters::{Kind, REGISTRY};
-use v6x_rust_led::px4_messages::{
+use v6x_rust_ap::parameters::{Kind, REGISTRY};
+use v6x_rust_ap::px4_messages::{
     ActuatorArmed, SensorAccel, SensorBaro, SensorGps, SensorGyro, SensorMag, VehicleMagnetometer,
     PX4_REVISION,
 };
-use v6x_rust_led::ulog::{self, DataEncoder, TopicId, TOPICS};
-use v6x_rust_led::wall_clock::Utc;
+use v6x_rust_ap::ulog::{self, DataEncoder, TopicId, TOPICS};
+use v6x_rust_ap::wall_clock::Utc;
 
 use crate::parameter_manager::ParameterManager;
 
@@ -93,12 +93,12 @@ pub fn ready() -> bool {
     current_status() == Status::Ready
 }
 
-pub fn record_baro(sample: v6x_rust_led::bmp388::Sample) {
+pub fn record_baro(sample: v6x_rust_ap::bmp388::Sample) {
     if !ready() {
         return;
     }
     let now = Instant::now().as_micros();
-    if !v6x_rust_led::log_config::baro_rate(sample, now) {
+    if !v6x_rust_ap::log_config::baro_rate(sample, now) {
         return;
     }
     let report = SensorBaro::from_sample(sample, now);
@@ -116,7 +116,7 @@ pub fn record_raw_mag(report: SensorMag, instance: usize) {
     let now = Instant::now().as_micros();
     if !ready()
         || instance >= 4
-        || !v6x_rust_led::log_config::mag_rate(instance, report.timestamp_sample)
+        || !v6x_rust_ap::log_config::mag_rate(instance, report.timestamp_sample)
     {
         return;
     }
@@ -136,7 +136,7 @@ pub fn record_vehicle_mag(report: VehicleMagnetometer) {
     let now = Instant::now().as_micros();
     if !ready()
         || !report.fresh(now)
-        || !v6x_rust_led::log_config::mag_rate(4, report.timestamp_sample)
+        || !v6x_rust_ap::log_config::mag_rate(4, report.timestamp_sample)
     {
         return;
     }
@@ -337,7 +337,7 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
 }
 
 pub fn record_arming_status(timestamp_us: u64) {
-    if !ready() || !v6x_rust_led::log_config::enabled(Group::Event) {
+    if !ready() || !v6x_rust_ap::log_config::enabled(Group::Event) {
         return;
     }
     let report = ActuatorArmed {
@@ -361,8 +361,8 @@ pub fn record_arming_status(timestamp_us: u64) {
 /// Rate-limit on the reconstructed sample timestamp so the 8-sample FIFO
 /// batches cannot alias the limiter to batch boundaries; the record keeps the
 /// publish time as `timestamp` and the sample time as `timestamp_sample`.
-pub fn record_imu(sample: v6x_rust_led::icm42688::Sample, error_count: u32) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Imu, sample.sample_timestamp_us) {
+pub fn record_imu(sample: v6x_rust_ap::icm42688::Sample, error_count: u32) {
+    if !ready() || !v6x_rust_ap::log_config::rate(Group::Imu, sample.sample_timestamp_us) {
         return;
     }
     let timestamp_us = Instant::now().as_micros();
@@ -382,8 +382,8 @@ pub fn record_imu(sample: v6x_rust_led::icm42688::Sample, error_count: u32) {
     );
 }
 
-pub fn record_current_sensor(timestamp_us: u64, measurement: v6x_rust_led::ina219::Measurement) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Current, timestamp_us) {
+pub fn record_current_sensor(timestamp_us: u64, measurement: v6x_rust_ap::ina219::Measurement) {
+    if !ready() || !v6x_rust_ap::log_config::rate(Group::Current, timestamp_us) {
         return;
     }
     record(
@@ -395,7 +395,7 @@ pub fn record_current_sensor(timestamp_us: u64, measurement: v6x_rust_led::ina21
 }
 
 pub fn record_sensor_gps(snapshot: SensorGps) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, snapshot.timestamp) {
+    if !ready() || !v6x_rust_ap::log_config::rate(Group::Can, snapshot.timestamp) {
         return;
     }
     record(
@@ -409,11 +409,11 @@ pub fn record_sensor_gps(snapshot: SensorGps) {
 pub fn record_esc_status(
     timestamp_us: u64,
     source_node_id: u8,
-    status: v6x_rust_led::dronecan::dsdl::EscStatus,
+    status: v6x_rust_ap::dronecan::dsdl::EscStatus,
     trusted: bool,
     stale: bool,
 ) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, timestamp_us) {
+    if !ready() || !v6x_rust_ap::log_config::rate(Group::Can, timestamp_us) {
         return;
     }
     let mut payload = ulog::Payload::new();
@@ -441,10 +441,10 @@ pub fn record_esc_status(
 pub fn record_node_status(
     timestamp_us: u64,
     source_node_id: u8,
-    status: v6x_rust_led::dronecan::dsdl::NodeStatus,
+    status: v6x_rust_ap::dronecan::dsdl::NodeStatus,
     online: bool,
 ) {
-    if !ready() || !v6x_rust_led::log_config::enabled(Group::Event) {
+    if !ready() || !v6x_rust_ap::log_config::enabled(Group::Event) {
         return;
     }
     let mut payload = ulog::Payload::new();
@@ -463,7 +463,7 @@ pub fn record_node_status(
 }
 
 pub fn record_can_stats(timestamp_us: u64, counters: [u32; 10]) {
-    if !ready() || !v6x_rust_led::log_config::rate(Group::Can, timestamp_us) {
+    if !ready() || !v6x_rust_ap::log_config::rate(Group::Can, timestamp_us) {
         return;
     }
     let mut payload = ulog::Payload::new();
@@ -481,7 +481,7 @@ pub fn record_parameter(timestamp_us: u64, index: u16, kind: Kind, value: f32, d
     {
         return;
     }
-    if !v6x_rust_led::log_config::enabled(Group::Event) {
+    if !v6x_rust_ap::log_config::enabled(Group::Event) {
         return;
     }
     let payload = parameter_payload(index, kind, value, dirty);
@@ -1083,7 +1083,7 @@ pub async fn health_task() -> ! {
     loop {
         if ready() {
             let timestamp = Instant::now().as_micros();
-            if v6x_rust_led::log_config::rate(Group::Health, timestamp) {
+            if v6x_rust_ap::log_config::rate(Group::Health, timestamp) {
                 let stats = LOGGER.stats();
                 let mut payload = ulog::Payload::new();
                 let cpu = crate::diagnostics::cpu_load();
@@ -1148,15 +1148,15 @@ async fn write_definitions<W: Write>(
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
     }
-    let mut format = [0; v6x_rust_led::estimator::standard_ulog::FORMAT_CAPACITY];
-    for topic in &v6x_rust_led::estimator::standard_ulog::TOPICS {
-        let length = v6x_rust_led::estimator::standard_ulog::format_record(topic.id, &mut format)
+    let mut format = [0; v6x_rust_ap::estimator::standard_ulog::FORMAT_CAPACITY];
+    for topic in &v6x_rust_ap::estimator::standard_ulog::TOPICS {
+        let length = v6x_rust_ap::estimator::standard_ulog::format_record(topic.id, &mut format)
             .expect("fixed estimator format fits metadata storage");
         writer.write_all(&format[..length]).await?;
         bytes_written += length as u32;
     }
-    let source = hex_u64(v6x_rust_led::build_info::SOURCE_ID);
-    let version = v6x_rust_led::build_info::FLIGHT_SW_VERSION.to_le_bytes();
+    let source = hex_u64(v6x_rust_ap::build_info::SOURCE_ID);
+    let version = v6x_rust_ap::build_info::FLIGHT_SW_VERSION.to_le_bytes();
     // Encode one record at a time. An array of eight 800-byte records creates
     // multiple large temporaries in the encompassing async poll frame.
     for (key, value) in [
@@ -1189,8 +1189,8 @@ async fn write_definitions<W: Write>(
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;
     }
-    for topic in &v6x_rust_led::estimator::standard_ulog::TOPICS {
-        let record = v6x_rust_led::estimator::standard_ulog::subscription(topic.id)
+    for topic in &v6x_rust_ap::estimator::standard_ulog::TOPICS {
+        let record = v6x_rust_ap::estimator::standard_ulog::subscription(topic.id)
             .expect("fixed estimator subscription");
         writer.write_all(record.as_bytes()).await?;
         bytes_written += record.as_bytes().len() as u32;

@@ -7,7 +7,7 @@ use embassy_usb::{
     class::cdc_acm::{CdcAcmClass, Receiver, Sender},
     driver::{Driver, EndpointError},
 };
-use v6x_rust_led::logger::Link;
+use v6x_rust_ap::logger::Link;
 
 use crate::router::{self, Packet};
 

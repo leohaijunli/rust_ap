@@ -10,8 +10,8 @@ use embassy_stm32::timer::low_level::CountingMode;
 use embassy_stm32::timer::simple_pwm::{PwmPin, PwmPinConfig, SimplePwm};
 use embassy_stm32::Peri;
 use embassy_time::{Instant, Timer};
-use v6x_rust_led::logger::Status;
-use v6x_rust_led::logger_switch::{self, Action, BeepSequence, ButtonEvent, Debouncer};
+use v6x_rust_ap::logger::Status;
+use v6x_rust_ap::logger_switch::{self, Action, BeepSequence, ButtonEvent, Debouncer};
 
 const BUZZER_HZ: u32 = 4_000;
 

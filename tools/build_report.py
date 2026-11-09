@@ -145,7 +145,7 @@ def main():
         ) if enabled
     ]
     release = args.release.resolve()
-    paths = {suffix: release / f"v6x-rust-led{suffix}" for suffix in ("", ".bin", ".px4", ".map")}
+    paths = {suffix: release / f"v6x-rust-ap{suffix}" for suffix in ("", ".bin", ".px4", ".map")}
     try:
         identity, sources = source_identity(ROOT, features)
         elf = Elf32(paths[""].read_bytes())
@@ -178,7 +178,7 @@ def main():
             },
             "hardware_validation": "pending; software report is not HIL acceptance",
         }
-        output = release / "v6x-rust-led.build.json"
+        output = release / "v6x-rust-ap.build.json"
         output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
         manifest = release / "SHA256SUMS"
         manifest.write_text("".join(f"{sha256(p)}  {p.name}\n" for p in [*paths.values(), output]))

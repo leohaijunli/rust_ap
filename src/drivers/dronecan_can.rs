@@ -25,18 +25,18 @@ use embassy_sync::channel::Channel;
 use embassy_sync::watch::Watch;
 use embassy_time::{with_timeout, Duration, Instant, Timer};
 use embedded_can::Id as CanId;
-use v6x_rust_led::dronecan::dsdl::{
+use v6x_rust_ap::dronecan::dsdl::{
     self, GetSetRequest, GetSetResponse, NodeInfoResponse, NodeStatus, NumericValue,
     SoftwareVersion, Value,
 };
-use v6x_rust_led::dronecan::gnss::{self as gnss_dsdl, GnssFix2};
-use v6x_rust_led::dronecan::node::{EscMapping, EscMonitor, NodeDirectory, ESC_COUNT};
-use v6x_rust_led::dronecan::transport::{
+use v6x_rust_ap::dronecan::gnss::{self as gnss_dsdl, GnssFix2};
+use v6x_rust_ap::dronecan::node::{EscMapping, EscMonitor, NodeDirectory, ESC_COUNT};
+use v6x_rust_ap::dronecan::transport::{
     Frame, Metadata, Payload, RxStats, RxTransport, TransferKind, TxFrames,
 };
-use v6x_rust_led::gps::{process_fix2, AuxiliaryCache};
-use v6x_rust_led::parameters::{Id, Kind};
-use v6x_rust_led::px4_messages::SensorGps;
+use v6x_rust_ap::gps::{process_fix2, AuxiliaryCache};
+use v6x_rust_ap::parameters::{Id, Kind};
+use v6x_rust_ap::px4_messages::SensorGps;
 
 use crate::parameter_manager::ParameterManager;
 
@@ -220,7 +220,7 @@ impl State {
                 output,
                 "GNSS node_id_from_device={} fresh={} age_us={} fix_type={} sats_used={} lat_1e7={} lon_1e7={} alt_msl_mm={} vel_m_s={} eph={} epv={} time_utc={}",
                 gps.device_id,
-                (now_us.saturating_sub(gps.timestamp)) <= v6x_rust_led::gps::GPS_FRESH_US,
+                (now_us.saturating_sub(gps.timestamp)) <= v6x_rust_ap::gps::GPS_FRESH_US,
                 now_us.saturating_sub(gps.timestamp),
                 gps.fix_type,
                 gps.satellites_used,
@@ -542,7 +542,7 @@ fn handle_transfer(
                     status,
                     matches!(
                         observation,
-                        v6x_rust_led::dronecan::node::EscObservation::Trusted
+                        v6x_rust_ap::dronecan::node::EscObservation::Trusted
                     ),
                     false,
                 );
@@ -1076,10 +1076,10 @@ fn publish_gnss(fix: GnssFix2, source_node_id: u8, now_us: u64) {
     crate::sd_logger::record_sensor_gps(snapshot);
     GNSS.sender().send(snapshot);
     if let Some(observation) =
-        v6x_rust_led::estimator::gnss::GnssObservation::from_sensor_gps(&snapshot)
+        v6x_rust_ap::estimator::gnss::GnssObservation::from_sensor_gps(&snapshot)
     {
         crate::estimator::submit_measurement(
-            v6x_rust_led::estimator::Measurement::Gnss(observation),
+            v6x_rust_ap::estimator::Measurement::Gnss(observation),
             snapshot.device_id,
         );
     }

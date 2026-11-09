@@ -9,7 +9,7 @@ use cortex_m::peripheral::DWT;
 use embassy_executor::{InterruptExecutor, SendSpawner};
 use embassy_stm32::{interrupt, peripherals, Peri};
 use embassy_time::{Instant, Timer};
-use v6x_rust_led::metrics::{CpuWindow, PeriodStats, PERIOD_US};
+use v6x_rust_ap::metrics::{CpuWindow, PeriodStats, PERIOD_US};
 
 static FAST_EXECUTOR: InterruptExecutor = InterruptExecutor::new();
 static IDLE_US: AtomicU32 = AtomicU32::new(0);

@@ -13,8 +13,8 @@ use embassy_stm32::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Watch};
 use embassy_time::{Duration, Instant, Timer};
-use v6x_rust_led::bmp388::{self, register, Calibration, Sample};
-use v6x_rust_led::mavlink_vehicle::{self, SensorState};
+use v6x_rust_ap::bmp388::{self, register, Calibration, Sample};
+use v6x_rust_ap::mavlink_vehicle::{self, SensorState};
 
 const TRANSACTION_US: u64 = 10_000;
 const RECOVERY_MS: u64 = 500;
@@ -186,8 +186,8 @@ pub async fn run(i2c: &'static RefCell<I2c<'static, Blocking, Master>>) -> ! {
                 });
                 crate::sd_logger::record_baro(sample);
                 crate::estimator::submit_measurement(
-                    v6x_rust_led::estimator::Measurement::Baro(
-                        v6x_rust_led::estimator::imu_ekf::baro_mag::BaroAltitude {
+                    v6x_rust_ap::estimator::Measurement::Baro(
+                        v6x_rust_ap::estimator::imu_ekf::baro_mag::BaroAltitude {
                             timestamp: sample.timestamp_sample,
                             altitude_m: sample.pressure_altitude_m(),
                         },

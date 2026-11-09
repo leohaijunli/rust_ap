@@ -58,17 +58,17 @@ build_firmware() {
             exit 2
             ;;
     esac
-    cargo build --release --locked --bin v6x-rust-led "${features[@]}"
+    cargo build --release --locked --bin v6x-rust-ap "${features[@]}"
     local host llvm
     host="$(rustc -vV | sed -n 's/^host: //p')"
     llvm="$(rustc --print sysroot)/lib/rustlib/$host/bin"
     # Direct LLVM tools avoid cargo-binutils' temporary-file allocation.
-    "$llvm/llvm-objcopy" -O binary "$release/v6x-rust-led" "$release/v6x-rust-led.bin"
+    "$llvm/llvm-objcopy" -O binary "$release/v6x-rust-ap" "$release/v6x-rust-ap.bin"
     "$python" tools/package.py
     "$python" tools/build_report.py --release "$release" "${report_flags[@]}"
-    "$python" tools/check_stack_frames.py --elf "$release/v6x-rust-led"
-    "$llvm/llvm-size" -A "$release/v6x-rust-led" > "$release/sections.txt"
-    "$llvm/llvm-objdump" --disassemble "$release/v6x-rust-led" > "$release/disassembly.txt"
+    "$python" tools/check_stack_frames.py --elf "$release/v6x-rust-ap"
+    "$llvm/llvm-size" -A "$release/v6x-rust-ap" > "$release/sections.txt"
+    "$llvm/llvm-objdump" --disassemble "$release/v6x-rust-ap" > "$release/disassembly.txt"
 }
 
 upload_firmware() {
@@ -102,7 +102,7 @@ PY
     # Official PX4 applications remain on the uploader's MAVLink reboot path.
     # The uploader rescans all configured identities, uploads, verifies, and reboots.
     exec "$python" -u "$uploader" --port "$ports" --baud-flightstack 115200 \
-        --verbose --noninteractive "$release/v6x-rust-led.px4"
+        --verbose --noninteractive "$release/v6x-rust-ap.px4"
 }
 
 case "$action" in

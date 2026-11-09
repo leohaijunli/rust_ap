@@ -20,6 +20,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(recovered[len(image):], b"\xff" * (64 - len(image)))
         self.assertEqual(package["image_size"], len(recovered))
         self.assertEqual(package["board_id"], 53)
+        self.assertEqual(package["git_identity"], "v6x-rust-ap")
 
     def test_rejects_direct_boot_or_non_thumb_reset_vectors(self):
         for entry in [0x08000011, APP_START + 16, APP_START + 0x10001]:

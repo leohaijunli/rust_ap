@@ -2,10 +2,10 @@ use std::env;
 use std::fs;
 use std::mem::size_of;
 
-use v6x_rust_led::icm42688::Sample;
-use v6x_rust_led::ina219::Measurement;
-use v6x_rust_led::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro, PX4_REVISION};
-use v6x_rust_led::ulog::{self, DataEncoder, TopicId};
+use v6x_rust_ap::icm42688::Sample;
+use v6x_rust_ap::ina219::Measurement;
+use v6x_rust_ap::px4_messages::{ActuatorArmed, SensorAccel, SensorGyro, PX4_REVISION};
+use v6x_rust_ap::ulog::{self, DataEncoder, TopicId};
 
 fn main() {
     let path = env::args()

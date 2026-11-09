@@ -1,6 +1,6 @@
 //! Authoritative host export for compile-time QGC metadata generation.
 
-use v6x_rust_led::{
+use v6x_rust_ap::{
     estimator::{ekf2_parameter, runtime_params::Params},
     parameters::{Access, Definition, Group, Id, Kind, Snapshot, REGISTRY},
 };
@@ -67,7 +67,7 @@ fn main() {
     if std::env::args().any(|arg| arg == "--sizes") {
         println!(
             "Runtime host bytes={}",
-            core::mem::size_of::<v6x_rust_led::estimator::product::ProductRuntime>()
+            core::mem::size_of::<v6x_rust_ap::estimator::product::ProductRuntime>()
         );
         return;
     }

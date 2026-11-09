@@ -6,8 +6,8 @@ use crate::eth_led::Lan8742;
 use crate::fram;
 use crate::parameter_manager::ParameterManager;
 use embassy_stm32::gpio::Output;
-use v6x_rust_led::parameter_store::{self, OutputState};
-use v6x_rust_led::parameters::{schema_tag, Group, REGISTRY};
+use v6x_rust_ap::parameter_store::{self, OutputState};
+use v6x_rust_ap::parameters::{schema_tag, Group, REGISTRY};
 
 pub(crate) fn status(phy: &RefCell<Lan8742<'_>>, eth_power: &Output<'_>) -> Response {
     let mut response = Response::new();
@@ -67,7 +67,7 @@ pub(crate) fn report(command: Command, dronecan: &dronecan_can::State) -> Respon
         Command::LoggerConfig(sync_period_ms) => logger_result(
             &mut response,
             "config",
-            crate::sd_logger::apply_config(v6x_rust_led::logger::Config { sync_period_ms }),
+            crate::sd_logger::apply_config(v6x_rust_ap::logger::Config { sync_period_ms }),
         ),
         Command::Time => crate::rtc::write_diagnostics(&mut response, "RTC"),
         Command::TimeSet(seconds) => {
@@ -126,12 +126,12 @@ pub(crate) async fn mavlink_report(
 }
 
 pub(crate) fn estimator_report(command: Command, parameters: &ParameterManager<'_>) -> Response {
-    use v6x_rust_led::parameters::Id;
+    use v6x_rust_ap::parameters::Id;
     let mut response = Response::new();
     let starting = matches!(command, Command::EstimatorStart);
     let result = (|| {
         if starting && (crate::OUTPUT_STATE.armed || crate::OUTPUT_STATE.outputs_enabled) {
-            return Err(v6x_rust_led::parameters::Error::Configuration);
+            return Err(v6x_rust_ap::parameters::Error::Configuration);
         }
         let mut changed = false;
         if starting {
@@ -161,7 +161,7 @@ pub(crate) fn estimator_report(command: Command, parameters: &ParameterManager<'
 fn logger_result(
     response: &mut Response,
     operation: &str,
-    result: Result<(), v6x_rust_led::logger::ControlError>,
+    result: Result<(), v6x_rust_ap::logger::ControlError>,
 ) -> fmt::Result {
     writeln!(
         response,
@@ -375,18 +375,18 @@ impl CommandLine {
                             line.strip_prefix(b"!time set ").map(|value| {
                                 core::str::from_utf8(value)
                                     .ok()
-                                    .and_then(v6x_rust_led::wall_clock::parse_set_value)
+                                    .and_then(v6x_rust_ap::wall_clock::parse_set_value)
                                     .map_or(Command::TimeSetInvalid, Command::TimeSet)
                             })
                         })
-                        .or_else(|| match v6x_rust_led::logger::parse_console(line)? {
-                            v6x_rust_led::logger::ConsoleCommand::Status => Some(Command::Logger),
-                            v6x_rust_led::logger::ConsoleCommand::Start => {
+                        .or_else(|| match v6x_rust_ap::logger::parse_console(line)? {
+                            v6x_rust_ap::logger::ConsoleCommand::Status => Some(Command::Logger),
+                            v6x_rust_ap::logger::ConsoleCommand::Start => {
                                 Some(Command::LoggerStart)
                             }
-                            v6x_rust_led::logger::ConsoleCommand::Stop => Some(Command::LoggerStop),
-                            v6x_rust_led::logger::ConsoleCommand::Sync => Some(Command::LoggerSync),
-                            v6x_rust_led::logger::ConsoleCommand::Config(config) => {
+                            v6x_rust_ap::logger::ConsoleCommand::Stop => Some(Command::LoggerStop),
+                            v6x_rust_ap::logger::ConsoleCommand::Sync => Some(Command::LoggerSync),
+                            v6x_rust_ap::logger::ConsoleCommand::Config(config) => {
                                 Some(Command::LoggerConfig(config.sync_period_ms))
                             }
                         }),

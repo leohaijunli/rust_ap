@@ -1,5 +1,5 @@
 [package]
-name = "v6x-rust-led"
+name = "v6x-rust-ap"
 version = "0.2.0"
 edition = "2021"
 description = "Rust/Embassy platform bring-up and timing diagnostics for the FMUv6X STM32H753"
@@ -43,7 +43,7 @@ embedded-fatfs = { git = "https://github.com/MabezDev/embedded-fatfs", rev = "51
 block-device-driver = { git = "https://github.com/MabezDev/embedded-fatfs", rev = "518528cc111fcf65c48abbdeb80735a38eada112" }
 
 [[bin]]
-name = "v6x-rust-led"
+name = "v6x-rust-ap"
 test = false
 bench = false
 

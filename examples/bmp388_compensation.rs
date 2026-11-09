@@ -1,7 +1,7 @@
 //! Host-only compensation parity probe; input rows are trim hex, P24, T24.
 
 use std::io::{self, BufRead};
-use v6x_rust_led::bmp388::{self, Calibration};
+use v6x_rust_ap::bmp388::{self, Calibration};
 
 fn main() {
     for line in io::stdin().lock().lines() {

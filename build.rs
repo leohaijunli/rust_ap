@@ -25,8 +25,8 @@ fn main() {
             .join(env::var("PROFILE").expect("PROFILE"));
         fs::create_dir_all(&release_dir).expect("create artifact directory");
         println!(
-            "cargo:rustc-link-arg-bin=v6x-rust-led=-Map={}",
-            release_dir.join("v6x-rust-led.map").display()
+            "cargo:rustc-link-arg-bin=v6x-rust-ap=-Map={}",
+            release_dir.join("v6x-rust-ap.map").display()
         );
     }
 

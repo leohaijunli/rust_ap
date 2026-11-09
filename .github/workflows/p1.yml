@@ -114,11 +114,11 @@ jobs:
         with:
           name: p1-firmware-and-reports
           path: |
-            target/thumbv7em-none-eabihf/release/v6x-rust-led*
+            target/thumbv7em-none-eabihf/release/v6x-rust-ap*
             target/thumbv7em-none-eabihf/release/SHA256SUMS
             target/thumbv7em-none-eabihf/release/sections.txt
             target/thumbv7em-none-eabihf/release/disassembly.txt
-            target/p1-fault-injection/thumbv7em-none-eabihf/release/v6x-rust-led*
+            target/p1-fault-injection/thumbv7em-none-eabihf/release/v6x-rust-ap*
             target/p1-fault-injection/thumbv7em-none-eabihf/release/SHA256SUMS
             target/p1-fault-injection/thumbv7em-none-eabihf/release/sections.txt
             target/ekf2-host/rust-imu/report.json

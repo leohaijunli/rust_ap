@@ -19,11 +19,11 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::watch::Watch;
 use embassy_time::{with_timeout, Duration, Instant, Timer};
-use v6x_rust_led::icm42688::{
+use v6x_rust_ap::icm42688::{
     self, bits, register, Bank, Config, FifoBatch, Sample, FIFO_BYTES, FIFO_PACKET_BYTES,
     MAX_FIFO_SAMPLES, SETTINGS, WHO_AM_I_VALUE,
 };
-use v6x_rust_led::mavlink_vehicle::{self, SensorState};
+use v6x_rust_ap::mavlink_vehicle::{self, SensorState};
 
 const SPI_HZ: Hertz = Hertz(24_000_000);
 const TRANSFER_TIMEOUT: Duration = Duration::from_millis(2);
@@ -187,7 +187,7 @@ pub async fn task(
     power.set_high();
     Timer::after_millis(10).await;
 
-    let config = v6x_rust_led::config::Config::DEFAULT.imu();
+    let config = v6x_rust_ap::config::Config::DEFAULT.imu();
     let mut sequence = 0u32;
     loop {
         // The amount lost during a reset is unknown. Reserve a sequence value
@@ -415,7 +415,7 @@ impl<'d> Icm42688<'d> {
 
     async fn check_setting(
         &mut self,
-        setting: v6x_rust_led::icm42688::RegisterSetting,
+        setting: v6x_rust_ap::icm42688::RegisterSetting,
         config: Config,
     ) -> Result<(), Error> {
         self.select_bank(setting.bank, false).await?;

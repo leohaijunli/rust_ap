@@ -8,7 +8,7 @@ use embassy_stm32::mode::Async;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::watch::Watch;
 use embassy_time::{Duration, Instant, Timer};
-use v6x_rust_led::ina219::{self, register, Measurement};
+use v6x_rust_ap::ina219::{self, register, Measurement};
 
 const CONVERSION_TIMEOUT: Duration = Duration::from_millis(10);
 const SAMPLE_PERIOD: Duration = Duration::from_micros(ina219::SAMPLE_PERIOD_US);

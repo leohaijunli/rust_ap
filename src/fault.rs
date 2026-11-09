@@ -8,8 +8,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use cortex_m::interrupt::{free, Mutex};
 use cortex_m::peripheral::SCB;
 use embassy_stm32::pac::{PWR, RCC, RTC};
-use v6x_rust_led::build_info::SOURCE_ID;
-use v6x_rust_led::fault_record::{self, FaultRecord, WORDS};
+use v6x_rust_ap::build_info::SOURCE_ID;
+use v6x_rust_ap::fault_record::{self, FaultRecord, WORDS};
 
 const FIRST_BKP: usize = 16;
 static LAST: Mutex<Cell<Option<FaultRecord>>> = Mutex::new(Cell::new(None));

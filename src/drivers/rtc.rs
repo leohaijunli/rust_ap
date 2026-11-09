@@ -21,7 +21,7 @@ use embassy_stm32::pac::rcc::vals::{Lsedrv, Rtcsel};
 use embassy_stm32::pac::rtc::vals::Ampm;
 use embassy_stm32::pac::{PWR, RCC, RTC};
 use embassy_time::{Duration, Instant};
-use v6x_rust_led::wall_clock::{Utc, MAX_RTC_UNIX, MIN_PLAUSIBLE_UNIX};
+use v6x_rust_ap::wall_clock::{Utc, MAX_RTC_UNIX, MIN_PLAUSIBLE_UNIX};
 
 const LSE_HZ: u32 = 32_768;
 const LSI_HZ: u32 = 32_000;

@@ -12,8 +12,8 @@ use embassy_stm32::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, watch::Watch};
 use embassy_time::{Duration, Instant, Timer};
-use v6x_rust_led::bmm150::{self, register, Sample, Trim};
-use v6x_rust_led::mavlink_vehicle::{self, SensorState};
+use v6x_rust_ap::bmm150::{self, register, Sample, Trim};
+use v6x_rust_ap::mavlink_vehicle::{self, SensorState};
 
 const RECOVERY_MS: u64 = 500;
 static ERRORS: AtomicU32 = AtomicU32::new(0);
@@ -212,7 +212,7 @@ pub async fn run(i2c: &'static RefCell<I2c<'static, Blocking, Master>>) -> ! {
                     sample: Some(sample),
                     error: None,
                 });
-                crate::magnetometer::publish(v6x_rust_led::px4_messages::SensorMag::from_sample(
+                crate::magnetometer::publish(v6x_rust_ap::px4_messages::SensorMag::from_sample(
                     sample,
                     Instant::now().as_micros(),
                 ));

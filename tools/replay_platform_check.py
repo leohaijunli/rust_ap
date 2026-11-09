@@ -98,16 +98,16 @@ def main():
         import unicorn
     except ImportError:
         parser.error('Install optional host dependency unicorn==2.1.4; see the evidence document')
-    report = json.loads((args.release / 'v6x-rust-led.build.json').read_text())
-    for name in ('v6x-rust-led', 'v6x-rust-led.bin'):
+    report = json.loads((args.release / 'v6x-rust-ap.build.json').read_text())
+    for name in ('v6x-rust-ap', 'v6x-rust-ap.bin'):
         if sha256(args.release / name) != report['artifacts'][name]['sha256']:
             raise ValueError(f'Artifact hash mismatch: {name}')
-    elf = Elf32((args.release / 'v6x-rust-led').read_bytes())
+    elf = Elf32((args.release / 'v6x-rust-ap').read_bytes())
     matches = [s['value'] for name, s in elf.symbols.items()
                if 'platform' in name and 'clock_registers_ok' in name and s['size']]
     if len(matches) != 1:
         raise ValueError(f'Expected one compiled clock predicate, found {len(matches)}')
-    image = (args.release / 'v6x-rust-led.bin').read_bytes()
+    image = (args.release / 'v6x-rust-ap.bin').read_bytes()
     dump = decode_text(args.dump.read_text())
     if not dump['complete'] or not dump['fault']['valid']:
         raise ValueError('Expected a complete physical Dump with a valid fault record')

@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**最新授权回装为 `d21b326c3a753d15`（基于 `186709b`，含 at_rest/ZVU/ZGU 与 ALTITUDE）：原 bootloader 上传/CRC、USB 高度和同次 SD 73 条有效高度通过；此前 68.6 s 静止/ZGU 日志已核对（正向保守机制）。主 EKF Running/Filter、无 Numerics/漏期，logger 已停止，未设参/保存、删除日志或启用输出。at_rest 判定已按工程师确认改为 PX4 反向计时（host 对照与 PX4 参考逐项一致，source=`197fb10f367d6ae2` 未回装）。水平/全球导航与控制护栏保持；工程师仍只有飞控本体，外设门暂停，M1、完整 E7 与非零输出未放行。**
+更新：2026-11-09。**最近已记录授权回装为 `d21b326c3a753d15`：高度/静止数据链通过（正向保守机制），logger 已停止，未设参/保存、删除日志或启用输出。PX4 反向计时的 host 对照已通过，原软件包 `197fb10f367d6ae2` 未回装；本轮保留该实现并将 crate 改为 `v6x-rust-ap`，新普通包 `136329bb61f63100` 已构建、未烧录。工程师已确认固定基站＋CAN Rover，独立步骤已成文；水平/全球导航与控制护栏保持，RTK/外接磁实测、M1、完整 E7 与非零输出未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 ## 执行规则
@@ -8,7 +8,7 @@
 - 只做[必要测试](plan.md#4-仅保留必要测试)，复用已有通过结果；相关实现变化或新失败才补测。
 - `[x]` 有证据；阶段通过后放行依赖阶段。工程师负责实体操作，agent 负责实现和记录。
 - 保持纯 Rust/Embassy、原 PX4 bootloader、`0x08020000` 入口和 QGC 恢复能力。
-- 当前无外接设备，H-02/03/10 等硬件项暂停；除工程师明确授权的单次回装外以软件为主，不要求接线、不自主追加刷写。
+- 工程师已确认基站/CAN Rover 连接方案；H-10 的固件/节点/数据与 RTK 实测仍待验，H-02/03 等未验项保持。除明确授权外，不自主设参、刷写、采集或执行实体操作。
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
@@ -39,6 +39,12 @@
 - [x] 普通包 `d21b326c3a753d15` 构建/布局/入口帧与原 bootloader 上传/CRC 25 s 通过；RAM 374464 B，入口帧 11528 B、0 超限。USB 145 条/15.08 s ALTITUDE 前四字段全有限；同次 SD `02.ulg` 73 条、`z_valid/v_z_valid` 全有效、逐字段关系/独立解析通过，无损坏/dropout。
 - [x] 收尾 Filter/Running、fault/numerics=None、step 峰值 1488 µs/2000 µs、漏期/发布 missed=0、积分 0 ppm，logger 已停止；未设参/保存、删除日志或启用输出。[板载证据](docs/acceptance/ekf2/20261109-altitude-output.md#板载验证)。
 - [ ] TELEM1、独立高度精度与实物 aid 失效/恢复、完整 E7/M1 仍按原阶段门待验，不由高度数据链放行。
+
+## H-RTK 步骤与 crate 改名 — 2026-11-09
+
+- [x] 固定基站＋QGC＋单 CAN Rover 的[独立步骤](docs/rtk-can-validation.md)已细化：节点/普通定位、基站 Survey-In、RTCM 软件、地面站出站证据、Fixed/日志与中断恢复；本轮只成文，未执行或改写阶段依赖。
+- [x] Package/bin 改为 `v6x-rust-ap`，Rust 导入与 Windows/Linux/CI 产物路径同步；229 项 host、相关 Clippy/工具与普通包通过，source=`136329bb61f63100`，未回装，旧记录与 USB 身份保持。[改名记录](docs/acceptance/p1/20261109-crate-rename.md)。
+- [ ] 下一步先确认基站型号/固件、Rover CAN1 节点与真实 Fix2；RTCM 转发与专用诊断、必要的节点分配、RM3100 接收待另行授权实施，正式 RTK 验收仍依赖 M1/P2/P4b-g/H-10。
 
 ## 板载地磁 — 2026-11-07
 

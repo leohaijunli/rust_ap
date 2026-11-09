@@ -39,7 +39,7 @@ def make_package(image: bytes) -> dict:
         "board_id": BOARD_ID,
         "board_revision": 0,
         "description": "Rust/Embassy FMUv6X platform and timing diagnostics",
-        "git_identity": "v6x-rust-led",
+        "git_identity": "v6x-rust-ap",
         "image_size": len(payload),
         "image_maxsize": APP_SIZE,
         "image": base64.b64encode(zlib.compress(payload, 9)).decode("ascii"),
@@ -51,8 +51,8 @@ def main() -> None:
     target = Path(os.environ.get("CARGO_TARGET_DIR", str(root / "target")))
     release = target / "thumbv7em-none-eabihf" / "release"
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=release / "v6x-rust-led.bin")
-    parser.add_argument("--output", type=Path, default=release / "v6x-rust-led.px4")
+    parser.add_argument("--binary", type=Path, default=release / "v6x-rust-ap.bin")
+    parser.add_argument("--output", type=Path, default=release / "v6x-rust-ap.px4")
     args = parser.parse_args()
 
     try:

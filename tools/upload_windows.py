@@ -82,9 +82,9 @@ def main():
     args = parser.parse_args()
     try:
         release = args.release.resolve()
-        package = release / "v6x-rust-led.px4"
+        package = release / "v6x-rust-ap.px4"
         identity, _ = source_identity(ROOT)
-        validate(Elf32((release / "v6x-rust-led").read_bytes()), (release / "v6x-rust-led.bin").read_bytes(),
+        validate(Elf32((release / "v6x-rust-ap").read_bytes()), (release / "v6x-rust-ap.bin").read_bytes(),
                  json.loads(package.read_text(encoding="utf-8")), identity)
         uploader = uploader_path()
         port, kind, _ = scan_target_port()

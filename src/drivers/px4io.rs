@@ -9,7 +9,7 @@ use embassy_stm32::usart::{Error as UartError, Uart, UartRx, UartTx};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::watch::Watch;
 use embassy_time::{with_timeout, Duration, Instant, Timer};
-use v6x_rust_led::px4io::{
+use v6x_rust_ap::px4io::{
     self, flags, page, setup, Configuration, PacketError, Request, SafeWrite, Status,
 };
 

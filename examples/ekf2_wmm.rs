@@ -1,6 +1,6 @@
 //! Host probe of the exact fixed-table WMM Rust lookup.
 use std::{env, error::Error};
-use v6x_rust_led::estimator::wmm;
+use v6x_rust_ap::estimator::wmm;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();

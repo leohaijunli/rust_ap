@@ -6,7 +6,7 @@ use embassy_stm32::{
     usart::{Uart, UartRx, UartTx},
 };
 use embassy_time::{with_timeout, Duration};
-use v6x_rust_led::logger::Link;
+use v6x_rust_ap::logger::Link;
 
 use crate::router::{self, Packet};
 

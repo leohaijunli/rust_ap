@@ -4,7 +4,7 @@ use std::{
     env, fs,
     io::{self, BufRead},
 };
-use v6x_rust_led::{
+use v6x_rust_ap::{
     bmm150::{self, Sample, Trim},
     px4_messages::{SensorMag, VehicleMagnetometer, PX4_REVISION},
     ulog::{self, DataEncoder, TopicId},

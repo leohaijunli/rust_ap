@@ -5,10 +5,10 @@ use core::cell::{Cell, RefCell};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{Duration, Instant, Timer};
-use v6x_rust_led::parameter_store::{
+use v6x_rust_ap::parameter_store::{
     self as store, Active, Commit, CommitError, DecodeError, OutputState, Slot,
 };
-use v6x_rust_led::parameters::{self, Id, Parameters};
+use v6x_rust_ap::parameters::{self, Id, Parameters};
 
 use crate::fram::{self, Fram};
 
@@ -63,7 +63,7 @@ pub struct ParameterManager<'d> {
 
 impl<'d> ParameterManager<'d> {
     pub fn new(fram: Fram<'d>) -> Self {
-        v6x_rust_led::log_config::refresh_all();
+        v6x_rust_ap::log_config::refresh_all();
         Self {
             values: RefCell::new(Parameters::default()),
             fram: Mutex::new(fram),
@@ -104,7 +104,7 @@ impl<'d> ParameterManager<'d> {
                 return Err(error);
             }
         }
-        v6x_rust_led::log_config::apply(id, value);
+        v6x_rust_ap::log_config::apply(id, value);
         crate::sd_logger::record_parameter(
             Instant::now().as_micros(),
             id as u16,
@@ -123,7 +123,7 @@ impl<'d> ParameterManager<'d> {
     fn apply_log_config(&self) {
         for definition in parameters::REGISTRY {
             if definition.group == parameters::Group::SdLog {
-                v6x_rust_led::log_config::apply(definition.id, self.get(definition.id));
+                v6x_rust_ap::log_config::apply(definition.id, self.get(definition.id));
             }
         }
     }

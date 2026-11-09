@@ -12,7 +12,7 @@ use embassy_stm32::{interrupt, peripherals, Peri};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, watch::Watch};
 use embassy_time::{with_timeout, Duration, Instant, Timer};
 use static_cell::ConstStaticCell;
-use v6x_rust_led::{
+use v6x_rust_ap::{
     config::Algorithm,
     estimator::{
         config_stage,
@@ -155,12 +155,12 @@ pub fn active_epoch() -> u32 {
     ACTIVE_EPOCH.load(Ordering::Acquire)
 }
 
-pub fn submit_magnetometer(selected: v6x_rust_led::magnetometer::Selected) -> bool {
+pub fn submit_magnetometer(selected: v6x_rust_ap::magnetometer::Selected) -> bool {
     if active_epoch() == 0 {
         return false;
     }
     let event = AidEvent {
-        measurement: Measurement::Mag(v6x_rust_led::estimator::MagSample {
+        measurement: Measurement::Mag(v6x_rust_ap::estimator::MagSample {
             timestamp: selected.data.timestamp_sample,
             field_gauss: selected.data.magnetometer_ga,
             reset: selected.reset,
@@ -176,7 +176,7 @@ pub fn submit_magnetometer(selected: v6x_rust_led::magnetometer::Selected) -> bo
     true
 }
 
-pub use v6x_rust_led::estimator::report::Report;
+pub use v6x_rust_ap::estimator::report::Report;
 
 pub fn report() -> Report {
     let epoch = ACTIVE_EPOCH.load(Ordering::Acquire);
@@ -527,8 +527,8 @@ fn publish(
     resets: &mut PublicationReset,
 ) {
     let mut snapshot = product::snapshot(main, now, resets);
-    snapshot.status.accel_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
-    snapshot.status.gyro_device_id = v6x_rust_led::px4_messages::ICM42688_DEVICE_ID;
+    snapshot.status.accel_device_id = v6x_rust_ap::px4_messages::ICM42688_DEVICE_ID;
+    snapshot.status.gyro_device_id = v6x_rust_ap::px4_messages::ICM42688_DEVICE_ID;
     snapshot.status.baro_device_id = devices[0];
     snapshot.status.mag_device_id = devices[1];
     for (aid_index, aid) in snapshot.aids.iter_mut().enumerate() {

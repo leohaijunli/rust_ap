@@ -18,6 +18,7 @@
 - **E 系列拆门（工程师确认）**：E1-H～E5-H 已通过（E5 CI 正确性由工程师确认）；E6-H 独立无 GPS 与标准输出/编码/独立解析本地通过，见[记录](docs/acceptance/ekf2/20261104-e6-host.md)，新增 CI 待执行。随后经工程师授权回装普通合并包，但未接入/启用板载 EKF；实物/E7 仍依赖 M1、P6a、P4b-g、P2、PL-b，不虚构硬件资格。
 - **E7 当前范围（2026-11-06 工程师确认）**：保留一个主 EKF2/Mahony 产品运行时，删除独立无 GNSS 实例及 component 197 输出。IMU 按固定 PX4 的 FIFO 均值与 MCU 批次时间积分，单调时钟切换 TIM8，FIFO 时间戳使用 `16 × 32/30` 换算；[实现与时基调查](docs/imu-timebase.md)。`EST_EN` 默认关闭，真实 IMU/baro/GNSS 输入、标准输出/日志和回退已接入；新版本实物周期/栈及真实日志待验，缺失 mag/range 不填零，导航保持未资格化。
 - **2026-11-09 追加授权**：工程师授权含 `df8dcb8/186709b` 的回装及静止日志验证，随后新增共享 PX4 `ALTITUDE` 映射、MAVLink 流和 ULog 高度 topic。高度有效性按核心 aid 与运行时选择/新鲜度发布；水平/全球导航与控制资格护栏保持。必要验收为相关 host 正常/失效门、普通构建及一次授权短时 USB＋SD 核对，不扩展外设门或非零输出。
+- **2026-11-09 接入方案与命名**：工程师确认固定基站接地面站、H-RTK ZED-F9P CAN Rover 接飞控，要求将 [RTK/CAN/地面站步骤](docs/rtk-can-validation.md)写入独立文档，并将 crate/bin 改为 `v6x-rust-ap`。本轮只做文档与改名，不实施 RTK 功能或自主刷写/验证；原阶段依赖与输出门保持。
 
 ## 2. 固定工程边界
 
@@ -188,7 +189,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 1. **范围**：M1 仍用 Mahony 建立可运行姿态基线。新增 `P6a-e / EKF-01～03` 作为 M1 后续阶段，移植 PX4 v1.17.0 中 EKF 的 state、predict、covariance、aiding、innovation gate 与 health/reset 逻辑；不移植 uORB 和模块调度层。
 2. **Rust 接口**：在 `src/core/estimator/` 定义固件唯一依赖的 `NavFilter`（`new/push_imu/push_measurement/step/output/health`）、内部 `AidSource`，以及 `ImuDelta` / `Measurement` / `NavOutput` DTO。IMU 经 2 批有界 FIFO 队列与共享前端生成 `ImuDelta`；Runtime 只接积分与量测事件，输出通过 `Watch` 给控制、ULog 和 MAVLink。
 3. **首个融合子集**：E1-H 先做无外部 aid 的 IMU 核心，保留固定 PX4 的降采样、延迟缓冲、预测、约束及内部伪观测；yaw 为相对值，位置/高度不可视为有效导航。E2-H～E6-H 可用明确标注的合成观测开发，不冒充实物；真实传感器接入与硬件资格仍按原依赖验收。
-4. **配置/切换**：`v6x_rust_led::config::Algorithm` 后续扩展 `Ekf2`；参数映射必须有范围校验和显式 reset/apply。EKF 无效、NaN、协方差异常、输入陈旧或 deadline miss 时撤销有效性并回退到已验证 Mahony，不无缝伪造连续状态。
+4. **配置/切换**：`v6x_rust_ap::config::Algorithm` 后续扩展 `Ekf2`；参数映射必须有范围校验和显式 reset/apply。EKF 无效、NaN、协方差异常、输入陈旧或 deadline miss 时撤销有效性并回退到已验证 Mahony，不无缝伪造连续状态。
 5. **数值验证**：用同一固定输入分别运行 PX4 v1.17.0 参考核心和 Rust 版本，按状态、创新、方差及拒绝/复位事件对拍；容差在测试前固定。未通过 replay、边界失败路径和实际 GNSS HIL 前，不称为“等价 EKF2”。
 6. **许可/来源**：逐文件记录 PX4/ECL 原路径、commit、BSD-3-Clause 版权与 Rust 修改点；估计数学输入保留独立 DTO，标准 PX4 消息用于数据边界，不链接 PX4 C++。
 7. **E0 / E1-H（2026-11-04）**：E0 CI `7d0c486` 通过；E1-H Rust IMU 延迟核心、生成协方差、参数快照与失效锁定已实现。两组 10 s 各 1001 更新的完整状态/协方差对拍通过，本地 f32 位差为 0，黄金数据已入库；仅此范围，不称完整 EKF2 或板载资格通过。下一步 E2-H。[结果与命令](docs/acceptance/ekf2/20261104-e1-host.md)。
@@ -236,7 +237,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 | 阶段 | 目标与必要验收 | 依赖 |
 | --- | --- | --- |
 | PL-b / LOG-B01～02 | 列表/下载/取消与删除限制；软件和协议 HIL 已通过，QGC GUI/异常链路待验 | M1、PL-a、P2 |
-| P4b-r / RTK-01～02 | GPS_RTCM_DATA→RTCMStream；关键重组用例、实际 RTK 与改正中断/恢复 | M1、P2、P4b-g、H-10 |
+| P4b-r / RTK-01～02 | GPS_RTCM_DATA→RTCMStream；关键重组用例、实际 RTK 与改正中断/恢复；[独立操作步骤](docs/rtk-can-validation.md) | M1、P2、P4b-g、H-10 |
 | P6a-e / EKF-01～03 | E1-H～E6-H 可依次完成 host 核心与固定 PX4 对拍；实物资格、板载融合与回退不提前放行 | host：前一软件门；板载：M1、P6a、P4b-g、P2、PL-b |
 | P5a / OUT-A01～02 | 单一仲裁、限时/限幅授权、看门狗与故障锁定；先验零输出门控 | M1、P4b-a、PL-a、H-06 |
 | P4b-b / CAN-B01～03 | 逐电机映射/旋向、命令超时与断线停转；恢复不自动解锁 | P5a、P4b-a、PL-a |
