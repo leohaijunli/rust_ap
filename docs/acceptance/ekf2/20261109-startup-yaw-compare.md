@@ -84,3 +84,10 @@
 
 - 仍是合成输入对照：真实 IMU 噪声、振动、磁干扰与安装误差未覆盖，不能当作绝对航向精度、磁校准或飞行资格。
 - 板上验证待工程师授权刷写后进行（如 60 s 静止日志核对 at_rest 位与 ZGU 后陀螺偏置），本轮未刷写、未设参、未采集。
+
+### 板上回装（2026-11-09）
+
+- 工程师授权构建并回装最新提交 `df8dcb8`。`tools/build_firmware.ps1` 通过：source=`ecc872b86f6a2e98`、`git_head=df8dcb84…`、工作区干净；`.px4` 776122 B（SHA-256 `ed1a0623…`）、静态 RAM 374432 B（余 83296 B）、共享栈 64 KiB、入口栈最大 11496 B、oversized=0。
+- 原 PX4 bootloader 上传/CRC 25 s；启动后 COM26 枚举为 `1209:0001 / V6X-RUST-001`。`!platform`：`source=ecc872b86f6a2e98`、`git=df8dcb84…`、TIM8 `psc=239 arr=65535`、备份域保留。
+- `!ekf2`：`Filter/Running`、fault=None、updates 6312、`max_update_us=1467`（预算 2000）、`deadline_misses=0`、`EKF2_CLOCK integration_error_ppm=0`（61 窗口）、`EKF2_PUBLISH missed=0`。含 at_rest/ZVU/ZGU 的新主路径未引入漏期或时基回归。
+- 限制：`!ekf2`/MAVLink 不暴露 `control_status`，本次未读 SD 日志确认 `VEHICLE_AT_REST` 置位与 ZGU 偏置学习；验证后 COM26 被其他程序占用，60 s 静止日志核对留待工程师安排。本次未设参/保存、未启停或删除日志、未启用输出。

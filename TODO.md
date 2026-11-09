@@ -26,7 +26,8 @@
 - [x] 地面标志（`at_rest=true,in_air=false`）使 tilt 对齐 7.032→0.576 s、yaw/mag 锁定 8.104→1.648 s；带陀螺偏置场景末值误差 +14.08°→+0.10°。重力融合不改变收敛时间，也不修复偏置漂移。差异定位为 Rust 缺少 land-detected/at_rest 与 ZVU/ZGU 通路；未改代码、参数或磁检查门限。
 - [x] 工程师同意实现保守静止检测 + ZVU/ZGU（纯软件）：新增 `at_rest.rs`（陀螺 ≤0.05 rad/s、比力差 ≤1 m/s²、连续 1 s、许可=disarmed 且无输出），`ImuEkf` 置 `VEHICLE_AT_REST` 并按 PX4 顺序在航向更新后执行 ZVU/ZGU，宿主例程加 `--at-rest`。host 225 项（新增 7）、fmt/Clippy、release 与固件构建（source=`76dd5804fdfb9bf2`，栈 oversized=0）通过。[实现与对照记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#后续实现保守静止检测--zvuzgu同日)。
 - [x] 实现后同场景重跑：1° 内收敛 8.104→2.448 s（PX4 地面标志参考 1.648 s）；偏置场景末值误差 +14.077°→+0.130°（参考 +0.100°），漂移被抑制。比 PX4 慢 0.8 s 是保守静止判定的 1 s 保持窗口，属设计取舍。仍是合成输入结论，不用于绝对精度或飞行放行；未刷写、未设参。
-- [ ] 板载静止日志核对 at_rest 位与 ZGU 偏置学习待工程师授权刷写后进行；是否回装 `76dd5804fdfb9bf2` 由工程师单独决定。
+- [x] 2026-11-09 工程师授权回装最新提交 `df8dcb8`（source=`ecc872b86f6a2e98`）：原 PX4 bootloader 上传/CRC 25 s；COM26（`1209:0001 / V6X-RUST-001`）启动，`!platform` 返回 `git=df8dcb84…`、TIM8 `psc=239 arr=65535`、备份域保留；`!ekf2` 为 `Filter/Running`、fault=None、updates 6312、`max_update_us=1467`（预算 2000）、`deadline_misses=0`、`integration_error_ppm=0`、发布 `missed=0`。本次未设参/保存、启停/删除日志或启用输出。[回装记录](docs/acceptance/ekf2/20261109-startup-yaw-compare.md#板上回装2026-11-09)。
+- [ ] 板载 60 s 静止日志核对 `VEHICLE_AT_REST` 位与 ZGU 偏置学习仍未做：`!ekf2` 不暴露控制位，需读 SD 日志；本次验证后 COM26 被其他程序占用，待工程师安排。
 
 ## 板载地磁 — 2026-11-07
 
