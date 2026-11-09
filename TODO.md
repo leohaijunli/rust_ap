@@ -17,10 +17,10 @@
 - [x] 与原 GUI 通过版本比对：CAN 帧/总线/引脚/租约代码除 crate 改名外一致；Rust 6 项 MAVCAN、Python 5 项协议检查通过。授权 3 s 实测却发现接收 2985/USB 21/丢弃 2821、队列满 64，保留失败，不把 host 通过当作硬件通过。[记录](docs/acceptance/mavcan/20261109-can2-router-regression.md)。
 - [x] 最小调度修复已实现：CAN 到帧及 USB 可写唤醒，每轮最多 4 帧；控制/正常遥测优先，100 ms 帧寿命/租约/过滤和原输出门不变。fmt/H753 Clippy 与一次局部审视通过。
 - [x] `f24b138` 已提交推送；普通包 `620736ef4e52c4d2` 构建/布局与原 bootloader 上传/CRC（25 s）、启动核对通过。3.016 s RX/USB=2996/2896、软件丢弃 0、队列末值 1，GUI 节点 125/身份已确认。
+- [x] 接收修复前（`620736ef4e52c4d2`）CAN1/GPS 只读：GPS_RAW_INT 15/3.016 s（DGPS/29 星），姿态/高度/健康各 29 条，位置类 0；当次 CRC 54→55。已确认水平/全球发布护栏原因，未解除。[证据](docs/acceptance/mavcan/20261109-can2-router-regression.md)。
 - [x] 工程师选择先修 CRC：CAN 执行器 P4→P3、FIFO/实际抢占诊断，fmt/H753 Clippy/局部审视通过；`8cddb79` 已推送，普通包 `32269dec1d8137b4` 构建/布局、原 bootloader 回装/CRC（25 s）通过。
 - [x] CAN1 3 s 有界复核：GPS 15/估计流各 30 条，CRC 0→0、FIFO lost=false，实际抢占增量 1744；FPU/Filter/数值/漏期、1677 µs预算、35.3% CPU/32584 B 栈通过。Logger Disabled/蜂鸣 off/CCR=0，模块参数/节点 ID 与输出门未改。
 - [ ] 保留旧 GUI CRC/toggle 和 RawIMU 缺帧失败；当前 GPS 在 CAN1，CAN2 GUI 原场景尚未再确认全部异常消除，未知类型/服务错误不冒称全零。水平/全球位置发布护栏未解除，不用吞吐恢复或软件队列丢弃 0 冒充端到端无损/飞行资格。
-- [x] 后续 CAN1/GPS 只读：GPS_RAW_INT 15/3.016 s（DGPS/29 星），姿态/高度/健康各 29 条，位置类 0；已确认 `product::snapshot` 的水平/全球发布护栏原因，未解除。CAN1 CRC 仍有新增错误，GNSS 融合/数据-only位置发布与 RTK/输出门不自动放行。
 
 ## 当前纯软件工作 — 2026-11-08
 
