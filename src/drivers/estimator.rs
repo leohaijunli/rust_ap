@@ -227,6 +227,10 @@ pub fn latest() -> Option<Output> {
         output.snapshot.status.reset_count_quat = v.attitude.quat_reset_counter;
         output.snapshot.local_position.heading_reset_counter = v.attitude.quat_reset_counter;
     }
+    product::constrain_data_validity(
+        &mut output.snapshot,
+        output.status.selection == Selection::Filter && estimate.is_some(),
+    );
     output.euler = estimate.and_then(|v| EulerAttitude::from_attitude(v.attitude, v.relative_yaw));
     Some(output)
 }
@@ -700,6 +704,15 @@ pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
         control.is_some_and(|v| v.params.enabled), control.map_or(0, |v| v.epoch), ACTIVE_EPOCH.load(Ordering::Acquire) != 0,
         CONFIG_ERRORS.load(Ordering::Relaxed), LAST_CONFIG_FAULT.load(Ordering::Relaxed), config_stage::current(), CONFIGURE_MAX_US.load(Ordering::Relaxed),
         INPUT_DROPS.load(Ordering::Relaxed), AID_DROPS.load(Ordering::Relaxed), LOG_ERRORS.load(Ordering::Relaxed), runtime::DEADLINE_US)?;
+    let data = latest();
+    let snapshot = data.as_ref().map(|v| &v.snapshot);
+    writeln!(output, "EKF2_DATA_VALIDITY schema=1 output_fresh={} local_xy_valid={} local_z_valid={} velocity_xy_valid={} velocity_z_valid={} global_lat_lon_valid={} global_alt_valid={} flight_qualified=false",
+        data.is_some(), snapshot.is_some_and(|v| v.local_position.xy_valid),
+        snapshot.is_some_and(|v| v.local_position.z_valid),
+        snapshot.is_some_and(|v| v.local_position.v_xy_valid),
+        snapshot.is_some_and(|v| v.local_position.v_z_valid),
+        snapshot.is_some_and(|v| v.global_position.as_ref().is_some_and(|g| g.lat_lon_valid)),
+        snapshot.is_some_and(|v| v.global_position.as_ref().is_some_and(|g| g.alt_valid)))?;
     let main_config = MAIN_CONFIG.load(Ordering::Relaxed);
     writeln!(
         output,

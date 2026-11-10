@@ -18,6 +18,23 @@ pub type ProductFilter = super::gnss::GnssEkf;
 pub type ProductFilter = Mahony;
 pub type ProductRuntime = Runtime<ProductFilter>;
 
+const FILTER_POSITION_FLAGS: u16 =
+    (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 9);
+
+/// A runtime freshness/selection gate can revoke core validity, never invent it.
+pub fn constrain_data_validity(snapshot: &mut Snapshot, filter_data_available: bool) {
+    let local = &mut snapshot.local_position;
+    local.xy_valid &= filter_data_available;
+    local.v_xy_valid &= filter_data_available;
+    local.z_valid &= filter_data_available;
+    local.v_z_valid &= filter_data_available;
+    local.dist_bottom_valid &= filter_data_available;
+    if !filter_data_available {
+        snapshot.global_position = None;
+        snapshot.status.solution_status_flags &= !FILTER_POSITION_FLAGS;
+    }
+}
+
 pub const fn main_storage() -> ProductRuntime {
     Runtime::with_initializer(
         ProductFilter::dormant(),
@@ -49,21 +66,12 @@ pub fn snapshot(runtime: &mut ProductRuntime, now: u64, resets: &mut Publication
             snapshot.local_position.heading_var = f32::INFINITY;
         }
     }
-    // Height telemetry follows the core's aiding validity, but never borrows
-    // EKF height while the runtime is disabled, stale or using Mahony fallback.
-    let vertical_available = status.selection == Selection::Filter && attitude.is_some();
-    snapshot.local_position.z_valid &= vertical_available;
-    snapshot.local_position.v_z_valid &= vertical_available;
-    snapshot.local_position.dist_bottom_valid &= vertical_available;
-    if !vertical_available {
-        snapshot.status.solution_status_flags &= !((1 << 2) | (1 << 5) | (1 << 6));
-    }
-    // E7 navigation/control remain unqualified. Reporting measured height does
-    // not authorize horizontal/global navigation or heading-based control.
-    snapshot.local_position.xy_valid = false;
-    snapshot.local_position.v_xy_valid = false;
+    // Data-only publication follows the core; flight qualification is separate.
+    constrain_data_validity(
+        &mut snapshot,
+        status.selection == Selection::Filter && attitude.is_some(),
+    );
+    // Publishing valid position/heading data never grants control permission.
     snapshot.local_position.heading_good_for_control = false;
-    snapshot.global_position = None;
-    snapshot.status.solution_status_flags &= !((1 << 1) | (1 << 3) | (1 << 4));
     snapshot
 }

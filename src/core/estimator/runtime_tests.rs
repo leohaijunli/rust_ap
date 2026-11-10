@@ -449,6 +449,123 @@ fn sequence_gap_resynchronizes_shared_input_and_recovers_the_filter() {
     assert_eq!(shared.clock.integration_error_ppm, 0);
 }
 
+#[cfg(not(feature = "estimator-mahony"))]
+#[test]
+fn product_position_data_preserves_core_validity_without_flight_qualification() {
+    use crate::estimator::publication_reset::PublicationReset;
+
+    let mut p = params();
+    p.gnss.checks.healthy_time_us = 1_000_000;
+    let mut main = product::main_storage();
+    main.reconfigure(p, 0, true).unwrap();
+    let mut time = 1_000_000;
+    for index in 1..=8_000 {
+        time += 1_000;
+        main.ingest_imu(imu(time), time).unwrap();
+        if index % 50 == 0 {
+            main.apply_measurement(
+                Measurement::Baro(BaroAltitude {
+                    timestamp: time,
+                    altitude_m: 100.0,
+                }),
+                time,
+            )
+            .unwrap();
+            main.apply_measurement(
+                Measurement::Mag(MagSample {
+                    timestamp: time,
+                    field_gauss: [0.22, 0.0, 0.43],
+                    reset: false,
+                }),
+                time,
+            )
+            .unwrap();
+        }
+        if index % 200 == 0 {
+            main.apply_measurement(
+                Measurement::Gnss(GnssObservation {
+                    sample: GnssSample {
+                        timestamp: time,
+                        latitude_deg: 47.397742,
+                        longitude_deg: 8.545594,
+                        altitude_msl_m: 100.0,
+                        velocity_ned_m_s: [0.0; 3],
+                        horizontal_accuracy_m: 0.5,
+                        vertical_accuracy_m: 0.8,
+                        speed_accuracy_m_s: 0.1,
+                        fix_type: 3,
+                        satellites: 14,
+                    },
+                    pdop: 1.0,
+                    spoofed: false,
+                }),
+                time,
+            )
+            .unwrap();
+        }
+        main.maintain(time);
+    }
+    assert_eq!(main.status().selection, Selection::Filter);
+    let raw = main.filter_mut().standard_output(time);
+    assert!(raw.local_position.xy_valid && raw.local_position.v_xy_valid);
+    assert!(raw.global_position.is_some());
+    let mut resets = PublicationReset::default();
+    let output = product::snapshot(&mut main, time, &mut resets);
+    let local = output.local_position;
+    assert!(local.xy_valid && local.v_xy_valid && local.z_valid && local.v_z_valid);
+    assert!(!local.heading_good_for_control);
+    assert_eq!(local.x, raw.local_position.x);
+    assert_eq!(local.y, raw.local_position.y);
+    assert_eq!(local.z, raw.local_position.z);
+    let global = output.global_position.unwrap();
+    let expected_global = raw.global_position.unwrap();
+    assert_eq!(
+        (global.lat, global.lon, global.alt),
+        (
+            expected_global.lat,
+            expected_global.lon,
+            expected_global.alt
+        )
+    );
+    assert_eq!(
+        output.status.solution_status_flags & 0x1a,
+        raw.status.solution_status_flags & 0x1a
+    );
+    assert!(crate::mavlink_estimator::local_position(local).is_some());
+    assert!(crate::mavlink_estimator::global_position(
+        output.global_position.unwrap(),
+        local,
+        None
+    )
+    .is_some());
+
+    // The board's latest-cache path applies the same non-consuming gate when
+    // fast attitude expires before the slower publication cache does.
+    let mut expired_cache = output;
+    product::constrain_data_validity(&mut expired_cache, false);
+    assert!(!expired_cache.local_position.xy_valid && !expired_cache.local_position.v_xy_valid);
+    assert!(expired_cache.global_position.is_none());
+    assert_eq!(expired_cache.status.solution_status_flags & 0x37e, 0);
+    assert!(!expired_cache.local_position.heading_good_for_control);
+
+    let stale = product::snapshot(&mut main, time + 5_001, &mut resets);
+    assert!(!stale.local_position.xy_valid && !stale.local_position.v_xy_valid);
+    assert!(stale.global_position.is_none());
+    assert_eq!(stale.status.solution_status_flags & 0x7f, 0);
+    for _ in 0..3 {
+        main.record_duration(DEADLINE_US + 1);
+    }
+    assert_eq!(main.status().selection, Selection::Mahony);
+    let fallback = product::snapshot(&mut main, time, &mut resets);
+    assert!(!fallback.local_position.xy_valid && !fallback.local_position.v_xy_valid);
+    assert!(fallback.global_position.is_none());
+    assert_eq!(fallback.status.solution_status_flags & 0x7e, 0);
+    main.disable();
+    let disabled = product::snapshot(&mut main, time, &mut resets);
+    assert!(!disabled.local_position.xy_valid && !disabled.local_position.v_xy_valid);
+    assert!(disabled.global_position.is_none());
+}
+
 #[test]
 fn aid_events_fuse_without_gnss_and_invalid_gnss_is_rejected() {
     let mut values = params();

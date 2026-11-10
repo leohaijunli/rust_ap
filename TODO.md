@@ -3,6 +3,8 @@
 更新：2026-11-09。**板载已为 `32269dec1d8137b4` /代码 `8cddb79`：CAN 执行器优先级/丢帧诊断修复回装通过，CAN1 3 s CRC 0→0、FIFO lost=false，真实抢占增量 1744，EKF 峰值 1677 µs/2000 µs、无漏期/数值故障、CPU 35.3%、栈余 32584 B。原始 GPS 5 Hz、姿态/高度/健康 10 Hz；水平/全球位置发布护栏保持，CAN2 GUI 原场景尚未再次完整复核。蜂鸣暂停、RGB Nack/此前 PX4IO Timeout，IO/输出门及 M1/E7/RTK 未验依赖不放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
+工程师随后授权源码拆分位置数据有效性与飞行资格；本轮仅软件检查/构建/推送，板载仍为上方 `32269dec1d8137b4`，不把新源码的发布策略写成已回装。
+
 ## 执行规则
 
 - 只做[必要测试](plan.md#4-仅保留必要测试)，复用已有通过结果；相关实现变化或新失败才补测。
@@ -11,6 +13,13 @@
 - 工程师已确认基站/CAN Rover 连接方案；H-10 的固件/节点/数据与 RTK 实测仍待验，H-02/03 等未验项保持。除明确授权外，不自主设参、刷写、采集或执行实体操作。
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
+
+## 位置数据发布与飞行资格拆分 — 2026-11-09
+
+- [x] 按核心位置/速度/全球原点有效性与运行时新鲜度发布数据-only位置；停用/陈旧/Mahony 回退撤销，航向控制资格/ARM/非零输出门不变。新诊断单独报告数据有效位与 `flight_qualified=false`。[记录](docs/acceptance/ekf2/20261109-position-data-validity.md)。
+- [x] 新合成 GNSS 回归先在旧产品发布门失败，再通过；字段与原始核心位置一致，可构建 LOCAL/GLOBAL MAVLink，陈旧/回退/停用撤销。不是板上或绝对精度验收。
+- [x] 产品 3 项/MAVLink 映射 2 项 host、fmt、host/普通 H753 Clippy 与局部审视通过；未改核心数学，不重复全量对拍。
+- [ ] 完成普通 release/布局和提交推送；本轮不回装，新的实物位置消息仍待另行授权核对，飞行/RTK/控制资格不自动放行。
 
 ## CAN2 GUI 转发回归 — 2026-11-09
 
