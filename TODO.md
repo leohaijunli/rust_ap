@@ -14,6 +14,12 @@
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
 
+## CAN1/CAN2 多传感器评估 — 2026-11-10
+
+- [x] 工程师确认本轮先评估/方案：标准 DroneCAN v0；每个外接模块可在 CAN1 或 CAN2，两路合计外接 IMU/气压各 1、地磁最多 4，含板载共 **2/2/5 源**。
+- [x] 源码及固定 DSDL/QGC 行为已核对；现有单 IMU/baro、四总源磁选择和 CAN2 透传尚不满足需求。[独立方案](docs/can-multi-sensor-plan.md)已记录主源参数、身份/切换、逐实例 ULog/MAVLink、预算与 MS0～MS5；RawIMU 默认采用帧内 timestamp/integration_interval，区分源端积分与飞控收包 tick 差。均为设计，未实施。
+- [ ] 下一步确认首选/恢复及监测方式，补齐模块型号/固件、实际消息/速率/时间/安装方向并完成 MS0 预算，再按 MS1 双 CAN→MS2 五磁→MS3 双气压→MS4 双 IMU→MS5 组合验证推进。硬件及完整 M1/E7 仍依赖原阶段门。
+
 ## 位置发布＋AP_HEALTH 合并回装 — 2026-11-10
 
 - [x] 标准 #350/AP_HEALTH 单条汇总已实现，实际计数 Hz／健康／年龄／EKF 故障与 CPU；不替换 INA219 #250 电流消息，原解锁/飞行资格门保持。[协议](docs/mavlink-health.md)。
