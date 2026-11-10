@@ -54,6 +54,10 @@ pub fn health() -> SensorState {
     )
 }
 
+pub fn sample_count() -> u32 {
+    SAMPLES.load(Ordering::Relaxed)
+}
+
 struct Sensor {
     // Only sibling tasks on the thread executor receive this non-Sync reference.
     i2c: &'static RefCell<I2c<'static, Blocking, Master>>,

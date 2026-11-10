@@ -600,7 +600,9 @@ pub async fn run(
         State::new(Link::Uart, parameters, now),
     ];
     let mut last_report = crate::estimator::report();
+    let mut health_monitor = v6x_rust_ap::mavlink_health::RateMonitor::default();
     loop {
+        telemetry::update_health(&mut health_monitor);
         let now = Instant::now();
         let mut recovery = None;
         let report = crate::estimator::report();

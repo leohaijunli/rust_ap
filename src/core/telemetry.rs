@@ -6,6 +6,7 @@ use crate::parameters::{Id, Snapshot};
 
 pub const MAIN_COMPONENT: u8 = 1;
 pub const MIN_INTERVAL_US: i32 = 20_000;
+pub const HEALTH_MIN_INTERVAL_US: i32 = 500_000;
 
 pub struct Entry {
     pub kind: Kind,
@@ -42,6 +43,7 @@ stream_table! {
     GlobalPosition: GLOBAL_POSITION_INT_DATA, MAIN_COMPONENT, MavRateEstimator;
     Altitude: ALTITUDE_DATA, MAIN_COMPONENT, MavRateEstimator;
     EstimatorStatus: ESTIMATOR_STATUS_DATA, MAIN_COMPONENT, MavRateEstimator;
+    Health: DEBUG_FLOAT_ARRAY_DATA, MAIN_COMPONENT, MavRateHealth;
 }
 
 pub const COUNT: usize = STREAMS.len();
@@ -151,6 +153,9 @@ impl Scheduler {
             || (interval.is_finite()
                 && f64::from(interval) <= f64::from(i32::MAX)
                 && interval >= MIN_INTERVAL_US as f32))
+            || (id == DEBUG_FLOAT_ARRAY_DATA::ID
+                && interval > 0.0
+                && interval < HEALTH_MIN_INTERVAL_US as f32)
         {
             return Err(IntervalError::Invalid);
         }
@@ -206,6 +211,7 @@ mod tests {
             assert_eq!(message_id(value), None);
         }
         assert_eq!(message_id(30.0), Some(30));
+        assert_eq!(requested_kind(350, 1), Some(Kind::Health));
     }
 
     #[test]
@@ -254,5 +260,20 @@ mod tests {
         assert_eq!(scheduler.interval(24, 1), Some(-1));
         let reset = Scheduler::new(&Snapshot::default(), 0);
         assert_eq!(reset.interval(24, 1), Some(200_000));
+        assert_eq!(reset.interval(350, 1), Some(1_000_000));
+        assert_eq!(reset.interval(DEBUG_VECT_DATA::ID, 1), Some(100_000));
+        assert_eq!(
+            scheduler.set_interval(350, 1, 20_000.0, &Snapshot::default(), 10_000_002),
+            Err(IntervalError::Invalid)
+        );
+        scheduler
+            .set_interval(350, 1, 500_000.0, &Snapshot::default(), 10_000_002)
+            .unwrap();
+        assert_eq!(scheduler.interval(350, 1), Some(500_000));
+        scheduler
+            .set_interval(350, 1, -1.0, &Snapshot::default(), 10_000_002)
+            .unwrap();
+        assert_eq!(scheduler.interval(350, 1), Some(-1));
+        assert_eq!(scheduler.interval(DEBUG_VECT_DATA::ID, 1), Some(100_000));
     }
 }

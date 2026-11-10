@@ -347,6 +347,7 @@ static RECEIVED: ReceivedChannel = ReceivedChannel::new();
 static OUTGOING: OutgoingChannel = OutgoingChannel::new();
 /// Latest sensor_gps snapshot for MAVLink and diagnostics consumers.
 pub static GNSS: Watch<CriticalSectionRawMutex, SensorGps, 0> = Watch::new();
+static GNSS_SAMPLES: AtomicU32 = AtomicU32::new(0);
 /// Auxiliary DOP cache; only touched by the receive task.
 static AUXILIARY: Mutex<CriticalSectionRawMutex, RefCell<AuxiliaryCache>> =
     Mutex::new(RefCell::new(AuxiliaryCache::new()));
@@ -1076,6 +1077,7 @@ fn publish_gnss(fix: GnssFix2, source_node_id: u8, now_us: u64) {
     let snapshot = process_fix2(&fix, source_node_id, now_us, &auxiliary);
     crate::sd_logger::record_sensor_gps(snapshot);
     GNSS.sender().send(snapshot);
+    GNSS_SAMPLES.fetch_add(1, Ordering::Relaxed);
     if let Some(observation) =
         v6x_rust_ap::estimator::gnss::GnssObservation::from_sensor_gps(&snapshot)
     {
@@ -1089,6 +1091,10 @@ fn publish_gnss(fix: GnssFix2, source_node_id: u8, now_us: u64) {
 /// Latest sensor_gps snapshot for MAVLink; freshness is the caller's rule.
 pub fn latest_gps() -> Option<SensorGps> {
     GNSS.try_get()
+}
+
+pub fn gps_sample_count() -> u32 {
+    GNSS_SAMPLES.load(Ordering::Relaxed)
 }
 
 fn local_node_status() -> NodeStatus {

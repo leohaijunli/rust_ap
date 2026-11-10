@@ -63,6 +63,10 @@ pub fn health() -> SensorState {
     )
 }
 
+pub fn sample_count() -> u32 {
+    SAMPLES.load(Ordering::Relaxed)
+}
+
 struct Sensor {
     i2c: &'static RefCell<I2c<'static, Blocking, Master>>,
 }

@@ -1,9 +1,9 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-09。**板载已为 `32269dec1d8137b4` /代码 `8cddb79`：CAN 执行器优先级/丢帧诊断修复回装通过，CAN1 3 s CRC 0→0、FIFO lost=false，真实抢占增量 1744，EKF 峰值 1677 µs/2000 µs、无漏期/数值故障、CPU 35.3%、栈余 32584 B。原始 GPS 5 Hz、姿态/高度/健康 10 Hz；水平/全球位置发布护栏保持，CAN2 GUI 原场景尚未再次完整复核。蜂鸣暂停、RGB Nack/此前 PX4IO Timeout，IO/输出门及 M1/E7/RTK 未验依赖不放行。**
+更新：2026-11-10。**本轮回装前板载为 `32269dec1d8137b4` /代码 `8cddb79`；位置发布＋AP_HEALTH 的合并软件检查已通过，普通构建/应用区烧录进行中，结果见下文。此前 CAN1 有界 CRC/真实抢占/资源通过；蜂鸣暂停、RGB Nack/此前 PX4IO Timeout，IO/输出门及完整 M1/E7/RTK 未验依赖不放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
-工程师随后授权源码拆分位置数据有效性与飞行资格；实现 `48d2d62` /普通包 `f2d8ad0593f361b1` 软件检查/构建通过、未回装，板载仍为上方 `32269dec1d8137b4`，不把新源码的发布策略写成板上结果。
+此前位置拆分 `48d2d62` /单独普通包 `f2d8ad0593f361b1` 软件检查/构建通过、未单独回装；工程师现已授权与 AP_HEALTH 合并回装，不把未完成的消息实测预写为通过。
 
 ## 执行规则
 
@@ -13,6 +13,13 @@
 - 工程师已确认基站/CAN Rover 连接方案；H-10 的固件/节点/数据与 RTK 实测仍待验，H-02/03 等未验项保持。除明确授权外，不自主设参、刷写、采集或执行实体操作。
 - 完成本次工作后提交推送；文档/计划修改只做内容与差异检查。
 - 编写时用 `clean-code`，收尾时用 `code-simplifier`；[项目技能](docs/ai-coding-skills.md)已安装。
+
+## 位置发布＋AP_HEALTH 合并回装 — 2026-11-10
+
+- [x] 标准 #350/AP_HEALTH 单条汇总已实现，实际计数 Hz／健康／年龄／EKF 故障与 CPU；不替换 INA219 #250 电流消息，原解锁/飞行资格门保持。[协议](docs/mavlink-health.md)。
+- [x] Rust 19 项、Python 元数据 4 项、fmt、host/普通 H753 Clippy、元数据生成/check 及一次局部审视通过；原 227 参数保持，追加 `MAV_RATE_HEALTH=1 Hz`。[记录](docs/acceptance/p2/20261110-health-position-flash.md)。
+- [ ] 合并普通包构建/布局、原 bootloader 应用区回装及有界 source/参数保持/标准消息核对。
+- [ ] QGC 新消息界面、TELEM1 和完整 M1/E7/RTK 等剩余门；本轮不增加日志、蜂鸣或非零输出动作。
 
 ## 位置数据发布与飞行资格拆分 — 2026-11-09
 
@@ -133,7 +140,7 @@
 - [x] 缓解选项成文：[dropout 缓解与极端优化备选](docs/logging-dropout-options.md)；第 4 层（双优先级队列、裸块环形日志）明确"仅 1–3 层与 H-04 之后仍超标才评估"。
 - [x] 第 1 层：`dronecan_raw_command` 主题从 ULog 注册表与 SD 写入移除（`TOPIC_COUNT 14→13`、ID 重排连续、按名匹配保持旧日志可解析）；DroneCAN 总线零命令发送不变。host 180 项、H753 Clippy、打包 source=`8d1ae82d5f5d13b3`（static RAM 254224 B、最大入口栈帧 11496 B）通过。
 - [x] 第 2 层核查：固定 `embedded-fatfs 518528c` 无 `set_len`/预分配接口，写入器已是 32 KiB 攒批 + 512 对齐整块写；软件侧到顶，剩余停顿归第 3 层卡选型。不改代码，不引入 fork。
-- [ ] 第 3 层：H-04 卡选型判据（A1/A2 或工业 pSLC + 写延迟分布实测）仍待工程师输入；当前 32 GB 普通卡不满足选型标注，65 s 基线已记录。
+- [x] 第 3 层历史标注已核实：当前 32 GB 卡为 A1 HC1，H-04 已按既定窗口收口；152 ms 长尾及未达 PX4 可靠卡档的边界保留，后续换卡不预记为已完成。
 - [x] 重刷验证：source=`ad99705b817a8c7f`，12 s 采集 `rust_runtime_health`（≈10 Hz）与 `rust_can_stats` 并存、dropout=0、无损坏；EKF2 正常。结果补录到[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)。
 - [x] 顺带修复历史 bug：`record_can_stats` 误用 `Group::Health` 限流器，`rust_runtime_health` 被 10 Hz can_stats 饿死（run1 2 Hz / run2 0 / run3 仅前 0.9 s 的三轮数据全部吻合）；改回 `Group::Can` 后板验通过。
 - [x] E7 USB 流核对：各流速率符合参数，LOCAL/GLOBAL_POSITION 按"无效不发"抑制；USB+SD 成对证据齐备。E7 软件门（不含实物依赖）收口，见[本轮记录](docs/acceptance/ekf2/20261106-single-estimator-timebase.md)与[下一步计划](docs/next-steps.md)。
@@ -149,9 +156,9 @@
 - [x] **本轮软件检查**：host **180 passed**；普通/fault-injection/fault-dump 与 host Clippy（`-D warnings`）通过；EKF 生成器与 QGC 元数据 `--check` 通过；已做一次局部 `code-simplifier` 审视。
 - [x] **普通包/布局**：`tools/build_firmware.ps1` 通过；source=`f5756b75d6ed78bf`，raw/padded=`1105864/1105888 B`，static RAM=`276656 B`，最大入口栈帧=`11560 B`（0 超限，不是完整调用链/板载水位证明）；board ID 53、入口 `0x08020000` 保持。包：`target/thumbv7em-none-eabihf/release/v6x-rust-led.px4`；SHA-256=`096638626b96e0b097fdb04189fcdf12592e5947d1fa0d3b25330ec6e2622b21`。
 - [x] **本地提交**：实现与验证记录已提交 `3a1bc08`。
-- [ ] **推送阻塞**：首次 `git push` 120 s 超时；非交互重试因 Git Credential Manager 无可用凭据失败（`unable to get password from user`）。已确认远端仍为 `c12d03b`；工程师完成 GitHub 凭据授权后执行 `git push`。
+- [x] **历史推送阻塞已解决（2026-11-07）**：首次超时及凭据失败保留为历史；后续凭据授权与积压推送已完成。2026-11-10 状态核对时 `main/aa795b9` 与真实远端一致。
 - [x] **2026-11-06 刷写/USB 最小核对**：工程师授权后经原 board 53/protocol v5 bootloader（COM3）上传/CRC 校验成功，25 s；回到 COM4，普通版 source=`f5756b75d6ed78bf`、disarmed、VTOR=`08020000`，一次读表收齐 165 项/0 补拉。`LINK_LED_HZ=4` 与 `EST_EN/EST_ALGO/EKF2_EN=1/1/1` 保留，主实例实际 `Filter/Running`。两槽仍是 v1（11 项/gen 3、159 项/gen 4），RAM 已兼容载入，dirty=true/pending=false；未保存、未清故障、未另行启用估计器。证据：`target/flash-verify/20261106T143035.356888Z/`。
-- [ ] **板载门未过**：共享栈余量 `32560 B <32768 B`（guard=true）；独立实例 `Mahony/Fatal`、`Filter(Numerics)`；IMU/TIM2 诊断偏差 `-92887 ppm`，根因未定。旧 source=`f509ec6b85b6a4fa` 的 panic 记录保留。先收口这些 E7/资源问题；H-03 具备后补双链路/重连、按名/索引、合法/非法设值、延迟保存及重启读回、间隔不串线与 QGC 恢复。不放行 M1/E7。
+- [x] **旧包资源／独立实例失败已有后续处理**：`f5756b75d6ed78bf` 的双实例 Numerics/Fatal、旧 32 KiB 栈门及 TIM2 `-92887 ppm` 保留为历史。当前单实例/TIM8 积分、FPU 修复和 ≥16 KiB 新判据已板载核对；传感器约 −3.24% 时间诊断残差仍保留、不进入积分。H-03 双链路/保存重启、完整 M1/E7 仍待验，旧 panic 不清除。
 
 边界（工程师确认）：ARM/DISARM 与 DO_SET_MODE 只应答不动作（归 P5a）；RC/SERVO 无硬件不发。
 
@@ -159,7 +166,7 @@
 
 四阶段内容与验收：[EKF 运行时重构计划](docs/ekf2-runtime-refactor.md)。
 
-**当前：阶段 3 板载门未过，阶段 4 未开始。最近板载包 `f5756b75d6ed78bf` 的主实例 Running/config_errors=0，旧独立实例 Numerics/Fatal、共享栈不足 32 KiB、原始 IMU/TIM2 偏差的记录保留。当前源码已取消第二实例并使用 TIM8 批次积分，等待新版本板载核对。`335f484ffd467691` 是此前未回装的软件产物，不补写其验收。** [此前证据](docs/acceptance/ekf2/20261105-runtime-refactor.md)
+**当前采用单实例/TIM8 积分，启动、真实浮点抢占、资源与数据链已有后续板载分项证据；完整 E7/M1 仍受未验依赖限制，阶段 4 未开始。以下是 2026-11-05 双实例重构的历史分项，不把旧包 `f5756b75d6ed78bf` 或旧 32 KiB 判据写成当前状态；最新固件与结果见本文顶部。`335f484ffd467691` 未回装的事实保留。**
 
 - [ ] **阶段 0 / M0：护栏**：参数、延迟配置、单次超时继续运行的软件用例通过；DWT 分路径 max/p99 已接，实测数字待新固件采集。
 - [x] **阶段 1 / M1 历史软件门**：A1 双实例、三种 `NavFilter`、产品别名、原地初始化及旧入口适配曾通过；当前按新范围收敛为单产品 Runtime、EKF2/Mahony 和统一 `ImuDelta` 入口。
@@ -174,14 +181,14 @@
 - [x] GNSS / no-GPS 标准输出各 26000 输入、1300 发布、165 字段，经 pyulog/pymavlink 检查通过。
 - [x] ULog 注册表长度修复后 7 项相关用例通过；host/H753 Clippy 与构建工具检查通过。
 - [x] 新 H753 包：raw/padded=901928/901952 B，static RAM=285568 B；入口/分区/打包通过，最大入口栈帧 11208 B。完整共享栈水位须上板确认。
-- [ ] 完成最终调用链/FPU、板载资源与时基核对。`f5756b75d6ed78bf` 已回装至 COM4；本次只读诊断不代替 1 kHz/CPU/栈完整验收，Git 推送仍受凭据阻塞。
+- [ ] 完整调用链/联合负载与 E7 资格仍待验；FPU/板载资源/积分时基已有后续分项证据，Git 凭据阻塞已解决，不再等待旧双实例包核对。
 
 MAVCAN 已完成收口；P4b-g 软件已刷入，下一步在 H-10 与依赖门具备后验证 GPS 实物数据。
 
 **2026-11-04 历史板载：`34ef7adba931a677`（诊断包）。E6-H/PX4IO 合并已推送 `1c34dcd`；栈整改包 `f9d3004c0cf4691e` 实测启动余量 44524 B（门通过），但 EKF 更新 1117 µs 超 1 ms 期限后自动回退 Mahony。性能整改后（TIM5 独立执行器 + opt-level=3）发现 reconfigure 窗口内存损坏：参数被写为 230/290 等垃圾值，EKF2 无法激活；损坏定位到 `enable_gnss` 窗口，软件越界写（非硬件），EKF `update()` 路径 14 万样本无损坏。**[分析链](docs/acceptance/ekf2/20261104-e7-bringup.md)。日志/欧拉角输出已验证（858 KiB 完整下载，pyulog 无损坏）。PX4IO Timeout/实体按键禁用仍未解决，不称 E7 完成。
 
 - [x] **E6-H 标准输出/日志 host 门**：独立无 GPS 输入类型、状态隔离、标准姿态/角速度/局部/全球/诊断 schema、MAVLink 编码与 pyulog/pymavlink 独立解析通过；无 GPS 只发独立 `ODOMETRY` / 健康状态，水平无界协方差明确，全球位置禁发。未启用固件 estimator 日志注册表或输出任务。[证据](docs/acceptance/ekf2/20261104-e6-host.md)。
-- [ ] **E7 真实输出/日志**：165 项统一参数（142 个 EKF2）、`!ekf2 start/stop`、气压输入、回退与双链路/日志分发已接入；旧包 `f5756b75d6ed78bf` 主实例板载 Running。新单实例/TIM8 积分版须核对启停、周期、共享栈、真实输出及日志；此前失败保留为历史结果。完整资格仍依赖 M1、P6a、P4b-g、P2、PL-b。
+- [ ] **完整 E7 真实输出/日志资格**：单实例/TIM8 的启动、周期、共享栈、USB/SD 输出和磁/气压已有分项证据；新位置发布与健康汇总仅按本轮有界回装核对，不代替完整资格。双链路、失效/恢复及未验依赖仍按 M1、P6a、P4b-g、P2、PL-b 放行；此前失败保留为历史结果。
 
 ### MAVCAN（历史已完成，本次回归待复核）
 

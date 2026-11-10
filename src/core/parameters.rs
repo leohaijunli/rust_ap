@@ -274,6 +274,10 @@ with_ekf2_parameters! {
     CalMag3Roll { name: "CAL_MAG3_ROLL", getter: cal_mag3_roll, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
     CalMag3Pitch { name: "CAL_MAG3_PITCH", getter: cal_mag3_pitch, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
     CalMag3Yaw { name: "CAL_MAG3_YAW", getter: cal_mag3_yaw, group: Compass, kind: Real, default: 0.0, min: -360.0, max: 360.0, access: NextCycle },
+    MavRateHealth {
+        name: "MAV_RATE_HEALTH", getter: mav_rate_health, group: Link, kind: Real, default: 1.0,
+        min: 0.0, max: 2.0, access: NextCycle
+    },
     }
 }
 

@@ -1,12 +1,12 @@
 # Pixhawk 6X Rust 飞控实施计划
 
-更新：2026-11-09。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
+更新：2026-11-10。路线：**A3（当前工程 + Rust/Embassy + 按需复用 Cybflight 算法）**；首目标：**M1 数据链**。
 状态看 [TODO.md](TODO.md)，结果看 [P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)。
 
 ## 1. 当前进度与执行原则
 
 - P0、P1、P3a、RTC-01/TIME-01 已完成。P4b-a、PL-a、P2、P4 软件门已通过，PL-a/P4/PL-b 正常路径有限 HIL 通过；P3 软件/工具验收路径可复用 P3a/P2。MAVCAN（CAN2）已收口；参数自动保存与 QGC 分组元数据已实现并板载校验；P4b-g 软件已实现并刷入板载，`NO_GPS` 断链帧已验。CAN-A04/LOG-A05/MAV-02/03、完整 P4/PL-b、P4b-g GPS 实物与 TIME-02 仍待 H-02/03/04、H-10、QGC GUI 与工程师操作，M1 未开始。
-- 最近板载普通包为 `f5756b75d6ed78bf`：主 EKF2 Running，但共享栈 32560 B、原始 IMU/TIM2 诊断 −92887 ppm 等问题仍阻塞 E7。当前按工程师要求移除第二实例，切换 TIM8 批间隔积分及 PX4 时间戳换算；软件与板载结果分别记录，见 [TODO.md](TODO.md)。
+- 最近已记录板载普通包为 `32269dec1d8137b4`：CAN1 有界 CRC/真实抢占与资源复核通过，主 EKF2 Running、无漏期/数值故障、栈余 32584 B。旧双实例/TIM2/32 KiB 判据失败保留为历史，单实例/TIM8 积分、FPU 修复与新 ≥16 KiB 判据已有后续证据；完整 M1/E7 未放行，见 [TODO.md](TODO.md)。
 - 标准消息软件 source=`c2f3128aecc8a70b` 已通过必要检查/普通打包，见[记录](docs/acceptance/messages/README.md)；新 ULog schema 的实物核对并入下一次 P4 必验记录（当前 P4b-g 固件已含标准 `sensor_accel` / `sensor_gyro`，但尚未完成 60 s 实物日志）。
 - 工程师要求：**只保留必要测试，复用已完成结果，本次完成后提交推送。** P1 依赖已放行，后续阶段仍按各自必验项验收。
 - **当前仅软件（2026-11-08 工程师确认）**：只有飞控本体，没有外接硬件。先做已有软件遗留、相关 host 测试与普通构建；外设接线/硬件验收和 M1 暂停，不自动采集、刷写或启用输出。yaw 根因调查按工程师要求停止；软件结果不代替硬件门。
@@ -23,6 +23,7 @@
 - **2026-11-09 CAN2 GUI 回归授权**：工程师要求检查近期代码，授权一次 3 s 桥接诊断后确认 USB Router 转发瓶颈，并选择最小修复、提交推送、普通应用区回装及同样 3 s 复核。仅改 CAN 到帧/USB 可写唤醒与有界批量转发；必要检查为相关 host 结果、fmt/H753 Clippy、普通构建/布局、启动与有界转发核对。保留租约/过滤/100 ms 帧寿命和输出门，不分配节点、不改 GPS 参数、不恢复蜂鸣测试，结果见 TODO。
 - **2026-11-09 CRC 接收修复追加授权**：工程师已确认节点可见但 CRC/toggle 异常，并把 GPS 移到 CAN1；只读确认原始 GPS 正常、位置类仍受发布护栏后，选择先修 CRC。允许 CAN 接收执行优先级/硬件 FIFO 丢帧诊断、普通回装与有界完整性/真实 IRQ 抢占/FPU/资源复核；发布护栏、CRC 校验、模块参数/节点 ID、IO/bootloader、蜂鸣暂停与非零输出门不变。
 - **2026-11-09 数据有效性/飞行资格拆分授权**：工程师明确要求拆开并在完成后推送。LOCAL/GLOBAL 位置数据按核心真实有效性、运行时选择/新鲜度发布；停用、陈旧、回退不借用 EKF 位置，资格/航向控制/解锁/非零输出门保持关闭。仅改变发布层及诊断，不改估计数学/质量门/CRC 或模块参数，不以原始 GPS 冒充滤波结果。必验相关有效/无效/陈旧/回退 host、fmt/Clippy、普通构建/布局；本轮软件包不自动回装，实物消息核对另行授权。
+- **2026-11-10 健康汇总与烧录授权**：工程师要求烧录新固件、更新文档，追加选择标准 `DEBUG_FLOAT_ARRAY/AP_HEALTH` 汇总 EKF 与真实传感器更新率/健康；保留 INA219 `DEBUG_VECT`。复用计数/新鲜度和 Router，每约 1 s 单次计数差分，两链路共用缓存，新增独立 `MAV_RATE_HEALTH`，不改估计数学/IRQ/输出门。必验相关计数/重置/陈旧/回退/编码与参数/调度 host、fmt/相关 Clippy、元数据和普通构建/布局；仅原 bootloader 应用区烧录及一次有界启动/参数保持/消息只读核对，不启停日志、试音或进行非零输出。字段见 [健康消息](docs/mavlink-health.md)。
 
 ## 2. 固定工程边界
 
@@ -157,7 +158,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 
 1. **LOG-A01/02**：固定 ULog schema、pyulog 1.3.0 独立解析、136 KiB 有界 MPSC 队列、事件保留和 dropout 已通过软件测试。
 2. **LOG-A03/04**：SDMMC2/PLL1Q、PC13 显式启动、固定 FAT 栈、MBR/superfloppy、新文件与 32 KiB 对齐写入已构建。
-3. **LOG-A05 待验**：实物正常 start/stop、MAVLink 下载和 pyulog 解析已通过；H-04 仍需受控断电、缺卡/拔卡和时延边界。一次旧日志断电后的 corruption/dropout 保留为失败记录，不能按通过收口。
+3. **LOG-A05 / H-04 分项通过**：正常 start/stop、下载/解析及 H-04 分布、断电、缺卡/拔卡 Error 路径已有板载证据；按 ≤10 ms/事件丢失 0 窗口收口，见[记录](docs/acceptance/pl-a/20261107-h04-closure.md)。旧 corruption/dropout 与 152 ms 长尾保留；自动换文件重启的板载目击等边界移交，不因此关闭 USL/IO 或完整 PL-a 门。
 4. **控制 API**：start/stop/sync/status/apply_config 共用单一状态机；QGC MAVLink Console 与标准 logging commands 已接入。正常 stop 后 Disabled 与解析已验证；restart 的通过标记尚缺直接证据引用，先补录已有结果。
 5. **LOG-A06 软件接入、完整实物待验**：CUAV USL 接 GPS1；PF5 40 ms 消抖，短按释放复用 logger 状态机启停，仅受 disarmed/输出关闭许可门控制，1.5 s 长按只记事件。RGB 固定实测 I²C1 PB8/PB9、0x39 NCP5623-compatible，用日志状态显示；PF9/TIM14 反馈/有界试音与诊断已接入，但短/长试音无声，工程师已暂停。PD10 保持输入，IO 安全灯不伪造解锁来显示日志，实际灯色/其他灯归属仍待验。[USL 记录](docs/acceptance/pl-a/20261109-usl-logger-switch.md)；旧直接驱动 PD10/开漏 PF9 包已撤回。
 
@@ -220,7 +221,7 @@ FMU 灯目视项因本板无可观察灯不适用；ETH 观察、Inspector 版�
 ### INA219 支路电流（工程师新增）
 
 - **PWR-01**：参考固定 LibDriver `266a1ee32a5f70e4e5d47591ce28c4e1c387857c`，纯 Rust/Embassy I2C3（PA8/PH8、100 kHz、DMA1_CH4/5、P6）；PG4 低使能 5 V 外设电源。SEN0291 拨码 A0=0/A1=1 对应 0x44；启动及每次重试只读探测 0x40/0x41/0x44/0x45 并采纳首个应答地址，10 mΩ、±8 A，采用 ±80 mV PGA、12-bit 单次 shunt+bus 转换、CAL=16776（FS0 固定零）、有界超时和回读/重试。
-- **PWR-02**：工程师要求使用现有 QGC Inspector、三个量放在一条消息，先验证标准 `DEBUG_VECT`（ID 252）：`name=INA219`、`time_usec` 为采样启动相对时间，`x=电压 V`、`y=电流 A`、`z=功率 W`。USB/TELEM1 共用最新快照，各 10 Hz；W 为同次采样的 V×I，保留负电流符号。失败或年龄 >300 ms 停发，请求 ID 252 回同一消息；`!ina219` 可诊断。
+- **PWR-02**：工程师要求使用现有 QGC Inspector、三个量放在一条消息，使用标准 `DEBUG_VECT`（ID 250，旧文档 252 为笔误）：`name=INA219`、`time_usec` 为采样启动相对时间，`x=电压 V`、`y=电流 A`、`z=功率 W`。USB/TELEM1 共用最新快照，各 10 Hz；W 为同次采样的 V×I，保留负电流符号。失败或年龄 >300 ms 停发，请求 ID 250 回同一消息；`!ina219` 可诊断。
 - **PWR-03 日志**：同次有效测量直接进入现有有界 ULog 队列，主题 `rust_current_sensor`，字段为 `timestamp`、`timestamp_sample`、`voltage_v`、`current_a`、`power_w`，10 Hz；记录不依赖 MAVLink/QGC，采样失败不重复写旧值。日志仍显式 start/stop。
 - **PWR-04 日志开关与速率**：新增 `LOG_EN_IMU/INA/CAN/HEALTH/EVENT`（0/1）与 `LOG_IMU_HZ`（200）、`LOG_INA_HZ`（10）、`LOG_CAN_HZ`（400）、`LOG_HEALTH_HZ`（10）参数，NextCycle 生效并持久化；`log_config` 按数据源组限速/启用，事件源只启用。新数据源按来源归组或新增一组参数。
 - **必要检查**：host 标定/单位/符号、CNVR/OVF、范围/陈旧用例；普通配置 fmt/Clippy、release/布局；新 ULog 主题经 pyulog 独立解析，核对单位、符号和采样时间。刷写后做一次已连接传感器读取、MAVLink 字段/更新率及短时 ULog 主题核对；精度收口用一组已知负载/参考电流，一次断线失效/恢复。复用当前板和已通过结果，见[记录](docs/acceptance/ina219/README.md)。

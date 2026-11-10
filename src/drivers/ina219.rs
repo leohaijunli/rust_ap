@@ -53,6 +53,19 @@ pub fn latest() -> Option<Measurement> {
         .filter(|measurement| measurement.is_fresh(Instant::now().as_micros()))
 }
 
+pub fn sample_count() -> u32 {
+    SAMPLES.load(Ordering::Relaxed)
+}
+
+pub fn health() -> v6x_rust_ap::mavlink_vehicle::SensorState {
+    let present = INITIALIZED.load(Ordering::Acquire) || sample_count() != 0;
+    v6x_rust_ap::mavlink_vehicle::SensorState {
+        present,
+        enabled: present,
+        healthy: latest().is_some(),
+    }
+}
+
 pub fn write_diagnostics(output: &mut impl fmt::Write) -> fmt::Result {
     let measurement = latest();
     writeln!(

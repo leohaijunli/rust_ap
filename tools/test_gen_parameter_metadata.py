@@ -77,7 +77,7 @@ class MetadataTests(unittest.TestCase):
             self.generate()
         with self.assertRaises(ValueError):
             metadata.runtime_help("NEW_PARAMETER_WITHOUT_HELP")
-        for name in ["MAV_SYS_ID", "EST_EN", "EST_ALGO", "LOG_EN_EVENT", "LOG_CAN_HZ", "LOG_EN_MAG", "LOG_MAG_HZ", "MAV_RATE_POWER"]:
+        for name in ["MAV_SYS_ID", "EST_EN", "EST_ALGO", "LOG_EN_EVENT", "LOG_CAN_HZ", "LOG_EN_MAG", "LOG_MAG_HZ", "MAV_RATE_POWER", "MAV_RATE_HEALTH"]:
             short, description = metadata.runtime_help(name)
             self.assertTrue(short and description)
         self.assertIn("不解锁", metadata.runtime_help("EST_EN")[1])

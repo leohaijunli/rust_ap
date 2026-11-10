@@ -53,6 +53,7 @@ LINK_STREAMS = {
     "MAV_RATE_EST": ("估计器遥测速率", "含姿态/健康及有效位置，0 停发但不停止估计。"),
     "MAV_RATE_GPS": ("GNSS 遥测速率", "无数据时 NO_GPS 最多 1 Hz，0 停发但不停止 GNSS 接收。"),
     "MAV_RATE_POWER": ("支路电源遥测速率", "调高不会提高 INA219 采样率，可能重复最新值；0 停发。"),
+    "MAV_RATE_HEALTH": ("EKF/传感器健康汇总速率", "DEBUG_FLOAT_ARRAY/AP_HEALTH；实测频率窗口固定 1 s，调高只重复缓存；0 停发，不改变采样、估计或 INA219 电流消息。"),
 }
 
 

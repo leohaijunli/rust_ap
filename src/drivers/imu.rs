@@ -91,6 +91,10 @@ pub fn latest() -> Option<Sample> {
     LATEST.try_get()
 }
 
+pub fn sample_count() -> u32 {
+    STATE.samples.load(Ordering::Relaxed)
+}
+
 pub fn health() -> (SensorState, SensorState) {
     // The IMU can preempt telemetry; read the reference time after the sample.
     mavlink_vehicle::imu_health(

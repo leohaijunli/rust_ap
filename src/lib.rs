@@ -45,6 +45,8 @@ pub mod mavcan;
 pub mod mavftp;
 #[path = "core/mavlink_estimator.rs"]
 pub mod mavlink_estimator;
+#[path = "core/mavlink_health.rs"]
+pub mod mavlink_health;
 #[path = "core/mavlink_magnetometer.rs"]
 pub mod mavlink_magnetometer;
 #[path = "core/mavlink_power.rs"]
