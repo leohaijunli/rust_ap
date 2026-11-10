@@ -17,11 +17,33 @@
 - fmt、host 库/测试与普通 H753 Clippy（`-D warnings`）通过；一次局部 `code-simplifier` 审视完成，主动 Mahony 不发布为 EKF Hz，单 Router 采样且不消费传感器队列。
 - 初次测试构造误用了 `MAVLinkV2MessageRaw::new` 参数，按锁定 API 改为 new＋serialize 后通过；新增独立流断言沿用旧文档 252 编号而失败，核对 common.xml/pymavlink 后改用 `DEBUG_VECT_DATA::ID`，通过。没有修改生产 INA219 类型或放宽检查来迁就测试。
 - 未改核心数学，复用 `aa795b9` 已通过 CI 的 PX4 对拍；本地不重复全库回放/全特性构建。原始检查输出在 `target/flash-position-20261110/host-checks.log`、`h753-clippy.log`。
+- 实现提交 `a42d234` 的 [P1 software checks CI](https://github.com/leohaijunli/rust_ap/actions/runs/42769101373) 随后全部通过；这是软件/构建证据，不是硬件阶段放行。
 
 ## 烧录前与交付
 
 - 首次烧前只读快照：COM4/source=`32269dec1d8137b4`、3 条 disarmed 心跳、227 项参数；Logger Disabled、pending_save=false、历史故障保持。Filter/Running、无故障/数值失效/漏期，峰值 1573 µs/2000 µs、CPU 33.2%、栈余 30980 B。证据 `target/flash-position-20261110/before-20261110T054057485597Z.json`。
 - 本轮最初仅位置版本从 `aa795b9` 构建 source=`e8ac3f78e928873c`、普通包/布局通过但**未回装**；与历史 `f2d8ad0593f361b1` 身份差异来自 Windows 工作副本 CRLF，109 项源码逐项与 Git blob 比较仅换行不同。该中间包保存在 `target/flash-position-20261110/e8ac3f78e928873c/`，追加健康后不刷此包。
-- 合并普通包的构建/source/SHA-256 与本轮应用区烧录、只读保持及消息核对结果待追加；未完成前板载仍为 `32269dec1d8137b4`。
+- 烧录前再次只读核对（首份快照后追加了健康功能）：`before-20261110T063700183797Z.json`，仍为 `32269dec1d8137b4`、227 项参数、Logger Disabled、pending_save=false；CAN1 `transfers=0`、GNSS none，未收到外部输入。
+
+## 合并普通包与烧录：通过
+
+- 实现提交 **`a42d234`** 已推送；从干净工作副本构建 source=**`77431b8dde7cae71`**，embedded git 对应实现提交。普通 release/打包/分区/向量/入口帧通过；raw/padded=1234960/1234976 B，静态 RAM=375072 B（余 82656 B），最大入口帧=12864 B、oversized=0。
+- 相对旧板载 `32269dec1d8137b4`：raw Flash +6384 B、静态 RAM +384 B、最大入口帧 +1336 B；入口帧不代替完整调用链或实物栈水位。
+- 110 项源码 SHA-256、4 个产物与报告逐项一致，源码 identity 与当前文件一致，ELF/bin/px4 metadata 再核对通过。px4 SHA-256=`0c4863722245e6a2700001806574a9ec0120b9d9ad3509e1091f7f61b2465133`；产物/报告/`verified-artifacts.json` 独立保存在 `target/flash-position-20261110/77431b8dde7cae71/`。
+- 原 PX4 bootloader **board 53/protocol v5、COM3** 应用区上传与 CRC 校验 100%，**29 s**。不写 bootloader/IO；恢复 COM4/source=`77431b8dde7cae71`、同一 MCU UID 与 3 条 disarmed 心跳。
+
+## 烧后只读保持与消息
+
+UTC 06:40:42–06:40:57，`after-20261110T064042290204Z.json`，passed=true：
+
+- 原 227 项参数值/类型/顺序完全保持，仅追加 `MAV_RATE_HEALTH=1`；FRAM Stored、slot=1/gen=4/format=2、dirty=true/pending_save=false/last_error=None 与烧前相同。`registry` 指纹按追加目录由 `79e94c17` 变为 `6b1ad36e`，不是存档写入。
+- 历史 `!fault` 文本完全相同；VTOR=`08020000`、CLOCK/config_preserved/bkp_preserved 保持。FPU ASPEN=true/LSPEN=false、Nearest、FZ/DN 关闭。
+- 主 Filter/Running、fault/last_fault/numerics=None、deadline_misses=0、1 kHz 发布 missed=0、积分 0 ppm；step 累计峰值 **1547 µs/2000 µs**、CPU 快照 **32.6%**、栈 untouched **29256 B/guard=true**，通过本轮启动/有界资源核对，不是完整 E7/M1/WCET 证明。
+- 5.026 s USB 收到 AP_HEALTH **5 条**，姿态 50/四元数 49/ALTITUDE 49/ESTIMATOR_STATUS 49。AP_HEALTH 最后窗口 1.006091 s：EKF **101.38 Hz**、gyro/accel 各 **8094.70 Hz**、BMP388 **22.86 Hz**、BMM150 **19.88 Hz**、GNSS/INA219 各 **0 Hz**；EKF healthy=1、传感器 present/enabled/healthy 均为 15、rate_valid=127、flight_qualified=0。数值为本次窗口，不是标称值或性能提升结论。
+- **当前外部输入缺失，非发布回归**：烧前/后 CAN1 都 `transfers=0`、GNSS none，tx_error_count=128/mode=ErrorPassive。5 条 GPS_RAW_INT 均为 NO_GPS（兜底 1 Hz），LOCAL/GLOBAL 为 0 条；新的 `EKF2_DATA_VALIDITY` 为水平/全球 false、垂直 true，符合不造假规则。真实 GNSS 有效位置发布仍待恢复输入后另行核对，不据此声称 CAN CRC 或 RTK 通过。
+- INA219 当前无新样本、汇总 0 Hz/不健康，DEBUG_VECT 为 0 条；原 #250 发送路径未改，不能把“未接入当前输入”误写成覆盖/共存实物验收。原电流字段/速率的独立性有 host/调度证据，实际电流共存仍待工程师恢复输入。
+- 收尾 Logger Disabled；未设参/保存、启停/删除日志、试音、分配节点或启用输出。RGB Nack/IO-ready=false 等既有物理问题保持，不扩展排查。
+
+证据：同目录 `verify.py`（仅查询/被动接收）、两份 before 与一份 after JSON、`upload.log`、`build.log`/`health-build.log` 及上述归档。旧索引/部分历史 `target/` 引用仍需恢复，不能用本次结果补造历史证据。
 
 本记录只覆盖本轮软件与有界回装范围；QGC 实际界面、TELEM1、外设失效/恢复、完整 M1/E7/RTK 与飞行资格仍按原门验收。

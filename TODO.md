@@ -1,6 +1,6 @@
 # Pixhawk 6X Rust 飞控 TODO
 
-更新：2026-11-10。**本轮回装前板载为 `32269dec1d8137b4` /代码 `8cddb79`；位置发布＋AP_HEALTH 的合并软件检查已通过，普通构建/应用区烧录进行中，结果见下文。此前 CAN1 有界 CRC/真实抢占/资源通过；蜂鸣暂停、RGB Nack/此前 PX4IO Timeout，IO/输出门及完整 M1/E7/RTK 未验依赖不放行。**
+更新：2026-11-10。**板载为 `77431b8dde7cae71` /实现 `a42d234`：位置发布＋AP_HEALTH 合并普通包/应用区上传与 CRC、启动保持及 USB 有界核对通过。EKF Running、峰值 1547 µs/2000 µs、无漏期/数值故障、CPU 32.6%、栈余 29256 B；AP_HEALTH 约 1 Hz。当前 GNSS/INA219 均无新数据（烧前也如此），水平/全球位置与电流消息未发，不冒称有输入时的实物通过。蜂鸣暂停、RGB Nack/IO 未验、输出关闭，完整 M1/E7/RTK 未放行。**
 规则与必要测试：[plan.md](plan.md) · 证据：[P0](docs/acceptance/p0/README.md) / [P1](docs/acceptance/p1/README.md) / [P3a](docs/acceptance/p3a/README.md) / [P4b-a](docs/acceptance/p4b-a/README.md) / [P4b-g](docs/acceptance/p4b-g/README.md) / [PL-a](docs/acceptance/pl-a/README.md) / [P2](docs/acceptance/p2/README.md) / [P4](docs/acceptance/p4/README.md) / [PL-b](docs/acceptance/pl-b/README.md) / [MAVCAN](docs/acceptance/mavcan/README.md)
 
 此前位置拆分 `48d2d62` /单独普通包 `f2d8ad0593f361b1` 软件检查/构建通过、未单独回装；工程师现已授权与 AP_HEALTH 合并回装，不把未完成的消息实测预写为通过。
@@ -18,7 +18,8 @@
 
 - [x] 标准 #350/AP_HEALTH 单条汇总已实现，实际计数 Hz／健康／年龄／EKF 故障与 CPU；不替换 INA219 #250 电流消息，原解锁/飞行资格门保持。[协议](docs/mavlink-health.md)。
 - [x] Rust 19 项、Python 元数据 4 项、fmt、host/普通 H753 Clippy、元数据生成/check 及一次局部审视通过；原 227 参数保持，追加 `MAV_RATE_HEALTH=1 Hz`。[记录](docs/acceptance/p2/20261110-health-position-flash.md)。
-- [ ] 合并普通包构建/布局、原 bootloader 应用区回装及有界 source/参数保持/标准消息核对。
+- [x] `a42d234` 已推送且 CI 通过；合并普通包 `77431b8dde7cae71` 构建/布局/源码与产物 SHA 核对、原 board 53/v5 bootloader 应用区上传/CRC（29 s）、COM4/source/3 个 disarmed 心跳/原 227 参数保持通过，新增参数默认 1 Hz，不保存。
+- [x] 5.026 s AP_HEALTH 5 条，EKF/IMU/baro/BMM150 实测 Hz 与健康位可读，峰值/CPU/栈在本轮预算内；flight_qualified=0。GNSS/INA 输入为 0，原始 GPS 为 NO_GPS 1 Hz；位置/电流有真实输入时的实物核对未完成，不把软件独立性当共存验收。
 - [ ] QGC 新消息界面、TELEM1 和完整 M1/E7/RTK 等剩余门；本轮不增加日志、蜂鸣或非零输出动作。
 
 ## 位置数据发布与飞行资格拆分 — 2026-11-09
@@ -27,7 +28,7 @@
 - [x] 新合成 GNSS 回归先在旧产品发布门失败，再通过；字段与原始核心位置一致，可构建 LOCAL/GLOBAL MAVLink，陈旧/回退/停用撤销。不是板上或绝对精度验收。
 - [x] 产品 3 项/MAVLink 映射 2 项 host、fmt、host/普通 H753 Clippy 与局部审视通过；未改核心数学，不重复全量对拍。
 - [x] 实现 `48d2d62`、普通包 `f2d8ad0593f361b1` release/打包/分区/向量/入口帧检查通过，已独立保存，RAM/最大入口帧不变。仅软件交付，不回装。
-- [ ] 新的实物位置消息仍待另行授权回装/核对；实际板载仍为 `32269dec1d8137b4`，飞行/RTK/控制资格不自动放行。
+- [ ] 2026-11-10 已随合并包回装并核对无 GPS 时不发水平/全球消息；真实 GNSS 输入下的位置消息仍待另行核对，飞行/RTK/控制资格不自动放行。
 
 ## CAN2 GUI 转发回归 — 2026-11-09
 
